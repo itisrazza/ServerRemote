@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 iced = { version = "0.14.0", features = ["advanced", "tokio", "image"] }
 server-remote-core = { path = "../server-remote-core" }
-tokio = { version = "1.52.3", features = ["sync", "macros"] }
+tokio = { version = "1.52.3", features = ["sync"] }

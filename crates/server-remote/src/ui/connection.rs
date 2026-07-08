@@ -1,19 +1,24 @@
-//! A single connection tab: runs a [`Connector`] on a background subscription
-//! and renders the framebuffer it streams back.
+//! A single connection tab: runs a [`Connector`] on a background subscription,
+//! renders the framebuffer it streams back, and drives a capability-driven
+//! toolbar.
 //!
-//! The subscription worker owns the [`SessionHandle`] and bridges it into
-//! iced's world: session events become [`Message`]s, and it hands the UI an
-//! [`mpsc::Sender`] so input can flow the other way. The `State` here holds only
-//! what the view needs — the latest frame, the status, and that input sender.
+//! The subscription worker owns the connection's [`SessionHandle`] events end
+//! and hands the UI the input and command senders, so the UI talks to the
+//! session directly. `State` holds what the view needs — the latest frame, the
+//! status, the reported [`Capabilities`], and those senders.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use iced::{
     Element, Length, Point, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
-    widget::{center, image, mouse_area, text},
+    widget::{Column, Row, Space, button, center, image, mouse_area, text},
 };
-use server_remote_core::{Connector, DummyConnector, InputEvent, SessionEvent, Target, TlsPolicy};
+use server_remote_core::{
+    Capabilities, Connector, Control, DummyConnector, InputEvent, PointerMode, SessionCommand,
+    SessionEvent, SessionHandle, Target, TlsPolicy,
+};
 use tokio::sync::mpsc;
 
 /// The protocol a connection speaks. Only [`Protocol::Dummy`] is implemented so
@@ -56,6 +61,13 @@ enum Status {
     Disconnected(Option<String>),
 }
 
+/// The senders the UI uses to talk to a running session.
+#[derive(Debug, Clone)]
+pub struct Controls {
+    input: mpsc::Sender<InputEvent>,
+    commands: mpsc::Sender<SessionCommand>,
+}
+
 pub struct State {
     id: u64,
     name: Arc<str>,
@@ -63,18 +75,23 @@ pub struct State {
     target: Target,
     tls: TlsPolicy,
     status: Status,
+    capabilities: Capabilities,
     frame: Option<image::Handle>,
-    input: Option<mpsc::Sender<InputEvent>>,
+    controls: Option<Controls>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    /// The worker is live and this is the channel to send input on.
-    Ready(mpsc::Sender<InputEvent>),
+    /// The worker is live; these are the channels to the session.
+    Ready(Controls),
     /// An event from the running session.
     Session(SessionEvent),
     /// The pointer moved over the framebuffer.
     Pointer(Point),
+    /// Invoke a declarative action advertised in [`Capabilities`].
+    Action(Cow<'static, str>),
+    /// Tear the session down.
+    Disconnect,
 }
 
 impl State {
@@ -92,8 +109,9 @@ impl State {
             target,
             tls,
             status: Status::Connecting,
+            capabilities: Capabilities::default(),
             frame: None,
-            input: None,
+            controls: None,
         }
     }
 
@@ -107,18 +125,19 @@ impl State {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Ready(sender) => {
-                self.input = Some(sender);
-            }
+            Message::Ready(controls) => self.controls = Some(controls),
             Message::Session(event) => self.apply(event),
-            Message::Pointer(point) => {
-                if let Some(input) = &self.input {
-                    // TODO: scale widget coordinates to framebuffer coordinates.
-                    let _ = input.try_send(InputEvent::PointerMoved {
-                        x: point.x,
-                        y: point.y,
-                    });
+            Message::Pointer(point) => self.send_pointer(point),
+            Message::Action(id) => {
+                if let Some(controls) = &self.controls {
+                    let _ = controls.commands.try_send(SessionCommand::Action { id });
                 }
+            }
+            Message::Disconnect => {
+                // Dropping the controls and stopping the subscription (via the
+                // status change) tears the session down.
+                self.status = Status::Disconnected(None);
+                self.controls = None;
             }
         }
         Task::none()
@@ -126,7 +145,10 @@ impl State {
 
     fn apply(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::Connected { .. } => self.status = Status::Connected,
+            SessionEvent::Connected { capabilities, .. } => {
+                self.capabilities = capabilities;
+                self.status = Status::Connected;
+            }
             SessionEvent::Frame(frame) => {
                 self.frame = Some(image::Handle::from_rgba(
                     frame.width,
@@ -135,10 +157,28 @@ impl State {
                 ));
             }
             SessionEvent::Resized { .. } => {}
+            SessionEvent::Capabilities(capabilities) => self.capabilities = capabilities,
             SessionEvent::Disconnected { reason } => {
                 self.status = Status::Disconnected(reason);
-                self.input = None;
+                self.controls = None;
             }
+        }
+    }
+
+    fn send_pointer(&self, point: Point) {
+        let Some(controls) = &self.controls else {
+            return;
+        };
+        match self.capabilities.pointer {
+            // TODO: scale widget coordinates to framebuffer coordinates.
+            PointerMode::Absolute => {
+                let _ = controls.input.try_send(InputEvent::PointerMoved {
+                    x: point.x,
+                    y: point.y,
+                });
+            }
+            // TODO: grab the pointer and send PointerMotion deltas.
+            PointerMode::Relative => {}
         }
     }
 
@@ -158,7 +198,37 @@ impl State {
             .into(),
         };
 
-        center(body).into()
+        let mut view = Column::new().spacing(4);
+        if !matches!(self.status, Status::Disconnected(_)) {
+            view = view.push(self.toolbar());
+        }
+        view.push(center(body)).into()
+    }
+
+    fn toolbar(&self) -> Element<'_, Message> {
+        let mut actions = Row::new().spacing(4);
+        for action in &self.capabilities.actions {
+            match &action.control {
+                Control::Button => {
+                    actions = actions.push(
+                        button(text(action.label.to_string()))
+                            .style(button::subtle)
+                            .on_press(Message::Action(action.id.clone())),
+                    );
+                }
+            }
+        }
+
+        Row::new()
+            .push(actions)
+            .push(Space::new().width(Length::Fill))
+            .push(
+                button(text("Disconnect"))
+                    .style(button::danger)
+                    .on_press(Message::Disconnect),
+            )
+            .spacing(4)
+            .into()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
@@ -166,10 +236,10 @@ impl State {
             return Subscription::none();
         }
 
-        // `run_with` identifies the subscription by hashing `data` (plus the
+        // `run_with` identifies the subscription by hashing `Params` (plus the
         // worker's function pointer), so the `id` keeps each connection's
         // subscription distinct. The worker must be a plain `fn`, so everything
-        // it needs travels in `data` rather than a captured closure.
+        // it needs travels in `Params` rather than a captured closure.
         Subscription::run_with(
             Params {
                 id: self.id,
@@ -223,37 +293,24 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
                 }
             };
 
-            let (input_tx, mut input_rx) = mpsc::channel::<InputEvent>(64);
-            if output.send(Message::Ready(input_tx)).await.is_err() {
+            // Hand the UI the session's own senders, then just pump events out.
+            let SessionHandle {
+                mut events,
+                input,
+                commands,
+            } = handle;
+            if output
+                .send(Message::Ready(Controls { input, commands }))
+                .await
+                .is_err()
+            {
                 return;
             }
 
-            let mut events = handle.events;
-            let input = handle.input;
-            let mut input_open = true;
-            loop {
-                tokio::select! {
-                    event = events.recv() => match event {
-                        Some(event) => {
-                            let ended = matches!(event, SessionEvent::Disconnected { .. });
-                            if output.send(Message::Session(event)).await.is_err() || ended {
-                                break;
-                            }
-                        }
-                        None => {
-                            let _ = output
-                                .send(Message::Session(SessionEvent::Disconnected { reason: None }))
-                                .await;
-                            break;
-                        }
-                    },
-                    incoming = input_rx.recv(), if input_open => match incoming {
-                        Some(event) => {
-                            let _ = input.send(event).await;
-                        }
-                        // UI dropped its sender; stop polling this branch.
-                        None => input_open = false,
-                    },
+            while let Some(event) = events.recv().await {
+                let ended = matches!(event, SessionEvent::Disconnected { .. });
+                if output.send(Message::Session(event)).await.is_err() || ended {
+                    break;
                 }
             }
         },
