@@ -10,9 +10,11 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use iced::keyboard::key::Named;
 use iced::{
     Alignment, Element, Length, Point, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
+    keyboard,
     widget::{Column, Row, Space, button, center, image, mouse_area, responsive, text},
 };
 use server_remote_core::{
@@ -106,6 +108,8 @@ pub enum Message {
         button: PointerButton,
         pressed: bool,
     },
+    /// A key was pressed or released while this connection is the active tab.
+    Key { key: keyboard::Key, pressed: bool },
     /// Invoke a declarative action advertised in [`Capabilities`].
     Action(Cow<'static, str>),
     /// Disconnect and close the tab. Handled by the application, which owns the
@@ -157,6 +161,11 @@ impl State {
                     let _ = controls
                         .input
                         .try_send(InputEvent::PointerButton { button, pressed });
+                }
+            }
+            Message::Key { key, pressed } => {
+                if let (Some(controls), Some(keysym)) = (&self.controls, keysym(&key)) {
+                    let _ = controls.input.try_send(InputEvent::Key { keysym, pressed });
                 }
             }
             Message::Action(id) => {
@@ -339,6 +348,66 @@ fn framebuffer_view(handle: image::Handle, size: (u32, u32)) -> Element<'static,
     .into()
 }
 
+/// Translate an iced key into an X11 keysym, which is what RFB/Spice expect.
+/// Returns `None` for keys we don't map (they're simply ignored).
+fn keysym(key: &keyboard::Key) -> Option<u32> {
+    match key {
+        keyboard::Key::Character(text) => text.chars().next().map(character_keysym),
+        keyboard::Key::Named(named) => named_keysym(*named),
+        keyboard::Key::Unidentified => None,
+    }
+}
+
+fn character_keysym(character: char) -> u32 {
+    let code = character as u32;
+    // Latin-1 code points are their own keysyms; the rest use the Unicode form.
+    if code <= 0xFF {
+        code
+    } else {
+        0x0100_0000 + code
+    }
+}
+
+fn named_keysym(named: Named) -> Option<u32> {
+    let keysym = match named {
+        Named::Enter => 0xFF0D,
+        Named::Tab => 0xFF09,
+        Named::Space => 0x0020,
+        Named::Backspace => 0xFF08,
+        Named::Escape => 0xFF1B,
+        Named::Delete => 0xFFFF,
+        Named::Insert => 0xFF63,
+        Named::Home => 0xFF50,
+        Named::End => 0xFF57,
+        Named::PageUp => 0xFF55,
+        Named::PageDown => 0xFF56,
+        Named::ArrowLeft => 0xFF51,
+        Named::ArrowUp => 0xFF52,
+        Named::ArrowRight => 0xFF53,
+        Named::ArrowDown => 0xFF54,
+        Named::Shift => 0xFFE1,
+        Named::Control => 0xFFE3,
+        Named::Alt => 0xFFE9,
+        Named::AltGraph => 0xFFEA,
+        Named::Super | Named::Meta => 0xFFEB,
+        Named::CapsLock => 0xFFE5,
+        Named::F1 => 0xFFBE,
+        Named::F2 => 0xFFBF,
+        Named::F3 => 0xFFC0,
+        Named::F4 => 0xFFC1,
+        Named::F5 => 0xFFC2,
+        Named::F6 => 0xFFC3,
+        Named::F7 => 0xFFC4,
+        Named::F8 => 0xFFC5,
+        Named::F9 => 0xFFC6,
+        Named::F10 => 0xFFC7,
+        Named::F11 => 0xFFC8,
+        Named::F12 => 0xFFC9,
+        _ => return None,
+    };
+    Some(keysym)
+}
+
 /// Everything the subscription worker needs, hashed to identify the session.
 #[derive(Hash)]
 struct Params {
@@ -411,4 +480,34 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
             }
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn characters_map_to_latin1_keysyms() {
+        assert_eq!(character_keysym('a'), 0x61);
+        assert_eq!(character_keysym('A'), 0x41);
+        assert_eq!(character_keysym('!'), 0x21);
+        // Beyond Latin-1 uses the Unicode keysym form.
+        assert_eq!(character_keysym('€'), 0x0100_0000 + '€' as u32);
+    }
+
+    #[test]
+    fn named_keys_map_to_x11_keysyms() {
+        assert_eq!(named_keysym(Named::Enter), Some(0xFF0D));
+        assert_eq!(named_keysym(Named::ArrowUp), Some(0xFF52));
+        assert_eq!(named_keysym(Named::F5), Some(0xFFC2));
+        assert_eq!(named_keysym(Named::Control), Some(0xFFE3));
+        assert_eq!(named_keysym(Named::PrintScreen), None);
+    }
+
+    #[test]
+    fn keysym_dispatches_on_key_kind() {
+        assert_eq!(keysym(&keyboard::Key::Character("z".into())), Some(0x7A));
+        assert_eq!(keysym(&keyboard::Key::Named(Named::Escape)), Some(0xFF1B));
+        assert_eq!(keysym(&keyboard::Key::Unidentified), None);
+    }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced::{
-    Element, Length, Settings, Subscription, Task,
+    Element, Length, Settings, Subscription, Task, keyboard,
     widget::{Column, Row, Scrollable, button, text, tooltip},
     window,
 };
@@ -181,7 +181,25 @@ impl Application {
                 .map(|(id, message)| Message::Connection(id, message))
         });
 
-        Subscription::batch(std::iter::once(close_requests).chain(connections))
+        // Route keyboard input to the active connection only. `listen` yields
+        // just the events no widget consumed, so typing in the connect form's
+        // text fields doesn't leak through.
+        let keyboard = match self.tab {
+            Tab::Connection(id) => keyboard::listen().with(id).filter_map(|(id, event)| {
+                let (key, pressed) = match event {
+                    keyboard::Event::KeyPressed { modified_key, .. } => (modified_key, true),
+                    keyboard::Event::KeyReleased { modified_key, .. } => (modified_key, false),
+                    keyboard::Event::ModifiersChanged(_) => return None,
+                };
+                Some(Message::Connection(
+                    id,
+                    ui::connection::Message::Key { key, pressed },
+                ))
+            }),
+            _ => Subscription::none(),
+        };
+
+        Subscription::batch([close_requests, keyboard].into_iter().chain(connections))
     }
 
     fn header<'state>(&'state self) -> Element<'state, Message> {
