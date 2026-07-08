@@ -12,6 +12,21 @@ use crate::tooltip_box::tooltip_box;
 mod tooltip_box;
 mod ui;
 
+/// Split a `host[:port]` string, falling back to the protocol's default port.
+fn parse_target(hostname: &str, protocol: ui::connection::Protocol) -> Target {
+    let default_port = protocol.default_port();
+    if hostname.is_empty() {
+        return Target::new("localhost", default_port);
+    }
+    match hostname.rsplit_once(':') {
+        Some((host, port)) => match port.parse::<u16>() {
+            Ok(port) => Target::new(host, port),
+            Err(_) => Target::new(hostname, default_port),
+        },
+        None => Target::new(hostname, default_port),
+    }
+}
+
 fn main() -> iced::Result {
     iced::application::application(Application::boot, Application::update, Application::view)
         .title(Application::title)
@@ -107,12 +122,7 @@ impl Application {
         } else {
             Arc::from(request.hostname.as_str())
         };
-        let host = if request.hostname.is_empty() {
-            "localhost"
-        } else {
-            &request.hostname
-        };
-        let target = Target::new(host, 0);
+        let target = parse_target(&request.hostname, request.protocol);
 
         self.connections.push(ui::connection::State::new(
             id,
@@ -120,6 +130,7 @@ impl Application {
             request.protocol,
             target,
             TlsPolicy::default(),
+            request.password,
         ));
         self.tab = Tab::Connection(id);
         Task::none()

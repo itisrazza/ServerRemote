@@ -19,6 +19,7 @@ use server_remote_core::{
     Capabilities, Connector, Control, DummyConnector, InputEvent, PointerMode, SessionCommand,
     SessionEvent, SessionHandle, Target, TlsPolicy,
 };
+use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
 /// The protocol a connection speaks. Only [`Protocol::Dummy`] is implemented so
@@ -45,6 +46,15 @@ impl Protocol {
             Protocol::Vnc => "vnc",
             Protocol::Spice => "spice",
             Protocol::Ilo => "ilo",
+        }
+    }
+
+    /// Default port when the hostname doesn't specify one.
+    pub fn default_port(self) -> u16 {
+        match self {
+            Protocol::Dummy => 0,
+            Protocol::Vnc | Protocol::Spice => 5900,
+            Protocol::Ilo => 443,
         }
     }
 }
@@ -74,6 +84,7 @@ pub struct State {
     protocol: Protocol,
     target: Target,
     tls: TlsPolicy,
+    password: String,
     status: Status,
     capabilities: Capabilities,
     frame: Option<image::Handle>,
@@ -104,6 +115,7 @@ impl State {
         protocol: Protocol,
         target: Target,
         tls: TlsPolicy,
+        password: String,
     ) -> Self {
         Self {
             id,
@@ -111,6 +123,7 @@ impl State {
             protocol,
             target,
             tls,
+            password,
             status: Status::Connecting,
             capabilities: Capabilities::default(),
             frame: None,
@@ -256,6 +269,7 @@ impl State {
                 protocol: self.protocol,
                 target: self.target.clone(),
                 tls: self.tls.clone(),
+                password: self.password.clone(),
             },
             worker,
         )
@@ -269,6 +283,7 @@ struct Params {
     protocol: Protocol,
     target: Target,
     tls: TlsPolicy,
+    password: String,
 }
 
 // `use<>` declares the returned stream captures nothing from `&Params`, so it
@@ -277,21 +292,29 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
     let protocol = params.protocol;
     let target = params.target.clone();
     let tls = params.tls.clone();
+    let password = params.password.clone();
 
     iced::stream::channel(
         32,
         move |mut output: futures_mpsc::Sender<Message>| async move {
-            if protocol != Protocol::Dummy {
-                let reason = format!("{protocol} is not implemented yet");
-                let _ = output
-                    .send(Message::Session(SessionEvent::Disconnected {
-                        reason: Some(reason),
-                    }))
-                    .await;
-                return;
-            }
+            let result = match protocol {
+                Protocol::Dummy => DummyConnector.connect(&target, &tls).await,
+                Protocol::Vnc => {
+                    let password = (!password.is_empty()).then_some(password);
+                    VncConnector::new(password).connect(&target, &tls).await
+                }
+                other => {
+                    let reason = format!("{other} is not implemented yet");
+                    let _ = output
+                        .send(Message::Session(SessionEvent::Disconnected {
+                            reason: Some(reason),
+                        }))
+                        .await;
+                    return;
+                }
+            };
 
-            let handle = match DummyConnector.connect(&target, &tls).await {
+            let handle = match result {
                 Ok(handle) => handle,
                 Err(error) => {
                     let _ = output

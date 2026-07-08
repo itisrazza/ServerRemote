@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+server-remote-core = { path = "../server-remote-core" }
+tokio = { version = "1.52.3", features = ["net", "rt", "sync", "time", "macros"] }
+vnc-rs = "0.5.3"

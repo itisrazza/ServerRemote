@@ -8,6 +8,7 @@ use crate::ui::connection::Protocol;
 pub struct State {
     protocol: Protocol,
     hostname: String,
+    password: String,
 }
 
 #[derive(Debug, Clone)]
@@ -21,12 +22,14 @@ pub enum Message {
 pub struct Request {
     pub protocol: Protocol,
     pub hostname: String,
+    pub password: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum IMessage {
     SetProtocol(Protocol),
     SetHostname(String),
+    SetPassword(String),
     Save,
 }
 
@@ -35,6 +38,7 @@ impl State {
         State {
             protocol: Protocol::Dummy,
             hostname: String::new(),
+            password: String::new(),
         }
     }
 
@@ -46,6 +50,10 @@ impl State {
             }
             IMessage::SetHostname(hostname) => {
                 self.hostname = hostname;
+                Task::none()
+            }
+            IMessage::SetPassword(password) => {
+                self.password = password;
                 Task::none()
             }
             IMessage::Save => todo!(),
@@ -66,7 +74,11 @@ impl State {
                             text_input("Hostname", &self.hostname)
                                 .on_input(|value| Message::Internal(IMessage::SetHostname(value))),
                         )
-                        .push(text_input("Password", ""))
+                        .push(
+                            text_input("Password", &self.password)
+                                .secure(true)
+                                .on_input(|value| Message::Internal(IMessage::SetPassword(value))),
+                        )
                         .push(Row::new().push(checkbox(false)).push("Read-only")),
                 )
                 .push(
@@ -84,6 +96,7 @@ impl State {
                                 .on_press(Message::Connect(Request {
                                     protocol: self.protocol,
                                     hostname: self.hostname.clone(),
+                                    password: self.password.clone(),
                                 })),
                         )
                         .spacing(4),
