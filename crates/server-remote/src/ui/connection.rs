@@ -90,9 +90,10 @@ pub enum Message {
     Pointer(Point),
     /// Invoke a declarative action advertised in [`Capabilities`].
     Action(Cow<'static, str>),
-    /// Tear the session down.
-    Disconnect,
-    /// Close the tab. Handled by the application, which owns the tab list.
+    /// Disconnect and close the tab. Handled by the application, which owns the
+    /// tab list; dropping the tab tears the session down. An *unexpected* close
+    /// arrives as a `Session(Disconnected { .. })` event instead, so its reason
+    /// stays on screen.
     Close,
 }
 
@@ -134,12 +135,6 @@ impl State {
                 if let Some(controls) = &self.controls {
                     let _ = controls.commands.try_send(SessionCommand::Action { id });
                 }
-            }
-            Message::Disconnect => {
-                // Dropping the controls and stopping the subscription (via the
-                // status change) tears the session down.
-                self.status = Status::Disconnected(None);
-                self.controls = None;
             }
             // The application owns the tab list, so it intercepts `Close`; this
             // arm only satisfies exhaustiveness.
@@ -240,7 +235,7 @@ impl State {
             .push(
                 button(text("Disconnect"))
                     .style(button::danger)
-                    .on_press(Message::Disconnect),
+                    .on_press(Message::Close),
             )
             .spacing(4)
             .into()
