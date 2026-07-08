@@ -72,27 +72,59 @@ protocols without TLS ignore it.
 
 ### `SessionHandle`
 
-A running session is represented by a pair of channels, not a `dyn Session`
+A running session is represented by a set of channels, not a `dyn Session`
 object. The protocol implementation owns the connection on a background task and
-holds the far end of both channels; the UI holds this handle.
+holds the far end of every channel; the UI holds this handle.
 
 ```rust
 pub struct SessionHandle {
-    pub events: mpsc::Receiver<SessionEvent>, // session -> UI
-    pub input:  mpsc::Sender<InputEvent>,     // UI -> session
+    pub events:   mpsc::Receiver<SessionEvent>,  // session -> UI
+    pub input:    mpsc::Sender<InputEvent>,      // UI -> session (hot path)
+    pub commands: mpsc::Sender<SessionCommand>,  // UI -> session (structured)
 }
 ```
 
-Dropping the handle closes `input`, which the implementation treats as a request
-to shut down. This gives type erasure for free (all sessions are the same
-concrete type) and keeps `core` free of any UI dependency.
+Input and commands are separate channels on purpose: input is a high-frequency
+hot path, commands are rare and structured. Dropping every sender (and the
+handle's `events`) signals shutdown. This gives type erasure for free (all
+sessions are the same concrete type) and keeps `core` free of any UI dependency.
 
-- **`SessionEvent`** — `Connected { size }`, `Frame(Frame)`,
-  `Resized { .. }`, `Disconnected { reason }`.
-- **`InputEvent`** — `PointerMoved`, `PointerButton`, `Key { keysym, .. }`
-  (X11 keysyms, matching what RFB and Spice expect).
+- **`SessionEvent`** — `Connected { size, capabilities }`, `Frame(Frame)`,
+  `Resized { .. }`, `Capabilities(..)` (mid-session change), `Disconnected {
+  reason }`.
+- **`InputEvent`** — `PointerMoved` (absolute), `PointerMotion` (relative
+  deltas), `PointerButton`, `Key { keysym, .. }` (X11 keysyms, matching what RFB
+  and Spice expect).
+- **`SessionCommand`** — non-input requests, currently `Action { id }` to invoke
+  a declarative capability.
 - **`Frame`** — a decoded framebuffer, RGBA8, row-major, `width * height * 4`
   bytes. Full-frame for now; regional/damage updates are a later optimisation.
+
+### Capabilities
+
+The connection toolbar is **capability-driven**: a session reports what it
+supports and the UI renders from that, rather than hardcoding per-protocol
+buttons.
+
+```rust
+pub struct Capabilities {
+    pub pointer: PointerMode,   // Absolute | Relative
+    pub actions: Vec<Action>,   // protocol-specific, declarative
+}
+```
+
+Common capabilities are typed fields (e.g. `pointer`, which decides whether the
+UI sends absolute positions or grabs the pointer and sends deltas).
+Protocol-specific ones are **declarative `Action`s** — an `id`, a `label`, and a
+`Control` from a small vocabulary (`Button` today; `File`/`Toggle`/`Choose` when
+Spice/iLO media mounting lands). The UI renders them generically and reports the
+invoked one back as a `SessionCommand::Action { id }`; the plugin recognises its
+own id. This lets a protocol contribute toolbar UI **as data**, so `core` and
+every protocol crate stay UI-free.
+
+If the declarative vocabulary can't express something, the plan is an **opt-in**
+trait for a plugin to provide its own iced UI — kept opt-in so protocols that
+don't need it pull no UI dependency. Not built yet.
 
 ### TLS trust
 
@@ -118,18 +150,22 @@ trusted on the next attempt — a specific certificate, not "anything goes".
   and the protocol state machine.
 - Communication with the UI is exclusively through the `SessionHandle` channels.
   No shared mutable state, no locks across the boundary.
-- The GUI turns the `events` receiver into an iced subscription and sends
-  `InputEvent`s from its `update` loop. (This wiring is the next piece of work
-  and is not built yet.)
+- The GUI runs the connector on an iced `Subscription` whose worker owns the
+  `events` receiver and hands the UI the session's own `input`/`commands`
+  senders, then pumps events out as messages. The UI sends input and commands
+  straight down those senders from its `update` loop.
 
 ## Roadmap
 
-1. Wire `DummyConnector` into the GUI end to end: a connection tab that renders
-   the streamed framebuffer. Proves the `SessionHandle` ↔ iced integration.
+1. ~~Wire `DummyConnector` into the GUI end to end.~~ Done — a connection tab
+   renders the streamed framebuffer and drives a capability-driven toolbar
+   (`Disconnect` plus the dummy's `Reset gradient` action).
 2. Real TLS transport (`rustls` / `tokio-rustls`) with the trust-on-first-use
    flow, driven from a UI prompt.
 3. First real protocol — VNC is the easiest (mature crates, simple framebuffer
    model) and a good shakedown for the abstractions before Spice and iLO, which
    are effectively from-scratch protocol work.
+4. Pointer capture for `PointerMode::Relative`, and grow the `Control` vocabulary
+   (`File`/`Toggle`/`Choose`) alongside Spice/iLO media mounting.
 
 [`Target`]: ../crates/server-remote-core/src/transport.rs
