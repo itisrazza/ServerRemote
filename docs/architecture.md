@@ -1,7 +1,8 @@
 # Architecture
 
-> Status: early sketch. This documents the shape we're building toward, not a
-> finished system. Expect it to change as the first real protocol lands.
+> Status: early but working. Dummy and VNC connect end to end (render, mouse,
+> keyboard); Spice and iLO are not started. Expect the shape to keep shifting as
+> those land.
 
 ## Goal
 
@@ -37,9 +38,9 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`.
 |---|---|
 | `server-remote` | iced GUI front end. |
 | `server-remote-core` | Protocol-agnostic traits and types, plus the Dummy implementation. Does **not** depend on iced. |
-| `server-remote-vnc` | VNC / RFB. |
-| `server-remote-spice` | Spice. |
-| `server-remote-ilo` | HPE iLO Remote Console. |
+| `server-remote-vnc` | VNC / RFB — implemented, on top of the `vnc-rs` crate. |
+| `server-remote-spice` | Spice — not started. |
+| `server-remote-ilo` | HPE iLO Remote Console — not started. |
 
 Workspace: edition 2024, resolver 3, iced 0.14 (`advanced` feature) on the front
 end.
@@ -157,15 +158,23 @@ trusted on the next attempt — a specific certificate, not "anything goes".
 
 ## Roadmap
 
-1. ~~Wire `DummyConnector` into the GUI end to end.~~ Done — a connection tab
-   renders the streamed framebuffer and drives a capability-driven toolbar
-   (`Disconnect` plus the dummy's `Reset gradient` action).
-2. Real TLS transport (`rustls` / `tokio-rustls`) with the trust-on-first-use
+Done:
+
+- ~~Wire `DummyConnector` into the GUI end to end~~ — a connection tab renders
+  the streamed framebuffer and drives a capability-driven toolbar (`Disconnect`
+  plus the dummy's `Reset gradient` action).
+- ~~First real protocol: VNC~~ — connects, renders (Raw + CopyRect composited
+  into a full framebuffer), and takes mouse (position + buttons, coordinates
+  scaled to the framebuffer) and keyboard (X11 keysyms) input.
+
+Next:
+
+1. Real TLS transport (`rustls` / `tokio-rustls`) with the trust-on-first-use
    flow, driven from a UI prompt.
-3. First real protocol — VNC is the easiest (mature crates, simple framebuffer
-   model) and a good shakedown for the abstractions before Spice and iLO, which
-   are effectively from-scratch protocol work.
-4. Pointer capture for `PointerMode::Relative`, and grow the `Control` vocabulary
+2. VNC polish for real networks: richer encodings (ZRLE/Tight) and damage
+   updates instead of full-frame snapshots; nearest-neighbour image filtering.
+3. Pointer capture for `PointerMode::Relative`, and grow the `Control` vocabulary
    (`File`/`Toggle`/`Choose`) alongside Spice/iLO media mounting.
+4. Spice, then iLO — effectively from-scratch protocol work.
 
 [`Target`]: ../crates/server-remote-core/src/transport.rs
