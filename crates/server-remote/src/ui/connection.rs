@@ -13,11 +13,11 @@ use std::sync::Arc;
 use iced::{
     Alignment, Element, Length, Point, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
-    widget::{Column, Row, Space, button, center, image, mouse_area, text},
+    widget::{Column, Row, Space, button, center, image, mouse_area, responsive, text},
 };
 use server_remote_core::{
-    Capabilities, Connector, Control, DummyConnector, InputEvent, PointerMode, SessionCommand,
-    SessionEvent, SessionHandle, Target, TlsPolicy,
+    Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
+    SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
 };
 use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
@@ -88,6 +88,8 @@ pub struct State {
     status: Status,
     capabilities: Capabilities,
     frame: Option<image::Handle>,
+    /// Remote framebuffer size in pixels, for mapping pointer coordinates.
+    size: Option<(u32, u32)>,
     controls: Option<Controls>,
 }
 
@@ -97,8 +99,13 @@ pub enum Message {
     Ready(Controls),
     /// An event from the running session.
     Session(SessionEvent),
-    /// The pointer moved over the framebuffer.
+    /// The pointer moved over the framebuffer (in framebuffer coordinates).
     Pointer(Point),
+    /// A mouse button was pressed or released over the framebuffer.
+    Button {
+        button: PointerButton,
+        pressed: bool,
+    },
     /// Invoke a declarative action advertised in [`Capabilities`].
     Action(Cow<'static, str>),
     /// Disconnect and close the tab. Handled by the application, which owns the
@@ -127,6 +134,7 @@ impl State {
             status: Status::Connecting,
             capabilities: Capabilities::default(),
             frame: None,
+            size: None,
             controls: None,
         }
     }
@@ -144,6 +152,13 @@ impl State {
             Message::Ready(controls) => self.controls = Some(controls),
             Message::Session(event) => self.apply(event),
             Message::Pointer(point) => self.send_pointer(point),
+            Message::Button { button, pressed } => {
+                if let Some(controls) = &self.controls {
+                    let _ = controls
+                        .input
+                        .try_send(InputEvent::PointerButton { button, pressed });
+                }
+            }
             Message::Action(id) => {
                 if let Some(controls) = &self.controls {
                     let _ = controls.commands.try_send(SessionCommand::Action { id });
@@ -158,18 +173,20 @@ impl State {
 
     fn apply(&mut self, event: SessionEvent) {
         match event {
-            SessionEvent::Connected { capabilities, .. } => {
+            SessionEvent::Connected { size, capabilities } => {
+                self.size = Some(size);
                 self.capabilities = capabilities;
                 self.status = Status::Connected;
             }
             SessionEvent::Frame(frame) => {
+                self.size = Some((frame.width, frame.height));
                 self.frame = Some(image::Handle::from_rgba(
                     frame.width,
                     frame.height,
                     frame.pixels,
                 ));
             }
-            SessionEvent::Resized { .. } => {}
+            SessionEvent::Resized { width, height } => self.size = Some((width, height)),
             SessionEvent::Capabilities(capabilities) => self.capabilities = capabilities,
             SessionEvent::Disconnected { reason } => {
                 self.status = Status::Disconnected(reason);
@@ -183,7 +200,7 @@ impl State {
             return;
         };
         match self.capabilities.pointer {
-            // TODO: scale widget coordinates to framebuffer coordinates.
+            // `point` is already in framebuffer coordinates (mapped in the view).
             PointerMode::Absolute => {
                 let _ = controls.input.try_send(InputEvent::PointerMoved {
                     x: point.x,
@@ -212,13 +229,9 @@ impl State {
                     .into()
             }
             (Status::Connected, None) => text("Waiting for first frame…").into(),
-            (Status::Connected, Some(handle)) => mouse_area(
-                image(handle.clone())
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .on_move(Message::Pointer)
-            .into(),
+            (Status::Connected, Some(handle)) => {
+                framebuffer_view(handle.clone(), self.size.unwrap_or((1, 1)))
+            }
         };
 
         let mut view = Column::new().spacing(4);
@@ -274,6 +287,56 @@ impl State {
             worker,
         )
     }
+}
+
+/// The framebuffer as an aspect-preserving, scaled image with pointer and
+/// button handling. `responsive` gives us the on-screen area, so pointer
+/// coordinates can be mapped from the displayed rectangle back to framebuffer
+/// pixels regardless of window size.
+fn framebuffer_view(handle: image::Handle, size: (u32, u32)) -> Element<'static, Message> {
+    let fb_w = size.0.max(1) as f32;
+    let fb_h = size.1.max(1) as f32;
+
+    responsive(move |area| {
+        let scale = (area.width / fb_w).min(area.height / fb_h);
+        let disp_w = fb_w * scale;
+        let disp_h = fb_h * scale;
+        let off_x = (area.width - disp_w) / 2.0;
+        let off_y = (area.height - disp_h) / 2.0;
+
+        mouse_area(center(image(handle.clone()).width(disp_w).height(disp_h)))
+            .on_move(move |point| {
+                let x = ((point.x - off_x) / scale).clamp(0.0, fb_w - 1.0);
+                let y = ((point.y - off_y) / scale).clamp(0.0, fb_h - 1.0);
+                Message::Pointer(Point::new(x, y))
+            })
+            .on_press(Message::Button {
+                button: PointerButton::Left,
+                pressed: true,
+            })
+            .on_release(Message::Button {
+                button: PointerButton::Left,
+                pressed: false,
+            })
+            .on_right_press(Message::Button {
+                button: PointerButton::Right,
+                pressed: true,
+            })
+            .on_right_release(Message::Button {
+                button: PointerButton::Right,
+                pressed: false,
+            })
+            .on_middle_press(Message::Button {
+                button: PointerButton::Middle,
+                pressed: true,
+            })
+            .on_middle_release(Message::Button {
+                button: PointerButton::Middle,
+                pressed: false,
+            })
+            .into()
+    })
+    .into()
 }
 
 /// Everything the subscription worker needs, hashed to identify the session.
