@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["crates/server-remote","crates/server-remote-core", "crates/server-remote-ilo", "crates/server-remote-spice", "crates/server-remote-vnc"]
