@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use iced::{
-    Element, Length, Point, Subscription, Task,
+    Alignment, Element, Length, Point, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     widget::{Column, Row, Space, button, center, image, mouse_area, text},
 };
@@ -92,6 +92,8 @@ pub enum Message {
     Action(Cow<'static, str>),
     /// Tear the session down.
     Disconnect,
+    /// Close the tab. Handled by the application, which owns the tab list.
+    Close,
 }
 
 impl State {
@@ -139,6 +141,9 @@ impl State {
                 self.status = Status::Disconnected(None);
                 self.controls = None;
             }
+            // The application owns the tab list, so it intercepts `Close`; this
+            // arm only satisfies exhaustiveness.
+            Message::Close => {}
         }
         Task::none()
     }
@@ -186,7 +191,17 @@ impl State {
         let body: Element<'_, Message> = match (&self.status, &self.frame) {
             (Status::Connecting, _) => text("Connecting…").into(),
             (Status::Disconnected(reason), _) => {
-                text(reason.clone().unwrap_or_else(|| "Disconnected".to_owned())).into()
+                let reason = reason.clone().unwrap_or_else(|| "Disconnected".to_owned());
+                Column::new()
+                    .spacing(8)
+                    .align_x(Alignment::Center)
+                    .push(text(reason))
+                    .push(
+                        button(text("Close tab"))
+                            .style(button::subtle)
+                            .on_press(Message::Close),
+                    )
+                    .into()
             }
             (Status::Connected, None) => text("Waiting for first frame…").into(),
             (Status::Connected, Some(handle)) => mouse_area(

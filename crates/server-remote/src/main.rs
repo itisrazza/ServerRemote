@@ -80,6 +80,10 @@ impl Application {
                 ui::connect::Message::Connect(request) => self.open_connection(request),
             },
             Message::Connection(id, message) => {
+                if matches!(message, ui::connection::Message::Close) {
+                    self.close_connection(id);
+                    return Task::none();
+                }
                 let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) else {
                     return Task::none();
                 };
@@ -119,6 +123,13 @@ impl Application {
         ));
         self.tab = Tab::Connection(id);
         Task::none()
+    }
+
+    fn close_connection(&mut self, id: u64) {
+        self.connections.retain(|connection| connection.id() != id);
+        if self.tab == Tab::Connection(id) {
+            self.tab = Tab::Connect;
+        }
     }
 
     fn view<'state>(&'state self) -> Element<'state, Message> {
