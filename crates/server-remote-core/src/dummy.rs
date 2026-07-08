@@ -77,3 +77,43 @@ fn gradient_frame(frame_no: u32) -> Frame {
         pixels,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn streams_connected_then_frames() {
+        let mut handle = DummyConnector
+            .connect(&Target::new("localhost", 0), &TlsPolicy::default())
+            .await
+            .expect("dummy connect never fails");
+
+        match handle.events.recv().await {
+            Some(SessionEvent::Connected { size }) => assert_eq!(size, (WIDTH, HEIGHT)),
+            other => panic!("expected Connected, got {other:?}"),
+        }
+
+        match handle.events.recv().await {
+            Some(SessionEvent::Frame(frame)) => {
+                assert_eq!(frame.width, WIDTH);
+                assert_eq!(frame.height, HEIGHT);
+                assert_eq!(frame.pixels.len(), (WIDTH * HEIGHT * 4) as usize);
+            }
+            other => panic!("expected Frame, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn shuts_down_when_handle_dropped() {
+        let handle = DummyConnector
+            .connect(&Target::new("localhost", 0), &TlsPolicy::default())
+            .await
+            .unwrap();
+        let input = handle.input.clone();
+        drop(handle);
+
+        // The background task drains input; once it stops, the sender closes.
+        input.closed().await;
+    }
+}

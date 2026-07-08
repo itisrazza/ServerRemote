@@ -6,7 +6,7 @@
 //! than inside each protocol crate.
 
 /// A network endpoint: a host (name or IP) and a port.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Target {
     pub host: String,
     pub port: u16,

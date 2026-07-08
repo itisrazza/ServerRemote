@@ -6,11 +6,11 @@
 //! (trust-on-first-use), and only that certificate is then trusted.
 
 /// SHA-256 fingerprint of a peer certificate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CertFingerprint(pub [u8; 32]);
 
 /// How strictly a peer's TLS certificate is validated.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum TlsPolicy {
     /// Require a valid certificate chain. The default.
     #[default]
