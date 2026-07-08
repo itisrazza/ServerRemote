@@ -1,7 +1,12 @@
 [package]
 name = "server-remote"
-version = "0.1.0"
-edition = "2024"
+description = "A universal remote desktop / console client (VNC today; Spice and iLO planned)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 iced = { version = "0.14.0", features = ["advanced", "tokio", "image"] }

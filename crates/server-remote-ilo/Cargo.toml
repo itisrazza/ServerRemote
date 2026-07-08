@@ -1,6 +1,11 @@
 [package]
 name = "server-remote-ilo"
-version = "0.1.0"
-edition = "2024"
+description = "HPE iLO Remote Console connector for ServerRemote (not yet implemented)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]

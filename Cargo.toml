@@ -1,3 +1,17 @@
 [workspace]
 resolver = "3"
-members = ["crates/server-remote","crates/server-remote-core", "crates/server-remote-ilo", "crates/server-remote-spice", "crates/server-remote-vnc"]
+members = [
+    "crates/server-remote",
+    "crates/server-remote-core",
+    "crates/server-remote-vnc",
+    "crates/server-remote-spice",
+    "crates/server-remote-ilo",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["Raresh Nistor <raresh@nistor.email>"]
+repository = "https://github.com/itisrazza/ServerRemote"

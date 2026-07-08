@@ -1,14 +1,5 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! HPE iLO Remote Console connector — not yet implemented.
+//!
+//! Planned: an `IloConnector` implementing [`server_remote_core::Connector`].
+//! This is a key motivation for the project: the vendor client is Windows-only
+//! and the target hardware predates the HTML5 console.
