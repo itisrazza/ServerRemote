@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=CodePen
+Comment=Front-end playground web app
+Exec=browse https://codepen.io
+Icon=applications-development
+Terminal=false
+Categories=Network;Development;
+Keywords=code;editor;playground;webapp;

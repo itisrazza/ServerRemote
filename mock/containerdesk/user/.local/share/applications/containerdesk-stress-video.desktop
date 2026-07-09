@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Video stress (mpv)
+Comment=Looping full-motion test pattern for stressing the encoder
+Exec=stress-video
+Icon=video-x-generic
+Terminal=false
+Categories=AudioVideo;
+Keywords=stress;video;encoder;

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Shared helper for on-demand app shims. Source it, don't execute it.
+
+need_cmd() { command -v "$1" >/dev/null 2>&1; }
+show_err() { yad --error --title="Install failed" --text="$1" --timeout=8 2>/dev/null || true; }
+
+# ensure_installed TITLE PKG...
+# Installs PKGs behind a pulsating yad progress dialog, which is always taken
+# down before returning. Returns non-zero (and shows an error dialog) if
+# apt-get is missing or the install fails.
+ensure_installed() {
+  local title="$1"; shift
+
+  if ! need_cmd apt-get; then
+    show_err "apt-get not found."
+    return 127
+  fi
+  if ! need_cmd yad; then
+    echo "yad not found; install it with: sudo apt install yad" >&2
+    return 127
+  fi
+
+  yad --progress --title="$title" --text="Installing $title..." \
+    --pulsate --no-buttons &
+  local ypid=$!
+
+  local rc=0
+  export DEBIAN_FRONTEND=noninteractive
+  if ! sudo apt-get update; then
+    show_err "apt-get update failed."
+    rc=1
+  elif ! sudo apt-get install -y --no-install-recommends "$@"; then
+    show_err "apt-get install failed."
+    rc=1
+  fi
+
+  kill "$ypid" 2>/dev/null || true
+  wait "$ypid" 2>/dev/null || true
+  return "$rc"
+}

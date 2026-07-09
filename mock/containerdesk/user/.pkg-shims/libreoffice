@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source ~/.pkg-shims/.common
+
+launch() {
+  # LibreOffice's own launchers exist now, so drop our placeholder menu entry
+  # (same desktop ID) and let the real suite take over.
+  rm -f ~/.local/share/applications/libreoffice-startcenter.desktop
+  exec /usr/bin/libreoffice "$@"
+}
+
+test -f /usr/bin/libreoffice && launch "$@"
+ensure_installed LibreOffice libreoffice && launch "$@"

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=LibreOffice
+Comment=Install on first launch, then start LibreOffice
+Exec=libreoffice %U
+Icon=x-office-document
+Terminal=false
+Categories=Office;

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source ~/.pkg-shims/.common
+
+# Display/protocol stress: continuous full-window redraws with an FPS readout,
+# handy for eyeballing VNC throughput and latency. Xvfb has no GPU, so force
+# Mesa's software rasteriser (llvmpipe) via the DRI swrast driver.
+export LIBGL_ALWAYS_SOFTWARE=1
+
+test -f /usr/bin/glxgears && exec /usr/bin/glxgears "$@"
+ensure_installed "glxgears (mesa-utils)" mesa-utils libgl1-mesa-dri \
+  && exec /usr/bin/glxgears "$@"

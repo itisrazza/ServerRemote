@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source ~/.pkg-shims/.common
+
+# Video-playback stress: full-motion content to exercise the encoder and the
+# client's decode/render path. Uses an ffmpeg-generated test source so no clip
+# needs shipping in the image. Swap testsrc2 for mandelbrot to push harder.
+play() { exec mpv --loop --fullscreen "av://lavfi:testsrc2=size=1280x720:rate=30" "$@"; }
+
+need_cmd mpv && play "$@"
+ensure_installed mpv mpv && play "$@"

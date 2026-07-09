@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# browse [URL...] — open URLs in whatever browser is installed, pulling in a
+# default one on demand. Used by the web-app launchers so they work before any
+# browser has been installed.
+set -euo pipefail
+source ~/.pkg-shims/.common
+
+# Chromium needs --no-sandbox: the container has no AppArmor to confine the
+# sandbox, so it refuses to start otherwise.
+test -x /usr/bin/chromium && exec /usr/bin/chromium --no-sandbox "$@"
+test -x /usr/bin/firefox && exec /usr/bin/firefox "$@"
+
+# Nothing installed yet; fall back to Firefox, matching the firefox shim.
+ensure_installed Firefox firefox-esr \
+  && rm -f ~/.local/share/applications/firefox-esr.desktop \
+  && exec /usr/bin/firefox "$@"

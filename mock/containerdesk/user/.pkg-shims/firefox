@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source ~/.pkg-shims/.common
+
+launch() {
+  # Firefox's own launcher exists now, so drop our placeholder menu entry
+  # (same desktop ID) and let the real one take over.
+  rm -f ~/.local/share/applications/firefox-esr.desktop
+  exec /usr/bin/firefox "$@"
+}
+
+test -f /usr/bin/firefox && launch "$@"
+ensure_installed Firefox firefox-esr && launch "$@"

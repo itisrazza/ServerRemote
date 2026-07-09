@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Photopea
+Comment=Photo editor web app (heavy canvas rendering)
+Exec=browse https://www.photopea.com
+Icon=applications-graphics
+Terminal=false
+Categories=Network;Graphics;
+Keywords=photo;editor;image;webapp;

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Firefox
+Comment=Install on first launch, then start Firefox
+Exec=firefox %u
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;

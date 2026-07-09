@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Chromium
+Comment=Install on first launch, then start Chromium
+Exec=chromium %U
+Icon=chromium
+Terminal=false
+Categories=Network;WebBrowser;

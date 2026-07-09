@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Excalidraw
+Comment=Whiteboard web app (heavy canvas rendering)
+Exec=browse https://excalidraw.com
+Icon=applications-graphics
+Terminal=false
+Categories=Network;Graphics;
+Keywords=whiteboard;canvas;draw;webapp;

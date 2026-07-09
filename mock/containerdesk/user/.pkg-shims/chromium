@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source ~/.pkg-shims/.common
+
+launch() {
+  # Chromium's own launcher exists now, so drop our placeholder menu entry
+  # (same desktop ID) and let the real one take over.
+  rm -f ~/.local/share/applications/chromium.desktop
+  exec /usr/bin/chromium --no-sandbox "$@"
+}
+
+test -f /usr/bin/chromium && launch "$@"
+ensure_installed Chromium chromium && launch "$@"
