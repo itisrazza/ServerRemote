@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use iced::keyboard::key::Named;
 use iced::{
-    Alignment, Element, Length, Point, Subscription, Task,
+    Alignment, Element, Length, Point, Size, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
     widget::{Column, Row, Space, button, center, image, mouse_area, responsive, text},
@@ -67,6 +67,7 @@ impl std::fmt::Display for Protocol {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum Status {
     Connecting,
     Connected,
@@ -307,17 +308,12 @@ fn framebuffer_view(handle: image::Handle, size: (u32, u32)) -> Element<'static,
     let fb_h = size.1.max(1) as f32;
 
     responsive(move |area| {
-        let scale = (area.width / fb_w).min(area.height / fb_h);
-        let disp_w = fb_w * scale;
-        let disp_h = fb_h * scale;
-        let off_x = (area.width - disp_w) / 2.0;
-        let off_y = (area.height - disp_h) / 2.0;
+        let (disp_w, disp_h) = letterboxed_size(area, (fb_w, fb_h));
 
         mouse_area(center(image(handle.clone()).width(disp_w).height(disp_h)))
             .on_move(move |point| {
-                let x = ((point.x - off_x) / scale).clamp(0.0, fb_w - 1.0);
-                let y = ((point.y - off_y) / scale).clamp(0.0, fb_h - 1.0);
-                Message::Pointer(Point::new(x, y))
+                let fb_point = map_to_framebuffer(area, (fb_w, fb_h), point);
+                Message::Pointer(fb_point)
             })
             .on_press(Message::Button {
                 button: PointerButton::Left,
@@ -346,6 +342,33 @@ fn framebuffer_view(handle: image::Handle, size: (u32, u32)) -> Element<'static,
             .into()
     })
     .into()
+}
+
+/// The scale factor that fits the framebuffer inside `area` while preserving
+/// its aspect ratio.
+fn fit_scale(area: Size, fb: (f32, f32)) -> f32 {
+    (area.width / fb.0).min(area.height / fb.1)
+}
+
+/// The displayed size of the framebuffer image inside `area`, preserving
+/// aspect ratio and letterboxing to fit.
+fn letterboxed_size(area: Size, fb: (f32, f32)) -> (f32, f32) {
+    let scale = fit_scale(area, fb);
+    (fb.0 * scale, fb.1 * scale)
+}
+
+/// Maps a pointer position in `area`'s local coordinates to framebuffer
+/// pixel coordinates, accounting for the letterboxing `letterboxed_size`
+/// applies, and clamping to the framebuffer bounds.
+fn map_to_framebuffer(area: Size, fb: (f32, f32), point: Point) -> Point {
+    let scale = fit_scale(area, fb);
+    let (disp_w, disp_h) = (fb.0 * scale, fb.1 * scale);
+    let off_x = (area.width - disp_w) / 2.0;
+    let off_y = (area.height - disp_h) / 2.0;
+
+    let x = ((point.x - off_x) / scale).clamp(0.0, fb.0 - 1.0);
+    let y = ((point.y - off_y) / scale).clamp(0.0, fb.1 - 1.0);
+    Point::new(x, y)
 }
 
 /// Translate an iced key into an X11 keysym, which is what RFB/Spice expect.
@@ -485,6 +508,240 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use server_remote_core::Frame;
+
+    fn state() -> State {
+        State::new(
+            0,
+            Arc::from("test"),
+            Protocol::Dummy,
+            Target::new("localhost", 0),
+            TlsPolicy::default(),
+            String::new(),
+        )
+    }
+
+    fn wired_controls() -> (
+        Controls,
+        mpsc::Receiver<InputEvent>,
+        mpsc::Receiver<SessionCommand>,
+    ) {
+        let (input, input_rx) = mpsc::channel(4);
+        let (commands, command_rx) = mpsc::channel(4);
+        (Controls { input, commands }, input_rx, command_rx)
+    }
+
+    #[test]
+    fn connected_event_sets_size_capabilities_and_status() {
+        let mut state = state();
+        let capabilities = Capabilities {
+            pointer: PointerMode::Relative,
+            actions: Vec::new(),
+        };
+        state.apply(SessionEvent::Connected {
+            size: (800, 600),
+            capabilities,
+        });
+
+        assert_eq!(state.size, Some((800, 600)));
+        assert_eq!(state.capabilities.pointer, PointerMode::Relative);
+        assert_eq!(state.status, Status::Connected);
+    }
+
+    #[test]
+    fn frame_event_updates_size_and_stores_the_frame() {
+        let mut state = state();
+        state.apply(SessionEvent::Frame(Frame {
+            width: 4,
+            height: 2,
+            pixels: vec![0; 4 * 2 * 4],
+        }));
+
+        assert_eq!(state.size, Some((4, 2)));
+        assert!(state.frame.is_some());
+    }
+
+    #[test]
+    fn resized_event_only_updates_size() {
+        let mut state = state();
+        state.apply(SessionEvent::Resized {
+            width: 10,
+            height: 20,
+        });
+        assert_eq!(state.size, Some((10, 20)));
+    }
+
+    #[test]
+    fn disconnected_event_sets_reason_and_drops_controls() {
+        let mut state = state();
+        let (controls, _input_rx, _command_rx) = wired_controls();
+        state.controls = Some(controls);
+
+        state.apply(SessionEvent::Disconnected {
+            reason: Some("connection reset".to_owned()),
+        });
+
+        assert_eq!(
+            state.status,
+            Status::Disconnected(Some("connection reset".to_owned()))
+        );
+        assert!(state.controls.is_none());
+    }
+
+    #[test]
+    fn ready_message_stores_the_controls() {
+        let mut state = state();
+        let (controls, _input_rx, _command_rx) = wired_controls();
+
+        let _ = state.update(Message::Ready(controls));
+
+        assert!(state.controls.is_some());
+    }
+
+    #[test]
+    fn button_message_forwards_to_the_input_channel() {
+        let mut state = state();
+        let (controls, mut input_rx, _command_rx) = wired_controls();
+        state.controls = Some(controls);
+
+        let _ = state.update(Message::Button {
+            button: PointerButton::Right,
+            pressed: true,
+        });
+
+        match input_rx.try_recv() {
+            Ok(InputEvent::PointerButton { button, pressed }) => {
+                assert_eq!(button, PointerButton::Right);
+                assert!(pressed);
+            }
+            other => panic!("expected a pointer button event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn key_message_forwards_the_mapped_keysym() {
+        let mut state = state();
+        let (controls, mut input_rx, _command_rx) = wired_controls();
+        state.controls = Some(controls);
+
+        let _ = state.update(Message::Key {
+            key: keyboard::Key::Named(Named::Escape),
+            pressed: true,
+        });
+
+        match input_rx.try_recv() {
+            Ok(InputEvent::Key { keysym, pressed }) => {
+                assert_eq!(keysym, 0xFF1B);
+                assert!(pressed);
+            }
+            other => panic!("expected a key event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn key_message_with_no_mapping_sends_nothing() {
+        let mut state = state();
+        let (controls, mut input_rx, _command_rx) = wired_controls();
+        state.controls = Some(controls);
+
+        let _ = state.update(Message::Key {
+            key: keyboard::Key::Unidentified,
+            pressed: true,
+        });
+
+        assert!(input_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn action_message_forwards_the_action_id() {
+        let mut state = state();
+        let (controls, _input_rx, mut command_rx) = wired_controls();
+        state.controls = Some(controls);
+
+        let _ = state.update(Message::Action(Cow::Borrowed("ctrl-alt-del")));
+
+        match command_rx.try_recv() {
+            Ok(SessionCommand::Action { id }) => assert_eq!(id, "ctrl-alt-del"),
+            other => panic!("expected an action command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pointer_message_forwards_absolute_position() {
+        let mut state = state();
+        let (controls, mut input_rx, _command_rx) = wired_controls();
+        state.controls = Some(controls);
+        state.capabilities.pointer = PointerMode::Absolute;
+
+        let _ = state.update(Message::Pointer(Point::new(3.0, 4.0)));
+
+        match input_rx.try_recv() {
+            Ok(InputEvent::PointerMoved { x, y }) => assert_eq!((x, y), (3.0, 4.0)),
+            other => panic!("expected a pointer moved event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pointer_message_is_dropped_in_relative_mode() {
+        let mut state = state();
+        let (controls, mut input_rx, _command_rx) = wired_controls();
+        state.controls = Some(controls);
+        state.capabilities.pointer = PointerMode::Relative;
+
+        let _ = state.update(Message::Pointer(Point::new(3.0, 4.0)));
+
+        assert!(input_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn default_ports_match_each_protocol() {
+        assert_eq!(Protocol::Dummy.default_port(), 0);
+        assert_eq!(Protocol::Vnc.default_port(), 5900);
+        assert_eq!(Protocol::Spice.default_port(), 5900);
+        assert_eq!(Protocol::Ilo.default_port(), 443);
+    }
+
+    #[test]
+    fn letterboxed_size_preserves_aspect_ratio_when_area_is_wider() {
+        // 800x600 framebuffer in a 1600x300 area: height is the limiting
+        // dimension (scale 0.5), so width should letterbox, not fill.
+        let (w, h) = letterboxed_size(Size::new(1600.0, 300.0), (800.0, 600.0));
+        assert_eq!((w, h), (400.0, 300.0));
+    }
+
+    #[test]
+    fn letterboxed_size_preserves_aspect_ratio_when_area_is_taller() {
+        let (w, h) = letterboxed_size(Size::new(300.0, 1600.0), (800.0, 600.0));
+        assert_eq!((w, h), (300.0, 225.0));
+    }
+
+    #[test]
+    fn map_to_framebuffer_scales_and_letterboxes() {
+        // 800x600 fb displayed at 400x300 inside a 400x400 area: the image
+        // is vertically centred with a 50px letterbox band top and bottom.
+        let area = Size::new(400.0, 400.0);
+        let fb = (800.0, 600.0);
+
+        let top_left = map_to_framebuffer(area, fb, Point::new(0.0, 50.0));
+        assert_eq!(top_left, Point::new(0.0, 0.0));
+
+        let centre = map_to_framebuffer(area, fb, Point::new(200.0, 200.0));
+        assert_eq!(centre, Point::new(400.0, 300.0));
+    }
+
+    #[test]
+    fn map_to_framebuffer_clamps_points_outside_the_letterbox_band() {
+        let area = Size::new(400.0, 400.0);
+        let fb = (800.0, 600.0);
+
+        // Above the letterbox band (y < 50) clamps to the top row.
+        let above = map_to_framebuffer(area, fb, Point::new(0.0, 0.0));
+        assert_eq!(above.y, 0.0);
+
+        // Past the right/bottom edge clamps to the last pixel, not the size.
+        let corner = map_to_framebuffer(area, fb, Point::new(1000.0, 1000.0));
+        assert_eq!(corner, Point::new(fb.0 - 1.0, fb.1 - 1.0));
+    }
 
     #[test]
     fn characters_map_to_latin1_keysyms() {
