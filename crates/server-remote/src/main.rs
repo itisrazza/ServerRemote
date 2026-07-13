@@ -27,6 +27,96 @@ fn parse_target(hostname: &str, protocol: ui::connection::Protocol) -> Target {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_hostname_falls_back_to_localhost_and_default_port() {
+        let target = parse_target("", ui::connection::Protocol::Vnc);
+        assert_eq!(target, Target::new("localhost", 5900));
+    }
+
+    #[test]
+    fn host_without_port_uses_the_protocol_default() {
+        let target = parse_target("example.com", ui::connection::Protocol::Ilo);
+        assert_eq!(target, Target::new("example.com", 443));
+    }
+
+    #[test]
+    fn host_with_valid_port_overrides_the_default() {
+        let target = parse_target("example.com:2222", ui::connection::Protocol::Vnc);
+        assert_eq!(target, Target::new("example.com", 2222));
+    }
+
+    #[test]
+    fn host_with_unparsable_port_keeps_the_whole_string_as_host() {
+        let target = parse_target("example.com:not-a-port", ui::connection::Protocol::Vnc);
+        assert_eq!(target, Target::new("example.com:not-a-port", 5900));
+    }
+
+    #[test]
+    fn host_with_out_of_range_port_keeps_the_whole_string_as_host() {
+        let target = parse_target("example.com:99999", ui::connection::Protocol::Vnc);
+        assert_eq!(target, Target::new("example.com:99999", 5900));
+    }
+
+    fn request(hostname: &str) -> ui::connect::Request {
+        ui::connect::Request {
+            protocol: ui::connection::Protocol::Dummy,
+            hostname: hostname.to_owned(),
+            password: String::new(),
+        }
+    }
+
+    #[test]
+    fn open_connection_assigns_increasing_ids_and_switches_to_the_new_tab() {
+        let (mut app, _) = Application::boot();
+
+        let _ = app.open_connection(request("first"));
+        let _ = app.open_connection(request("second"));
+
+        assert_eq!(app.connections.len(), 2);
+        assert_eq!(app.connections[0].id(), 0);
+        assert_eq!(app.connections[1].id(), 1);
+        assert_eq!(app.tab, Tab::Connection(1));
+    }
+
+    #[test]
+    fn open_connection_names_an_empty_hostname_after_the_protocol_and_id() {
+        let (mut app, _) = Application::boot();
+
+        let _ = app.open_connection(request(""));
+
+        assert_eq!(app.connections[0].name().as_ref(), "dummy #0");
+    }
+
+    #[test]
+    fn close_connection_removes_it_and_returns_to_the_connect_tab() {
+        let (mut app, _) = Application::boot();
+        let _ = app.open_connection(request("only"));
+        assert_eq!(app.tab, Tab::Connection(0));
+
+        app.close_connection(0);
+
+        assert!(app.connections.is_empty());
+        assert_eq!(app.tab, Tab::Connect);
+    }
+
+    #[test]
+    fn close_connection_leaves_an_unrelated_active_tab_alone() {
+        let (mut app, _) = Application::boot();
+        let _ = app.open_connection(request("first"));
+        let _ = app.open_connection(request("second"));
+        app.tab = Tab::Manager;
+
+        app.close_connection(0);
+
+        assert_eq!(app.connections.len(), 1);
+        assert_eq!(app.tab, Tab::Manager);
+    }
+}
+
 fn main() -> iced::Result {
     iced::application::application(Application::boot, Application::update, Application::view)
         .title(Application::title)
@@ -51,7 +141,7 @@ struct Application {
     connect_tab: ui::connect::State,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Tab {
     Manager,
     Connect,
