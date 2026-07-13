@@ -241,6 +241,15 @@ async fn handle_event(
 }
 
 async fn apply_input(client: &VncClient, event: InputEvent, pointer: &mut Pointer) {
+    if let Some(x11) = update_pointer(pointer, event) {
+        let _ = client.input(x11).await;
+    }
+}
+
+/// Applies an [`InputEvent`] to the tracked pointer state, returning the RFB
+/// event to send (`None` for [`InputEvent::PointerMotion`], which VNC's
+/// absolute pointer model can't express).
+fn update_pointer(pointer: &mut Pointer, event: InputEvent) -> Option<X11Event> {
     let x11 = match event {
         // TODO: widget coordinates need scaling to framebuffer coordinates.
         InputEvent::PointerMoved { x, y } => {
@@ -262,13 +271,13 @@ async fn apply_input(client: &VncClient, event: InputEvent, pointer: &mut Pointe
             pointer_event(pointer)
         }
         // VNC is absolute; relative motion doesn't apply.
-        InputEvent::PointerMotion { .. } => return,
+        InputEvent::PointerMotion { .. } => return None,
         InputEvent::Key { keysym, pressed } => X11Event::KeyEvent(ClientKeyEvent {
             keycode: keysym,
             down: pressed,
         }),
     };
-    let _ = client.input(x11).await;
+    Some(x11)
 }
 
 fn pointer_event(pointer: &Pointer) -> X11Event {
@@ -323,6 +332,131 @@ mod tests {
             Err(ConnectError::Transport(_)) => {}
             Err(other) => panic!("expected a transport error, got {other:?}"),
             Ok(_) => panic!("expected the connection to be refused"),
+        }
+    }
+
+    #[test]
+    fn no_password_or_wrong_password_is_an_auth_error() {
+        assert!(matches!(
+            connect_error(VncError::NoPassword),
+            ConnectError::Auth(_)
+        ));
+        assert!(matches!(
+            connect_error(VncError::WrongPassword),
+            ConnectError::Auth(_)
+        ));
+    }
+
+    #[test]
+    fn io_error_is_a_transport_error() {
+        let io = std::io::Error::from(std::io::ErrorKind::ConnectionReset);
+        assert!(matches!(
+            connect_error(VncError::IoError(io)),
+            ConnectError::Transport(_)
+        ));
+    }
+
+    #[test]
+    fn other_vnc_errors_are_protocol_errors() {
+        assert!(matches!(
+            connect_error(VncError::NoEncoding),
+            ConnectError::Protocol(_)
+        ));
+    }
+
+    #[test]
+    fn capabilities_report_absolute_pointer_and_ctrl_alt_del() {
+        let caps = capabilities();
+        assert_eq!(caps.pointer, PointerMode::Absolute);
+        assert_eq!(caps.actions.len(), 1);
+        assert_eq!(caps.actions[0].id, CAD_ACTION);
+        assert!(matches!(caps.actions[0].control, Control::Button));
+    }
+
+    #[test]
+    fn pointer_moved_updates_position_and_keeps_current_buttons() {
+        let mut pointer = Pointer {
+            x: 0,
+            y: 0,
+            buttons: 0b010,
+        };
+        let event = update_pointer(&mut pointer, InputEvent::PointerMoved { x: 12.0, y: 34.0 });
+
+        assert_eq!(pointer.x, 12);
+        assert_eq!(pointer.y, 34);
+        assert_eq!(pointer.buttons, 0b010);
+        match event {
+            Some(X11Event::PointerEvent(mouse)) => {
+                assert_eq!(
+                    (mouse.position_x, mouse.position_y, mouse.bottons),
+                    (12, 34, 0b010)
+                );
+            }
+            other => panic!("expected a pointer event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn negative_pointer_position_clamps_to_zero() {
+        let mut pointer = Pointer::default();
+        update_pointer(&mut pointer, InputEvent::PointerMoved { x: -5.0, y: -1.0 });
+        assert_eq!((pointer.x, pointer.y), (0, 0));
+    }
+
+    #[test]
+    fn pointer_buttons_set_and_clear_the_right_bit() {
+        let mut pointer = Pointer::default();
+
+        update_pointer(
+            &mut pointer,
+            InputEvent::PointerButton {
+                button: PointerButton::Left,
+                pressed: true,
+            },
+        );
+        assert_eq!(pointer.buttons, 0b001);
+
+        update_pointer(
+            &mut pointer,
+            InputEvent::PointerButton {
+                button: PointerButton::Right,
+                pressed: true,
+            },
+        );
+        assert_eq!(pointer.buttons, 0b101);
+
+        update_pointer(
+            &mut pointer,
+            InputEvent::PointerButton {
+                button: PointerButton::Left,
+                pressed: false,
+            },
+        );
+        assert_eq!(pointer.buttons, 0b100);
+    }
+
+    #[test]
+    fn pointer_motion_is_not_representable_over_vnc() {
+        let mut pointer = Pointer::default();
+        let event = update_pointer(&mut pointer, InputEvent::PointerMotion { dx: 1.0, dy: 1.0 });
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn key_event_carries_the_keysym_as_the_keycode() {
+        let mut pointer = Pointer::default();
+        let event = update_pointer(
+            &mut pointer,
+            InputEvent::Key {
+                keysym: 0xFF0D,
+                pressed: true,
+            },
+        );
+        match event {
+            Some(X11Event::KeyEvent(key)) => {
+                assert_eq!((key.keycode, key.down), (0xFF0D, true));
+            }
+            other => panic!("expected a key event, got {other:?}"),
         }
     }
 }
