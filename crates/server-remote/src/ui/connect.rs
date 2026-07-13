@@ -108,3 +108,37 @@ impl State {
         .into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_state_defaults_to_dummy_with_empty_fields() {
+        let state = State::new();
+        assert_eq!(state.protocol, Protocol::Dummy);
+        assert_eq!(state.hostname, "");
+        assert_eq!(state.password, "");
+    }
+
+    #[test]
+    fn set_protocol_updates_the_selected_protocol() {
+        let mut state = State::new();
+        let _ = state.update(IMessage::SetProtocol(Protocol::Vnc));
+        assert_eq!(state.protocol, Protocol::Vnc);
+    }
+
+    #[test]
+    fn set_hostname_updates_the_hostname() {
+        let mut state = State::new();
+        let _ = state.update(IMessage::SetHostname("example.com".to_owned()));
+        assert_eq!(state.hostname, "example.com");
+    }
+
+    #[test]
+    fn set_password_updates_the_password() {
+        let mut state = State::new();
+        let _ = state.update(IMessage::SetPassword("hunter2".to_owned()));
+        assert_eq!(state.password, "hunter2");
+    }
+}
