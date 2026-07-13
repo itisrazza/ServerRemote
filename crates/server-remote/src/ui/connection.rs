@@ -21,6 +21,7 @@ use server_remote_core::{
     Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
     SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
 };
+use server_remote_spice::SpiceConnector;
 use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
@@ -457,6 +458,10 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
                 Protocol::Vnc => {
                     let password = (!password.is_empty()).then_some(password);
                     VncConnector::new(password).connect(&target, &tls).await
+                }
+                Protocol::Spice => {
+                    let password = (!password.is_empty()).then_some(password);
+                    SpiceConnector::new(password).connect(&target, &tls).await
                 }
                 other => {
                     let reason = format!("{other} is not implemented yet");

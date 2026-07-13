@@ -1,6 +1,6 @@
 [package]
 name = "server-remote-spice"
-description = "Spice connector for ServerRemote (not yet implemented)."
+description = "Spice connector for ServerRemote."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +9,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+server-remote-core = { path = "../server-remote-core" }
+spice-rs = { path = "../spice-rs" }
+tokio = { version = "1.52.3", features = ["rt", "sync", "macros"] }

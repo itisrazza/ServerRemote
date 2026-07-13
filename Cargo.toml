@@ -6,6 +6,7 @@ members = [
     "crates/server-remote-vnc",
     "crates/server-remote-spice",
     "crates/server-remote-ilo",
+    "crates/spice-rs",
 ]
 
 [workspace.package]

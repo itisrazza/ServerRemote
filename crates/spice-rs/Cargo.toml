@@ -1,0 +1,18 @@
+[package]
+name = "spice-rs"
+description = "A minimal, pure-Rust SPICE protocol client: connection, display, and input."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = "1"
+byteorder = "1.5.0"
+shakenfist-spice-protocol = "0.1.5"
+tokio = { version = "1.52.3", features = ["net", "rt", "sync", "macros"] }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["net", "rt", "sync", "macros", "io-util", "rt-multi-thread"] }

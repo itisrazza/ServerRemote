@@ -11,5 +11,6 @@ repository.workspace = true
 [dependencies]
 iced = { version = "0.14.0", features = ["advanced", "tokio", "image"] }
 server-remote-core = { path = "../server-remote-core" }
+server-remote-spice = { path = "../server-remote-spice" }
 server-remote-vnc = { path = "../server-remote-vnc" }
 tokio = { version = "1.52.3", features = ["sync"] }
