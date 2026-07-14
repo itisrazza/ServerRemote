@@ -141,26 +141,29 @@ fn translate_event(event: spice_rs::SpiceEvent) -> SessionEvent {
 
 /// Translates an [`InputEvent`] to `spice-rs`'s own input type.
 /// `PointerMotion` (relative) has no `spice-rs` equivalent yet — dropped,
-/// same as VNC's precedent for the symmetric case.
+/// same as VNC's precedent for the symmetric case. `PointerButton` for a
+/// button SPICE has no wire representation for (see [`translate_button`])
+/// is dropped the same way.
 fn translate_input(event: InputEvent) -> Option<spice_rs::SpiceInput> {
     match event {
         InputEvent::PointerMoved { x, y } => Some(spice_rs::SpiceInput::PointerMoved { x, y }),
-        InputEvent::PointerButton { button, pressed } => {
-            Some(spice_rs::SpiceInput::PointerButton {
-                button: translate_button(button),
-                pressed,
-            })
-        }
+        InputEvent::PointerButton { button, pressed } => translate_button(button)
+            .map(|button| spice_rs::SpiceInput::PointerButton { button, pressed }),
         InputEvent::Key { keysym, pressed } => Some(spice_rs::SpiceInput::Key { keysym, pressed }),
         InputEvent::PointerMotion { .. } => None,
     }
 }
 
-fn translate_button(button: PointerButton) -> spice_rs::MouseButton {
+/// SPICE's `SPICE_MOUSE_BUTTON_*` enum only defines left/middle/right (plus
+/// the wheel, which arrives as its own message, not a button) — there's no
+/// slot for the mouse's side buttons, so this connector doesn't support them
+/// yet rather than invent a mapping.
+fn translate_button(button: PointerButton) -> Option<spice_rs::MouseButton> {
     match button {
-        PointerButton::Left => spice_rs::MouseButton::Left,
-        PointerButton::Middle => spice_rs::MouseButton::Middle,
-        PointerButton::Right => spice_rs::MouseButton::Right,
+        PointerButton::Left => Some(spice_rs::MouseButton::Left),
+        PointerButton::Middle => Some(spice_rs::MouseButton::Middle),
+        PointerButton::Right => Some(spice_rs::MouseButton::Right),
+        PointerButton::Back | PointerButton::Forward => None,
     }
 }
 
@@ -306,6 +309,18 @@ mod tests {
     #[test]
     fn pointer_motion_has_no_spice_input_equivalent_and_is_dropped() {
         let translated = translate_input(InputEvent::PointerMotion { dx: 1.0, dy: 1.0 });
+        assert!(translated.is_none());
+    }
+
+    #[test]
+    fn back_and_forward_buttons_have_no_spice_wire_slot_and_are_dropped() {
+        assert!(translate_button(PointerButton::Back).is_none());
+        assert!(translate_button(PointerButton::Forward).is_none());
+
+        let translated = translate_input(InputEvent::PointerButton {
+            button: PointerButton::Back,
+            pressed: true,
+        });
         assert!(translated.is_none());
     }
 

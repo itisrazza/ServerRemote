@@ -140,12 +140,72 @@ fn map_to_framebuffer(bounds_size: Size, fb: (f32, f32), point: Point) -> Point 
     Point::new(x, y)
 }
 
+/// `Back`/`Forward` are passed through for connectors to decide on
+/// themselves (see [`PointerButton`]'s docs) — only truly vendor-specific
+/// codes (`Other`) have no sensible generic representation at all and are
+/// dropped here.
 fn translate_button(button: mouse::Button) -> Option<PointerButton> {
     match button {
         mouse::Button::Left => Some(PointerButton::Left),
         mouse::Button::Right => Some(PointerButton::Right),
         mouse::Button::Middle => Some(PointerButton::Middle),
-        mouse::Button::Back | mouse::Button::Forward | mouse::Button::Other(_) => None,
+        mouse::Button::Back => Some(PointerButton::Back),
+        mouse::Button::Forward => Some(PointerButton::Forward),
+        mouse::Button::Other(_) => None,
+    }
+}
+
+/// The pure decision logic behind [`Widget::update`]: given the widget's
+/// current focus state and a raw event, what (if any) message it produces,
+/// mutating `state.focused` on left-button press/release the same way
+/// `text_input` tracks its own focus. Kept separate from `Widget::update`
+/// so it's testable without constructing a live `iced::Renderer`.
+fn interpret_event(
+    state: &mut KvmDisplayState,
+    pointer_mode: PointerMode,
+    fb: (f32, f32),
+    bounds: Rectangle,
+    cursor: mouse::Cursor,
+    event: &Event,
+) -> Option<Message> {
+    match event {
+        Event::Mouse(mouse_event) if pointer_mode == PointerMode::Absolute => match mouse_event {
+            mouse::Event::ButtonPressed(button) => {
+                let inside = cursor.position_in(bounds).is_some();
+                if *button == mouse::Button::Left {
+                    state.focused = inside;
+                }
+                inside
+                    .then(|| translate_button(*button))
+                    .flatten()
+                    .map(|button| Message::Button {
+                        button,
+                        pressed: true,
+                    })
+            }
+            mouse::Event::ButtonReleased(button) => {
+                translate_button(*button).map(|button| Message::Button {
+                    button,
+                    pressed: false,
+                })
+            }
+            mouse::Event::CursorMoved { .. } => cursor
+                .position_in(bounds)
+                .map(|local| Message::Pointer(map_to_framebuffer(bounds.size(), fb, local))),
+            _ => None,
+        },
+        Event::Keyboard(keyboard_event) if state.focused => match keyboard_event {
+            keyboard::Event::KeyPressed { modified_key, .. } => Some(Message::Key {
+                key: modified_key.clone(),
+                pressed: true,
+            }),
+            keyboard::Event::KeyReleased { modified_key, .. } => Some(Message::Key {
+                key: modified_key.clone(),
+                pressed: false,
+            }),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -236,60 +296,13 @@ impl<Theme> Widget<Message, Theme, iced::Renderer> for KvmDisplay {
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        let fb = (self.frame.width as f32, self.frame.height as f32);
         let state = tree.state.downcast_mut::<KvmDisplayState>();
 
-        match event {
-            Event::Mouse(mouse_event) if self.pointer_mode == PointerMode::Absolute => {
-                match mouse_event {
-                    mouse::Event::ButtonPressed(button) => {
-                        let inside = cursor.position_in(bounds).is_some();
-                        if *button == mouse::Button::Left {
-                            state.focused = inside;
-                        }
-                        if let (true, Some(button)) = (inside, translate_button(*button)) {
-                            shell.publish(Message::Button {
-                                button,
-                                pressed: true,
-                            });
-                            shell.capture_event();
-                        }
-                    }
-                    mouse::Event::ButtonReleased(button) => {
-                        if let Some(button) = translate_button(*button) {
-                            shell.publish(Message::Button {
-                                button,
-                                pressed: false,
-                            });
-                            shell.capture_event();
-                        }
-                    }
-                    mouse::Event::CursorMoved { .. } => {
-                        if let Some(local) = cursor.position_in(bounds) {
-                            let fb = (self.frame.width as f32, self.frame.height as f32);
-                            let point = map_to_framebuffer(bounds.size(), fb, local);
-                            shell.publish(Message::Pointer(point));
-                            shell.capture_event();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Event::Keyboard(keyboard_event) if state.focused => {
-                let translated = match keyboard_event {
-                    keyboard::Event::KeyPressed { modified_key, .. } => {
-                        Some((modified_key.clone(), true))
-                    }
-                    keyboard::Event::KeyReleased { modified_key, .. } => {
-                        Some((modified_key.clone(), false))
-                    }
-                    _ => None,
-                };
-                if let Some((key, pressed)) = translated {
-                    shell.publish(Message::Key { key, pressed });
-                    shell.capture_event();
-                }
-            }
-            _ => {}
+        if let Some(message) = interpret_event(state, self.pointer_mode, fb, bounds, cursor, event)
+        {
+            shell.publish(message);
+            shell.capture_event();
         }
     }
 
@@ -534,6 +547,7 @@ impl primitive::Pipeline for KvmPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::keyboard::key::Named;
 
     #[test]
     fn letterboxed_size_preserves_aspect_ratio_when_area_is_wider() {
@@ -585,9 +599,233 @@ mod tests {
             translate_button(mouse::Button::Middle),
             Some(PointerButton::Middle)
         );
-        assert_eq!(translate_button(mouse::Button::Back), None);
-        assert_eq!(translate_button(mouse::Button::Forward), None);
+        assert_eq!(
+            translate_button(mouse::Button::Back),
+            Some(PointerButton::Back)
+        );
+        assert_eq!(
+            translate_button(mouse::Button::Forward),
+            Some(PointerButton::Forward)
+        );
         assert_eq!(translate_button(mouse::Button::Other(6)), None);
+    }
+
+    fn key_event(pressed: bool, key: keyboard::Key) -> Event {
+        let physical_key =
+            keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
+        let modifiers = keyboard::Modifiers::default();
+        if pressed {
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: key.clone(),
+                modified_key: key,
+                physical_key,
+                location: keyboard::Location::Standard,
+                modifiers,
+                text: None,
+                repeat: false,
+            })
+        } else {
+            Event::Keyboard(keyboard::Event::KeyReleased {
+                key: key.clone(),
+                modified_key: key,
+                physical_key,
+                location: keyboard::Location::Standard,
+                modifiers,
+            })
+        }
+    }
+
+    const BOUNDS: Rectangle = Rectangle {
+        x: 100.0,
+        y: 50.0,
+        width: 400.0,
+        height: 300.0,
+    };
+    const FB: (f32, f32) = (800.0, 600.0);
+
+    #[test]
+    fn left_click_inside_bounds_focuses_and_publishes_pressed_button() {
+        let mut state = KvmDisplayState::default();
+        let cursor = mouse::Cursor::Available(Point::new(200.0, 150.0)); // inside BOUNDS
+        let event = Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left));
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+
+        assert!(state.focused);
+        match message {
+            Some(Message::Button { button, pressed }) => {
+                assert_eq!(button, PointerButton::Left);
+                assert!(pressed);
+            }
+            other => panic!("expected a pressed left-button message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn left_click_outside_bounds_unfocuses_and_publishes_nothing() {
+        let mut state = KvmDisplayState { focused: true };
+        let cursor = mouse::Cursor::Available(Point::new(0.0, 0.0)); // outside BOUNDS
+        let event = Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left));
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+
+        assert!(!state.focused);
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn button_released_publishes_regardless_of_focus() {
+        let mut state = KvmDisplayState::default();
+        let cursor = mouse::Cursor::Available(Point::new(0.0, 0.0)); // outside BOUNDS
+        let event = Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Right));
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+
+        match message {
+            Some(Message::Button { button, pressed }) => {
+                assert_eq!(button, PointerButton::Right);
+                assert!(!pressed);
+            }
+            other => panic!("expected a released right-button message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cursor_moved_inside_bounds_publishes_the_mapped_point() {
+        let mut state = KvmDisplayState::default();
+        // BOUNDS is 400x300 at (100,50) for an 800x600 framebuffer: scale 0.5.
+        let cursor = mouse::Cursor::Available(Point::new(300.0, 200.0));
+        let event = Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(300.0, 200.0),
+        });
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+
+        match message {
+            Some(Message::Pointer(point)) => assert_eq!(point, Point::new(400.0, 300.0)),
+            other => panic!("expected a pointer message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cursor_moved_outside_bounds_publishes_nothing() {
+        let mut state = KvmDisplayState::default();
+        let cursor = mouse::Cursor::Available(Point::new(0.0, 0.0));
+        let event = Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(0.0, 0.0),
+        });
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn mouse_events_are_ignored_in_relative_pointer_mode() {
+        let mut state = KvmDisplayState::default();
+        let cursor = mouse::Cursor::Available(Point::new(200.0, 150.0));
+        let event = Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left));
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Relative,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+
+        assert!(!state.focused);
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn key_press_while_unfocused_publishes_nothing() {
+        let mut state = KvmDisplayState::default();
+        let cursor = mouse::Cursor::Unavailable;
+        let event = key_event(true, keyboard::Key::Named(Named::Escape));
+
+        let message = interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &event,
+        );
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn key_press_and_release_while_focused_publish_key_messages() {
+        let mut state = KvmDisplayState { focused: true };
+        let cursor = mouse::Cursor::Unavailable;
+
+        let pressed = key_event(true, keyboard::Key::Named(Named::Escape));
+        match interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &pressed,
+        ) {
+            Some(Message::Key { key, pressed }) => {
+                assert_eq!(key, keyboard::Key::Named(Named::Escape));
+                assert!(pressed);
+            }
+            other => panic!("expected a key-pressed message, got {other:?}"),
+        }
+
+        let released = key_event(false, keyboard::Key::Named(Named::Escape));
+        match interpret_event(
+            &mut state,
+            PointerMode::Absolute,
+            FB,
+            BOUNDS,
+            cursor,
+            &released,
+        ) {
+            Some(Message::Key { key, pressed }) => {
+                assert_eq!(key, keyboard::Key::Named(Named::Escape));
+                assert!(!pressed);
+            }
+            other => panic!("expected a key-released message, got {other:?}"),
+        }
     }
 
     #[test]

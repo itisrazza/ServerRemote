@@ -165,11 +165,14 @@ impl State {
         match message {
             Message::Ready(controls) => self.controls = Some(controls),
             Message::Session(event) => {
-                // Grabs focus the moment the session connects, so typing
-                // works immediately without an initial click — matching the
-                // old window-level keyboard subscription's behaviour, which
-                // forwarded keys whenever this tab was merely selected.
-                let should_focus = matches!(event, SessionEvent::Connected { .. });
+                // Grabs focus the moment the `kvm_display` widget first
+                // appears (i.e. the first frame arrives — before that, `view`
+                // still shows "Waiting for first frame…" and there's nothing
+                // in the tree to focus), so typing works immediately without
+                // an initial click. Matches the old window-level keyboard
+                // subscription's behaviour, which forwarded keys whenever
+                // this tab was merely selected.
+                let should_focus = matches!(event, SessionEvent::Frame(_)) && self.frame.is_none();
                 self.apply(event);
                 if should_focus {
                     return operation::focus(self.display_id.clone());

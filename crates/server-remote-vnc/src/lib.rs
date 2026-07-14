@@ -262,6 +262,11 @@ fn update_pointer(pointer: &mut Pointer, event: InputEvent) -> Option<X11Event> 
                 PointerButton::Left => 0b001,
                 PointerButton::Middle => 0b010,
                 PointerButton::Right => 0b100,
+                // RFB's core pointer-event button mask has no spec-guaranteed
+                // bit for the side buttons (some servers repurpose bits 5-7
+                // by convention, but there's nothing to reliably target), so
+                // this connector doesn't support them yet rather than guess.
+                PointerButton::Back | PointerButton::Forward => return None,
             };
             if pressed {
                 pointer.buttons |= mask;
@@ -433,6 +438,21 @@ mod tests {
             },
         );
         assert_eq!(pointer.buttons, 0b100);
+    }
+
+    #[test]
+    fn back_and_forward_buttons_are_not_representable_over_vnc() {
+        let mut pointer = Pointer::default();
+        let event = update_pointer(
+            &mut pointer,
+            InputEvent::PointerButton {
+                button: PointerButton::Back,
+                pressed: true,
+            },
+        );
+        assert!(event.is_none());
+        // No bit was set for the unsupported button, either.
+        assert_eq!(pointer.buttons, 0);
     }
 
     #[test]

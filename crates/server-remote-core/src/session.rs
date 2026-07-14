@@ -15,11 +15,18 @@ pub struct Frame {
 }
 
 /// A pointer button reported by the local UI.
+///
+/// `Back`/`Forward` (the mouse's side buttons) have no standardized wire
+/// representation in RFB or SPICE — whether/how to support them is left to
+/// each [`Connector`](crate::Connector), rather than the UI silently
+/// dropping them before a connector ever sees them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerButton {
     Left,
     Middle,
     Right,
+    Back,
+    Forward,
 }
 
 /// Input travelling from the local UI toward the remote session.
