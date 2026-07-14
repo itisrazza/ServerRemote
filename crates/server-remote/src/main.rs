@@ -291,20 +291,55 @@ impl Application {
             )
         };
 
+        let icon_tab_button =
+            |tab: Tab, icon: iced::widget::svg::Svg<'static, iced::Theme>, long: &str| {
+                let active = self.tab == tab;
+                tooltip(
+                    button(ui::themed_icon(icon, move |palette| {
+                        if active {
+                            palette.primary.base.text
+                        } else {
+                            palette.background.weakest.text
+                        }
+                    }))
+                    .style(if active {
+                        button::primary
+                    } else {
+                        button::subtle
+                    })
+                    .on_press(Message::SelectTab(tab)),
+                    tooltip_box(text(long.to_owned())),
+                    tooltip::Position::Bottom,
+                )
+            };
+
         let connection_tabs = Row::from_iter(self.connections.iter().map(|connection| {
             let name = connection.name().as_ref();
             tab_button(Tab::Connection(connection.id()), name, name).into()
-        }));
+        }))
+        .spacing(4);
 
         Row::new()
-            .push(tab_button(Tab::Manager, "M", "Connection manager"))
-            .push(tab_button(Tab::Connect, "+", "Connect to..."))
+            .push(icon_tab_button(
+                Tab::Manager,
+                bootstrap_icons::iced::bi!(hdd - network),
+                "Connection manager",
+            ))
+            .push(icon_tab_button(
+                Tab::Connect,
+                bootstrap_icons::iced::bi!(plus - lg),
+                "Connect to...",
+            ))
             .push(
                 Scrollable::new(connection_tabs)
                     .horizontal()
                     .width(Length::Fill),
             )
-            .push(tab_button(Tab::Settings, "S", "Settings"))
+            .push(icon_tab_button(
+                Tab::Settings,
+                bootstrap_icons::iced::bi!(gear - wide - connected),
+                "Settings",
+            ))
             .spacing(4)
             .into()
     }

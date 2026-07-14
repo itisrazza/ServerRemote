@@ -15,7 +15,7 @@ use iced::{
     Alignment, Element, Length, Point, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
-    widget::{Column, Id, Row, Space, button, center, operation, pick_list, text},
+    widget::{Column, Id, Row, Space, button, center, operation, pick_list, text, tooltip},
 };
 use server_remote_core::{
     Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
@@ -24,6 +24,8 @@ use server_remote_core::{
 use server_remote_spice::SpiceConnector;
 use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
+
+use crate::tooltip_box::tooltip_box;
 
 use super::kvm_display::{DisplayFrame, kvm_display};
 use super::virtual_keyboard;
@@ -401,13 +403,27 @@ impl State {
             }
         }
 
-        let keyboard_toggle = button(text("Keyboard"))
+        let show_virtual_keyboard = self.show_virtual_keyboard;
+        let keyboard_toggle = tooltip(
+            button(super::themed_icon(
+                bootstrap_icons::iced::bi!(keyboard),
+                move |palette| {
+                    if show_virtual_keyboard {
+                        palette.primary.base.text
+                    } else {
+                        palette.background.weakest.text
+                    }
+                },
+            ))
             .style(if self.show_virtual_keyboard {
                 button::primary
             } else {
                 button::subtle
             })
-            .on_press(Message::ToggleVirtualKeyboard);
+            .on_press(Message::ToggleVirtualKeyboard),
+            tooltip_box(text("Keyboard")),
+            tooltip::Position::Bottom,
+        );
 
         let keyboard_size_picker: Element<'_, Message> = if self.show_virtual_keyboard {
             pick_list(
@@ -420,13 +436,27 @@ impl State {
             Space::new().into()
         };
 
-        let trackpad_toggle = button(text("Trackpad"))
+        let show_virtual_trackpad = self.show_virtual_trackpad;
+        let trackpad_toggle = tooltip(
+            button(super::themed_icon(
+                bootstrap_icons::iced::bi!(mouse2),
+                move |palette| {
+                    if show_virtual_trackpad {
+                        palette.primary.base.text
+                    } else {
+                        palette.background.weakest.text
+                    }
+                },
+            ))
             .style(if self.show_virtual_trackpad {
                 button::primary
             } else {
                 button::subtle
             })
-            .on_press(Message::ToggleVirtualTrackpad);
+            .on_press(Message::ToggleVirtualTrackpad),
+            tooltip_box(text("Trackpad")),
+            tooltip::Position::Bottom,
+        );
 
         Row::new()
             .push(actions)
@@ -435,9 +465,18 @@ impl State {
             .push(trackpad_toggle)
             .push(Space::new().width(Length::Fill))
             .push(
-                button(text("Disconnect"))
-                    .style(button::danger)
-                    .on_press(Message::Close),
+                button(
+                    Row::new()
+                        .spacing(4)
+                        .align_y(Alignment::Center)
+                        .push(super::themed_icon(
+                            bootstrap_icons::iced::bi!(x - circle),
+                            |palette| palette.danger.base.text,
+                        ))
+                        .push(text("Disconnect")),
+                )
+                .style(button::danger)
+                .on_press(Message::Close),
             )
             .spacing(4)
             .into()
