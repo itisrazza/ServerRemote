@@ -3447,6 +3447,7 @@ name = "server-remote"
 version = "0.1.0"
 dependencies = [
  "iced",
+ "iced_wgpu",
  "server-remote-core",
  "server-remote-spice",
  "server-remote-vnc",
