@@ -33,7 +33,8 @@ use super::virtual_trackpad;
 
 /// The protocol a connection speaks. Only [`Protocol::Dummy`] is implemented so
 /// far; the others report "not implemented yet" when connected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Dummy,
     Vnc,

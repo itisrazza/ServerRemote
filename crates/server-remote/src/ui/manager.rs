@@ -1,1 +1,83 @@
+//! Lists saved connection profiles and offers to connect to or delete them.
+//!
+//! Has no state of its own beyond what the application already persists in
+//! [`crate::persistence::sessions::Sessions`] — it's a straight projection of
+//! that list, indexed by position for deletion.
 
+use iced::{
+    Alignment, Element, Length,
+    widget::{Column, Row, Scrollable, button, text},
+};
+
+use crate::persistence::sessions::SavedSession;
+
+use super::connect::Request;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    /// Bubbles up to the application to open a connection tab.
+    Connect(Request),
+    /// Bubbles up to the application to remove a saved session by its index.
+    Delete(usize),
+}
+
+pub fn view(sessions: &[SavedSession]) -> Element<'_, Message> {
+    if sessions.is_empty() {
+        return text("No saved sessions yet — save one from the Connect tab.").into();
+    }
+
+    let rows = sessions.iter().enumerate().map(|(index, session)| {
+        Row::new()
+            .align_y(Alignment::Center)
+            .spacing(8)
+            .push(text(session.name.clone()).width(Length::Fill))
+            .push(text(session.protocol.to_string()))
+            .push(text(session.hostname.clone()))
+            .push(
+                button(text("Connect"))
+                    .style(button::primary)
+                    .on_press(Message::Connect(Request {
+                        protocol: session.protocol,
+                        name: session.name.clone(),
+                        hostname: session.hostname.clone(),
+                        password: session.password.clone(),
+                    })),
+            )
+            .push(
+                button(text("Delete"))
+                    .style(button::danger)
+                    .on_press(Message::Delete(index)),
+            )
+            .into()
+    });
+
+    Scrollable::new(Column::with_children(rows).spacing(4))
+        .width(Length::Fill)
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::connection::Protocol;
+
+    fn session(name: &str) -> SavedSession {
+        SavedSession {
+            name: name.to_owned(),
+            protocol: Protocol::Vnc,
+            hostname: "example.com".to_owned(),
+            password: "hunter2".to_owned(),
+        }
+    }
+
+    #[test]
+    fn view_renders_without_panicking_when_empty() {
+        let _ = view(&[]);
+    }
+
+    #[test]
+    fn view_renders_without_panicking_with_sessions() {
+        let sessions = vec![session("home"), session("work")];
+        let _ = view(&sessions);
+    }
+}

@@ -9,6 +9,7 @@ use server_remote_core::{Target, TlsPolicy};
 
 use crate::tooltip_box::tooltip_box;
 
+mod persistence;
 mod tooltip_box;
 mod ui;
 
@@ -24,6 +25,28 @@ fn parse_target(hostname: &str, protocol: ui::connection::Protocol) -> Target {
             Err(_) => Target::new(hostname, default_port),
         },
         None => Target::new(hostname, default_port),
+    }
+}
+
+/// Builds a [`persistence::sessions::SavedSession`] from a connect-tab
+/// request, falling back to the hostname and then the protocol label when the
+/// user left the name field blank.
+fn saved_session_from_request(
+    request: ui::connect::Request,
+) -> persistence::sessions::SavedSession {
+    let name = if !request.name.is_empty() {
+        request.name
+    } else if !request.hostname.is_empty() {
+        request.hostname.clone()
+    } else {
+        request.protocol.to_string()
+    };
+
+    persistence::sessions::SavedSession {
+        name,
+        protocol: request.protocol,
+        hostname: request.hostname,
+        password: request.password,
     }
 }
 
@@ -64,6 +87,7 @@ mod tests {
     fn request(hostname: &str) -> ui::connect::Request {
         ui::connect::Request {
             protocol: ui::connection::Protocol::Dummy,
+            name: String::new(),
             hostname: hostname.to_owned(),
             password: String::new(),
         }
@@ -115,6 +139,29 @@ mod tests {
         assert_eq!(app.connections.len(), 1);
         assert_eq!(app.tab, Tab::Manager);
     }
+
+    #[test]
+    fn saved_session_uses_the_provided_name_when_set() {
+        let mut req = request("example.com");
+        req.name = "Home NAS".to_owned();
+
+        let saved = saved_session_from_request(req);
+
+        assert_eq!(saved.name, "Home NAS");
+        assert_eq!(saved.hostname, "example.com");
+    }
+
+    #[test]
+    fn saved_session_falls_back_to_hostname_when_name_is_blank() {
+        let saved = saved_session_from_request(request("example.com"));
+        assert_eq!(saved.name, "example.com");
+    }
+
+    #[test]
+    fn saved_session_falls_back_to_the_protocol_label_when_name_and_hostname_are_blank() {
+        let saved = saved_session_from_request(request(""));
+        assert_eq!(saved.name, "dummy");
+    }
 }
 
 fn main() -> iced::Result {
@@ -139,6 +186,8 @@ struct Application {
     tab: Tab,
 
     connect_tab: ui::connect::State,
+
+    sessions: persistence::sessions::Sessions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +203,7 @@ enum Message {
     SelectTab(Tab),
 
     ConnectTab(ui::connect::Message),
+    Manager(ui::manager::Message),
     Connection(u64, ui::connection::Message),
 
     RequestClose(iced::window::Id),
@@ -167,6 +217,7 @@ impl Application {
                 next_id: 0,
                 tab: Tab::Connect,
                 connect_tab: ui::connect::State::new(),
+                sessions: persistence::sessions::Sessions::load(),
             },
             Task::none(),
         )
@@ -183,6 +234,20 @@ impl Application {
                     self.connect_tab.update(message).map(Message::ConnectTab)
                 }
                 ui::connect::Message::Connect(request) => self.open_connection(request),
+                ui::connect::Message::Save(request) => {
+                    self.save_session(request);
+                    Task::none()
+                }
+            },
+            Message::Manager(message) => match message {
+                ui::manager::Message::Connect(request) => self.open_connection(request),
+                ui::manager::Message::Delete(index) => {
+                    if index < self.sessions.saved.len() {
+                        self.sessions.saved.remove(index);
+                        self.sessions.save();
+                    }
+                    Task::none()
+                }
             },
             Message::Connection(id, message) => {
                 if matches!(message, ui::connection::Message::Close) {
@@ -201,6 +266,16 @@ impl Application {
                 window::close(id)
             }
         }
+    }
+
+    /// Persists the connect tab's current fields as a saved session and
+    /// switches to the Manager tab so the result is immediately visible.
+    fn save_session(&mut self, request: ui::connect::Request) {
+        self.sessions
+            .saved
+            .push(saved_session_from_request(request));
+        self.sessions.save();
+        self.tab = Tab::Manager;
     }
 
     fn open_connection(&mut self, request: ui::connect::Request) -> Task<Message> {
@@ -237,7 +312,7 @@ impl Application {
         Column::new()
             .push(self.header())
             .push(match &self.tab {
-                Tab::Manager => Into::<Element<'state, Message>>::into(text("Manager")),
+                Tab::Manager => ui::manager::view(&self.sessions.saved).map(Message::Manager),
                 Tab::Connect => self.connect_tab.view().map(Message::ConnectTab),
                 Tab::Connection(id) => match self.connections.iter().find(|c| c.id() == *id) {
                     Some(connection) => {
