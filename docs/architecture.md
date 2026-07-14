@@ -41,9 +41,13 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`.
 | `server-remote-vnc` | VNC / RFB — implemented, on top of the `vnc-rs` crate. |
 | `server-remote-spice` | Spice — not started. |
 | `server-remote-ilo` | HPE iLO Remote Console — not started. |
+| `bootstrap-icons` | [Bootstrap Icons](https://github.com/twbs/icons), vendored as a git submodule (`crates/bootstrap-icons/vendor/bootstrap-icons`) and embedded at build time. `Icons` enum + `bi!` macro give the raw SVG bytes; the `iced` feature adds `iced::bi!`, which builds an `iced::widget::svg::Svg`. |
+| `bootstrap-icons-macros`, `bootstrap-icons-codegen` | Support the `bi!` macros — proc-macro crate and shared kebab-case-to-PascalCase naming logic respectively. Not meant to be depended on directly. |
 
 Workspace: edition 2024, resolver 3, iced 0.14 (`advanced` feature) on the front
-end.
+end. Clone with `--recurse-submodules` (or run `git submodule update --init
+--recursive` after the fact) — `bootstrap-icons`' build script panics if the
+submodule isn't checked out.
 
 ## Core abstractions
 

@@ -1,0 +1,23 @@
+[package]
+name = "bootstrap-icons"
+description = "Bootstrap Icons (twbs/icons), vendored as a submodule and embedded at build time, with optional iced integration."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+iced = ["dep:iced"]
+
+[dependencies]
+bootstrap-icons-macros = { path = "../bootstrap-icons-macros" }
+iced = { version = "0.14.0", optional = true, default-features = false, features = [
+    "svg",
+    "thread-pool",
+] }
+
+[build-dependencies]
+bootstrap-icons-codegen = { path = "../bootstrap-icons-codegen" }
