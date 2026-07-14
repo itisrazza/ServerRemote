@@ -15,7 +15,7 @@ use iced::{
     Alignment, Element, Length, Point, Subscription, Task,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
-    widget::{Column, Id, Row, Space, button, center, operation, text},
+    widget::{Column, Id, Row, Space, button, center, operation, pick_list, text},
 };
 use server_remote_core::{
     Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
@@ -26,6 +26,8 @@ use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
 use super::kvm_display::{DisplayFrame, kvm_display};
+use super::virtual_keyboard;
+use super::virtual_trackpad;
 
 /// The protocol a connection speaks. Only [`Protocol::Dummy`] is implemented so
 /// far; the others report "not implemented yet" when connected.
@@ -70,6 +72,37 @@ impl std::fmt::Display for Protocol {
     }
 }
 
+/// The layout of the virtual on-screen keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum KeyboardSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl KeyboardSize {
+    pub const ALL: [KeyboardSize; 3] = [
+        KeyboardSize::Small,
+        KeyboardSize::Medium,
+        KeyboardSize::Large,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            KeyboardSize::Small => "small",
+            KeyboardSize::Medium => "medium",
+            KeyboardSize::Large => "large",
+        }
+    }
+}
+
+impl std::fmt::Display for KeyboardSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 #[derive(Debug, PartialEq)]
 enum Status {
     Connecting,
@@ -101,6 +134,13 @@ pub struct State {
     /// Identifies the [`kvm_display`] widget so it can be focused
     /// programmatically (see [`SessionEvent::Connected`] handling below).
     display_id: Id,
+    /// Whether the virtual on-screen keyboard panel is shown, and its layout.
+    show_virtual_keyboard: bool,
+    keyboard_size: KeyboardSize,
+    virtual_keyboard: virtual_keyboard::State,
+    /// Whether the virtual trackpad panel is shown.
+    show_virtual_trackpad: bool,
+    virtual_trackpad: virtual_trackpad::State,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +165,16 @@ pub enum Message {
     /// arrives as a `Session(Disconnected { .. })` event instead, so its reason
     /// stays on screen.
     Close,
+    /// Toggle the virtual on-screen keyboard panel.
+    ToggleVirtualKeyboard,
+    /// Switch the virtual keyboard's layout size.
+    SetKeyboardSize(KeyboardSize),
+    /// Toggle the virtual trackpad panel (independent of the keyboard).
+    ToggleVirtualTrackpad,
+    /// A message produced by the virtual keyboard widget.
+    VirtualKeyboard(virtual_keyboard::Message),
+    /// A message produced by the virtual trackpad widget.
+    VirtualTrackpad(virtual_trackpad::Message),
 }
 
 impl State {
@@ -150,6 +200,11 @@ impl State {
             next_generation: 0,
             size: None,
             controls: None,
+            show_virtual_keyboard: false,
+            keyboard_size: KeyboardSize::default(),
+            virtual_keyboard: virtual_keyboard::State::default(),
+            show_virtual_trackpad: false,
+            virtual_trackpad: virtual_trackpad::State::default(),
         }
     }
 
@@ -199,6 +254,43 @@ impl State {
             // The application owns the tab list, so it intercepts `Close`; this
             // arm only satisfies exhaustiveness.
             Message::Close => {}
+            Message::ToggleVirtualKeyboard => {
+                self.show_virtual_keyboard = !self.show_virtual_keyboard;
+            }
+            Message::SetKeyboardSize(size) => self.keyboard_size = size,
+            Message::ToggleVirtualTrackpad => {
+                self.show_virtual_trackpad = !self.show_virtual_trackpad;
+            }
+            Message::VirtualKeyboard(message) => {
+                for (keysym, pressed) in
+                    virtual_keyboard::update(&mut self.virtual_keyboard, message)
+                {
+                    if let Some(controls) = &self.controls {
+                        let _ = controls.input.try_send(InputEvent::Key { keysym, pressed });
+                    }
+                }
+            }
+            Message::VirtualTrackpad(message) => {
+                if let Some((width, height)) = self.size {
+                    let effects = virtual_trackpad::update(
+                        &mut self.virtual_trackpad,
+                        message,
+                        (width as f32, height as f32),
+                    );
+                    for effect in effects {
+                        match effect {
+                            virtual_trackpad::Effect::Move(point) => self.send_pointer(point),
+                            virtual_trackpad::Effect::Click(button, pressed) => {
+                                if let Some(controls) = &self.controls {
+                                    let _ = controls
+                                        .input
+                                        .try_send(InputEvent::PointerButton { button, pressed });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         Task::none()
     }
@@ -276,7 +368,23 @@ impl State {
         if !matches!(self.status, Status::Disconnected(_)) {
             view = view.push(self.toolbar());
         }
-        view.push(center(body)).into()
+        view = view.push(center(body));
+
+        if self.show_virtual_keyboard || self.show_virtual_trackpad {
+            let mut panel = Row::new().spacing(6).align_y(Alignment::Center);
+            if self.show_virtual_keyboard {
+                panel = panel.push(
+                    virtual_keyboard::view(self.keyboard_size, &self.virtual_keyboard)
+                        .map(Message::VirtualKeyboard),
+                );
+            }
+            if self.show_virtual_trackpad {
+                panel = panel.push(virtual_trackpad::view().map(Message::VirtualTrackpad));
+            }
+            view = view.push(center(panel));
+        }
+
+        view.into()
     }
 
     fn toolbar(&self) -> Element<'_, Message> {
@@ -293,8 +401,38 @@ impl State {
             }
         }
 
+        let keyboard_toggle = button(text("Keyboard"))
+            .style(if self.show_virtual_keyboard {
+                button::primary
+            } else {
+                button::subtle
+            })
+            .on_press(Message::ToggleVirtualKeyboard);
+
+        let keyboard_size_picker: Element<'_, Message> = if self.show_virtual_keyboard {
+            pick_list(
+                KeyboardSize::ALL,
+                Some(self.keyboard_size),
+                Message::SetKeyboardSize,
+            )
+            .into()
+        } else {
+            Space::new().into()
+        };
+
+        let trackpad_toggle = button(text("Trackpad"))
+            .style(if self.show_virtual_trackpad {
+                button::primary
+            } else {
+                button::subtle
+            })
+            .on_press(Message::ToggleVirtualTrackpad);
+
         Row::new()
             .push(actions)
+            .push(keyboard_toggle)
+            .push(keyboard_size_picker)
+            .push(trackpad_toggle)
             .push(Space::new().width(Length::Fill))
             .push(
                 button(text("Disconnect"))
@@ -337,7 +475,7 @@ fn keysym(key: &keyboard::Key) -> Option<u32> {
     }
 }
 
-fn character_keysym(character: char) -> u32 {
+pub(crate) fn character_keysym(character: char) -> u32 {
     let code = character as u32;
     // Latin-1 code points are their own keysyms; the rest use the Unicode form.
     if code <= 0xFF {
@@ -347,7 +485,7 @@ fn character_keysym(character: char) -> u32 {
     }
 }
 
-fn named_keysym(named: Named) -> Option<u32> {
+pub(crate) fn named_keysym(named: Named) -> Option<u32> {
     let keysym = match named {
         Named::Enter => 0xFF0D,
         Named::Tab => 0xFF09,
@@ -382,6 +520,11 @@ fn named_keysym(named: Named) -> Option<u32> {
         Named::F10 => 0xFFC7,
         Named::F11 => 0xFFC8,
         Named::F12 => 0xFFC9,
+        Named::PrintScreen => 0xFF61,
+        Named::ScrollLock => 0xFF14,
+        Named::Pause => 0xFF13,
+        Named::ContextMenu => 0xFF67,
+        Named::NumLock => 0xFF7F,
         _ => return None,
     };
     Some(keysym)
@@ -676,7 +819,12 @@ mod tests {
         assert_eq!(named_keysym(Named::ArrowUp), Some(0xFF52));
         assert_eq!(named_keysym(Named::F5), Some(0xFFC2));
         assert_eq!(named_keysym(Named::Control), Some(0xFFE3));
-        assert_eq!(named_keysym(Named::PrintScreen), None);
+        assert_eq!(named_keysym(Named::PrintScreen), Some(0xFF61));
+        assert_eq!(named_keysym(Named::ScrollLock), Some(0xFF14));
+        assert_eq!(named_keysym(Named::Pause), Some(0xFF13));
+        assert_eq!(named_keysym(Named::ContextMenu), Some(0xFF67));
+        assert_eq!(named_keysym(Named::NumLock), Some(0xFF7F));
+        assert_eq!(named_keysym(Named::Fn), None);
     }
 
     #[test]
