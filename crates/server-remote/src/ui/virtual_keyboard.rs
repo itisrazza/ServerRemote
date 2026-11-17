@@ -274,17 +274,17 @@ static SYSTEM_ROW: [KeyDef; 4] = [
 // beside the bottom/space rows, and the numpad spans the same six rows.
 static FUNCTION_ROW: [KeyDef; 16] = [
     n("Esc", Named::Escape, 1.0),
-    sp(1.0),
+    sp(FUNCTION_GAP),
     n("F1", Named::F1, 1.0),
     n("F2", Named::F2, 1.0),
     n("F3", Named::F3, 1.0),
     n("F4", Named::F4, 1.0),
-    sp(0.5),
+    sp(FUNCTION_GAP),
     n("F5", Named::F5, 1.0),
     n("F6", Named::F6, 1.0),
     n("F7", Named::F7, 1.0),
     n("F8", Named::F8, 1.0),
-    sp(0.5),
+    sp(FUNCTION_GAP),
     n("F9", Named::F9, 1.0),
     n("F10", Named::F10, 1.0),
     n("F11", Named::F11, 1.0),
@@ -305,11 +305,11 @@ static NUMBER_ROW: [KeyDef; 14] = [
     c("0", 1.0),
     c("-", 1.0),
     c("=", 1.0),
-    ni(icons::KEY_BACKSPACE, Named::Backspace, 2.0),
+    ni(icons::KEY_BACKSPACE, Named::Backspace, 1.0),
 ];
 
 static QWERTY_ROW: [KeyDef; 14] = [
-    n("Tab", Named::Tab, 1.5),
+    n("Tab", Named::Tab, 1.0),
     c("q", 1.0),
     c("w", 1.0),
     c("e", 1.0),
@@ -322,11 +322,11 @@ static QWERTY_ROW: [KeyDef; 14] = [
     c("p", 1.0),
     c("[", 1.0),
     c("]", 1.0),
-    c("\\", 1.5),
+    c("\\", 1.0),
 ];
 
 static HOME_ROW: [KeyDef; 13] = [
-    n("Caps", Named::CapsLock, 1.75),
+    n("Caps", Named::CapsLock, 1.5),
     c("a", 1.0),
     c("s", 1.0),
     c("d", 1.0),
@@ -338,11 +338,11 @@ static HOME_ROW: [KeyDef; 13] = [
     c("l", 1.0),
     c(";", 1.0),
     c("'", 1.0),
-    ni(icons::KEY_ENTER, Named::Enter, 2.25),
+    ni(icons::KEY_ENTER, Named::Enter, 1.5),
 ];
 
 static BOTTOM_ROW: [KeyDef; 12] = [
-    m("Shift", ModifierKey::Shift, 2.25),
+    m("Shift", ModifierKey::Shift, 2.0),
     c("z", 1.0),
     c("x", 1.0),
     c("c", 1.0),
@@ -353,18 +353,36 @@ static BOTTOM_ROW: [KeyDef; 12] = [
     c(",", 1.0),
     c(".", 1.0),
     c("/", 1.0),
-    m("Shift", ModifierKey::Shift, 2.75),
+    m("Shift", ModifierKey::Shift, 2.0),
 ];
 
+/// The bottom row's seven modifier keys share what the space bar leaves of
+/// the 14-unit row.
+const BOTTOM_MODIFIER_WIDTH: f32 = 11.0 / 9.0;
+const SPACE_BAR_WIDTH: f32 = 14.0 - 7.0 * BOTTOM_MODIFIER_WIDTH;
+
 static SPACE_ROW: [KeyDef; 8] = [
-    m("Control", ModifierKey::Control, 1.5),
-    mi(icons::KEY_WINDOWS, ModifierKey::Super, 1.25),
-    m("Alt", ModifierKey::Alt, 1.25),
-    n("", Named::Space, 6.0),
-    m("AltGr", ModifierKey::AltGraph, 1.25),
-    mi(icons::KEY_WINDOWS, ModifierKey::Super, 1.25),
-    ni(icons::DIAMOND_OUTLINE, Named::ContextMenu, 1.0),
-    m("Control", ModifierKey::Control, 1.5),
+    m("Control", ModifierKey::Control, BOTTOM_MODIFIER_WIDTH),
+    mi(
+        icons::KEY_WINDOWS,
+        ModifierKey::Super,
+        BOTTOM_MODIFIER_WIDTH,
+    ),
+    m("Alt", ModifierKey::Alt, BOTTOM_MODIFIER_WIDTH),
+    n("", Named::Space, SPACE_BAR_WIDTH),
+    // Right Alt: sends Alt_R, which layouts with AltGr map to it.
+    m("Alt", ModifierKey::AltGraph, BOTTOM_MODIFIER_WIDTH),
+    mi(
+        icons::KEY_WINDOWS,
+        ModifierKey::Super,
+        BOTTOM_MODIFIER_WIDTH,
+    ),
+    ni(
+        icons::DIAMOND_OUTLINE,
+        Named::ContextMenu,
+        BOTTOM_MODIFIER_WIDTH,
+    ),
+    m("Control", ModifierKey::Control, BOTTOM_MODIFIER_WIDTH),
 ];
 
 static NUMPAD_ROW_1: [KeyDef; 3] = [sp(1.0), sp(1.0), sp(1.0)];
@@ -449,18 +467,24 @@ static NUMPAD_GRID_ROWS: [&[KeyDef]; 6] = [
     &NUMPAD_ROW_6,
 ];
 
-/// Pixels per width "unit" — the main block is 15 units wide, the side
-/// (nav/arrow) block 3, and the numpad block 4, matching a physical
-/// keyboard's proportions.
-const UNIT_PX: f32 = 45.0;
-const MAIN_BLOCK_WIDTH: f32 = UNIT_PX * 15.0;
-const SIDE_BLOCK_WIDTH: f32 = UNIT_PX * 3.0;
-const NUMPAD_BLOCK_WIDTH: f32 = UNIT_PX * 4.0;
-/// Every key button (and blank spacer) is this tall, so rows across
-/// different blocks line up with each other.
-const KEY_HEIGHT: f32 = 34.0;
-const KEY_SPACING: f32 = 2.0;
+/// Distance from one key's edge to the next one's, per width "unit". Keys
+/// are sized from it (rather than proportionally) so that every row in a
+/// block comes out the same width and keys line up across rows: the main
+/// block is 14 units wide, the nav cluster 3, and the numpad 4.
+const KEY_PITCH: f32 = 36.0;
+const KEY_SPACING: f32 = 4.0;
+/// Space between the main block, nav cluster and numpad.
+const BLOCK_SPACING: f32 = 16.0;
+/// 8pt inside the container's 1pt border, which iced counts as padding.
+const KEYBOARD_PADDING: f32 = 9.0;
+/// The gaps between the function key groups.
+const FUNCTION_GAP: f32 = 1.0 / 3.0;
 const ICON_SIZE: f32 = 16.0;
+
+/// The on-screen size of something `units` wide or tall.
+fn span(units: f32) -> f32 {
+    units * KEY_PITCH - KEY_SPACING
+}
 
 pub fn view(size: KeyboardSize, state: &State) -> Element<'_, Message> {
     match size {
@@ -471,63 +495,54 @@ pub fn view(size: KeyboardSize, state: &State) -> Element<'_, Message> {
 }
 
 fn small_view(state: &State) -> Element<'_, Message> {
-    let mut column = Column::new().spacing(KEY_SPACING).padding(4);
-    for &row in &SMALL_ROWS {
-        column = column.push(key_row(row, state));
-    }
-    container(column).style(keyboard_container).into()
+    let column = Column::with_children(SMALL_ROWS.iter().map(|row| key_row(row, state)))
+        .spacing(KEY_SPACING);
+    container(column)
+        .padding(KEYBOARD_PADDING)
+        .style(keyboard_container)
+        .into()
 }
 
 /// A full keyboard shape: the main alphanumeric block, a nav/arrow cluster
 /// to its right, and (for the large layout) a numpad further right —
 /// mirroring where these clusters sit on a physical keyboard.
 fn full_view(state: &State, with_numpad: bool) -> Element<'_, Message> {
-    let mut row = Row::new()
-        .spacing(6)
-        .push(block(MAIN_BLOCK_WIDTH, &MAIN_ROWS, state))
-        .push(block(SIDE_BLOCK_WIDTH, &SIDE_ROWS, state));
-    if with_numpad {
-        row = row.push(numpad(state));
-    }
-    container(row).style(keyboard_container).padding(4).into()
+    let row = Row::new()
+        .spacing(BLOCK_SPACING)
+        .push(block(&MAIN_ROWS, state))
+        .push(block(&SIDE_ROWS, state))
+        .push(with_numpad.then(|| numpad(state)));
+    container(row)
+        .padding(KEYBOARD_PADDING)
+        .style(keyboard_container)
+        .into()
 }
 
 fn numpad<'a>(state: &State) -> Element<'a, Message> {
     let side = Column::with_children(NUMPAD_SIDE_COLUMN.iter().map(|def| key_button(def, state)))
-        .spacing(KEY_SPACING)
-        .width(Length::FillPortion(1));
-    let grid = block(UNIT_PX * 3.0, &NUMPAD_GRID_ROWS, state);
+        .spacing(KEY_SPACING);
     Row::new()
         .spacing(KEY_SPACING)
-        .width(NUMPAD_BLOCK_WIDTH)
-        .push(container(grid).width(Length::FillPortion(3)))
+        .push(block(&NUMPAD_GRID_ROWS, state))
         .push(side)
         .into()
 }
 
-fn block<'a>(width: f32, rows: &[&[KeyDef]], state: &State) -> Element<'a, Message> {
-    let mut column = Column::new()
+fn block<'a>(rows: &[&[KeyDef]], state: &State) -> Element<'a, Message> {
+    Column::with_children(rows.iter().map(|row| key_row(row, state)))
         .spacing(KEY_SPACING)
-        .width(Length::Fixed(width));
-    for &row in rows {
-        column = column.push(key_row(row, state));
-    }
-    column.into()
+        .into()
 }
 
 fn key_row<'a>(defs: &[KeyDef], state: &State) -> Element<'a, Message> {
-    let mut row = Row::new().spacing(KEY_SPACING).width(Length::Fill);
-    for def in defs {
-        row = row.push(key_button(def, state));
-    }
-    row.into()
+    Row::with_children(defs.iter().map(|def| key_button(def, state)))
+        .spacing(KEY_SPACING)
+        .into()
 }
 
 fn key_button<'a>(def: &KeyDef, state: &State) -> Element<'a, Message> {
-    let units = (def.width * 4.0).round() as u16;
-    let width = Length::FillPortion(units);
-    let rows = f32::from(def.rows);
-    let height = Length::Fixed(KEY_HEIGHT * rows + KEY_SPACING * (rows - 1.0));
+    let width = span(def.width);
+    let height = span(f32::from(def.rows));
 
     let (on_press, latch) = match def.key {
         Key::Spacer => return Space::new().width(width).height(height).into(),
@@ -562,7 +577,15 @@ fn key_label<'a>(def: &KeyDef) -> Element<'a, Message> {
             .width(ICON_SIZE)
             .height(ICON_SIZE)
             .into(),
-        None => text(keycap_legend(def)).into(),
+        None => {
+            let legend = keycap_legend(def);
+            // Words like "Insert" and "Pg Up" have to fit a single-unit key.
+            let size = if legend.chars().count() > 1 { 11 } else { 13 };
+            text(legend)
+                .size(size)
+                .wrapping(text::Wrapping::None)
+                .into()
+        }
     }
 }
 
@@ -646,7 +669,7 @@ mod tests {
     fn rows_in_each_block_span_the_same_width() {
         let width = |row: &[KeyDef]| row.iter().map(|def| def.width).sum::<f32>();
         for (name, rows, expected) in [
-            ("main", &MAIN_ROWS[..], 15.0),
+            ("main", &MAIN_ROWS[..], 14.0),
             ("side", &SIDE_ROWS[..], 3.0),
             ("numpad grid", &NUMPAD_GRID_ROWS[..], 3.0),
         ] {

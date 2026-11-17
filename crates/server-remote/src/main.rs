@@ -158,6 +158,73 @@ mod tests {
         assert_eq!(saved.name, "example.com");
     }
 
+    /// Renders the window chrome to PNGs for comparing against the design.
+    /// Run with `SNAPSHOT_DIR=<dir> cargo test -p server-remote -- --ignored`.
+    #[test]
+    #[ignore = "writes review snapshots; needs SNAPSHOT_DIR"]
+    fn render_review_snapshots() {
+        let dir =
+            std::path::PathBuf::from(std::env::var("SNAPSHOT_DIR").expect("SNAPSHOT_DIR is set"));
+        let settings = Settings {
+            default_text_size: iced::Pixels(13.0),
+            ..Settings::default()
+        };
+        let theme = ui::style::theme();
+
+        let states: [(&str, Vec<ui::connection::Message>); 4] = [
+            ("window", vec![]),
+            (
+                "display-menu",
+                vec![ui::connection::Message::ToggleMenu(
+                    ui::connection::ToolbarMenu::Display,
+                )],
+            ),
+            (
+                "input-menu",
+                vec![
+                    ui::connection::Message::ToggleMenu(ui::connection::ToolbarMenu::Input),
+                    ui::connection::Message::OpenSubmenu(ui::connection::Submenu::KeyboardStyle),
+                ],
+            ),
+            (
+                "keyboard",
+                vec![ui::connection::Message::SetKeyboardSize(
+                    ui::connection::KeyboardSize::Large,
+                )],
+            ),
+        ];
+
+        for (name, messages) in states {
+            let (mut app, _) = Application::boot();
+            let _ = app.open_connection(request("Connection #1"));
+            let _ = app.open_connection(request("Connection #2"));
+            app.tab = Tab::Connection(0);
+            for message in messages {
+                let _ = app.update(Message::Connection(0, message));
+            }
+            let mut simulator =
+                iced_test::Simulator::with_size(settings.clone(), (1024.0, 768.0), app.view());
+            let snapshot = simulator.snapshot(&theme).expect("renders");
+            // `matches_image` only writes when no snapshot exists yet, and
+            // names the file after the renderer too, so clear old ones first.
+            let prefix = format!("{name}-");
+            for entry in std::fs::read_dir(&dir).expect("SNAPSHOT_DIR is readable") {
+                let path = entry.expect("directory entry").path();
+                let stale = path
+                    .file_name()
+                    .is_some_and(|file| file.to_string_lossy().starts_with(&prefix));
+                if stale {
+                    std::fs::remove_file(path).expect("removes stale snapshot");
+                }
+            }
+            assert!(
+                snapshot
+                    .matches_image(dir.join(format!("{name}.png")))
+                    .expect("writes png")
+            );
+        }
+    }
+
     #[test]
     fn saved_session_falls_back_to_the_protocol_label_when_name_and_hostname_are_blank() {
         let saved = saved_session_from_request(request(""));
