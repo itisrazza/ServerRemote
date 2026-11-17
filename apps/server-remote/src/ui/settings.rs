@@ -5,6 +5,7 @@
 //! The connection menus offer some of the same settings, so the choice lists
 //! here ([`recording_folders`] and friends) are shared with them.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use iced::widget::{Column, Row, button, container, responsive, scrollable, text, toggler};
@@ -18,6 +19,7 @@ use crate::persistence::settings::{
 use super::connection::KeyboardSize;
 use super::menu::{self, Item};
 use super::style;
+use crate::update;
 
 const SIDEBAR_WIDTH: f32 = 180.0;
 const SIDEBAR_GAP: f32 = 24.0;
@@ -36,14 +38,16 @@ pub enum Section {
     Display,
     Input,
     Recording,
+    About,
 }
 
 impl Section {
-    const ALL: [Section; 4] = [
+    const ALL: [Section; 5] = [
         Section::General,
         Section::Display,
         Section::Input,
         Section::Recording,
+        Section::About,
     ];
 
     fn label(self) -> &'static str {
@@ -52,6 +56,7 @@ impl Section {
             Section::Display => "Display",
             Section::Input => "Input",
             Section::Recording => "Recording",
+            Section::About => "About",
         }
     }
 }
@@ -86,6 +91,7 @@ pub enum Change {
     RecordingFolder(PathBuf),
     RecordingFormat(RecordingFormat),
     RecordingQuality(RecordingQuality),
+    CheckForUpdatesOnLaunch(bool),
 }
 
 pub fn apply(settings: &mut Settings, change: Change) {
@@ -102,6 +108,7 @@ pub fn apply(settings: &mut Settings, change: Change) {
         Change::RecordingFolder(folder) => settings.recording.choose_folder(folder),
         Change::RecordingFormat(format) => settings.recording.format = format,
         Change::RecordingQuality(quality) => settings.recording.quality = quality,
+        Change::CheckForUpdatesOnLaunch(on) => settings.updates.check_on_launch = on,
     }
 }
 
@@ -120,6 +127,10 @@ pub enum Message {
     Change(Change),
     /// Handled by the application, which opens the folder picker.
     ChooseRecordingFolder,
+    /// Handled by the application, which owns the update check.
+    CheckForUpdates,
+    /// Handled by the application, which opens it in the browser.
+    OpenUrl(String),
 }
 
 impl State {
@@ -134,14 +145,22 @@ impl State {
             Message::Toggle(select) => {
                 self.open = (self.open != Some(*select)).then_some(*select);
             }
-            Message::Dismiss | Message::Change(_) | Message::ChooseRecordingFolder => {
+            Message::Dismiss
+            | Message::Change(_)
+            | Message::ChooseRecordingFolder
+            | Message::CheckForUpdates
+            | Message::OpenUrl(_) => {
                 self.open = None;
             }
         }
     }
 }
 
-pub fn view<'a>(state: &'a State, settings: &'a Settings) -> Element<'a, Message> {
+pub fn view<'a>(
+    state: &'a State,
+    settings: &'a Settings,
+    update: &'a update::Status,
+) -> Element<'a, Message> {
     let sidebar = Column::with_children(Section::ALL.into_iter().map(|section| {
         let active = state.section == section;
         button(container(text(section.label())).center_y(Length::Fill))
@@ -165,6 +184,7 @@ pub fn view<'a>(state: &'a State, settings: &'a Settings) -> Element<'a, Message
             Section::Display => display(state, settings),
             Section::Input => input(state, settings),
             Section::Recording => recording(state, settings),
+            Section::About => about(settings, update),
         };
         let column = Column::new()
             .spacing(16)
@@ -349,6 +369,98 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     ]
 }
 
+fn about<'a>(settings: &'a Settings, update: &'a update::Status) -> Vec<Setting<'a>> {
+    vec![
+        setting(
+            concat!("ServerRemote ", env!("CARGO_PKG_VERSION")),
+            env!("CARGO_PKG_DESCRIPTION"),
+            link_button("Project page", update::PROJECT_URL),
+        ),
+        setting(
+            "Check for updates on launch",
+            "Ask GitHub for a newer release each time the app opens.",
+            switch(
+                settings.updates.check_on_launch,
+                Change::CheckForUpdatesOnLaunch,
+            ),
+        ),
+        update_setting(update),
+        setting(
+            "Licence",
+            "MIT or Apache 2.0, at your option.",
+            Control::None,
+        ),
+        setting(
+            "Icons",
+            "Carbon Design System by IBM, under the Apache License 2.0.",
+            link_button(
+                "Website",
+                "https://carbondesignsystem.com/elements/icons/library/",
+            ),
+        ),
+        setting(
+            "Font",
+            "Nunito Sans by the Nunito Sans Project Authors, under the SIL \
+             Open Font License 1.1.",
+            link_button("Website", "https://github.com/googlefonts/NunitoSans"),
+        ),
+    ]
+}
+
+/// The latest check's result, with the button that moves things on.
+fn update_setting(status: &update::Status) -> Setting<'_> {
+    let check = |label| action_button(label, Some(Message::CheckForUpdates), false);
+    let (description, control): (String, Element<'_, Message>) = match status {
+        update::Status::NotChecked => ("Not checked yet.".to_owned(), check("Check now")),
+        update::Status::Checking => (
+            "Checking…".to_owned(),
+            action_button("Check now", None, false),
+        ),
+        update::Status::Checked(Ok(update::Outcome::UpToDate)) => (
+            "You're on the latest version.".to_owned(),
+            check("Check again"),
+        ),
+        update::Status::Checked(Ok(update::Outcome::NoReleases)) => (
+            "No releases have been published yet.".to_owned(),
+            check("Check again"),
+        ),
+        update::Status::Checked(Ok(update::Outcome::Available { version, url })) => (
+            format!("Version {version} is available."),
+            action_button("Download", Some(Message::OpenUrl(url.clone())), true),
+        ),
+        update::Status::Checked(Err(error)) => (
+            format!("Couldn't check for updates: {error}"),
+            check("Try again"),
+        ),
+    };
+
+    setting("Updates", description, control)
+}
+
+fn link_button<'a>(label: &'a str, url: &str) -> Element<'a, Message> {
+    action_button(label, Some(Message::OpenUrl(url.to_owned())), false)
+}
+
+/// A bordered button, or a filled one when `primary`; `None` disables it.
+fn action_button<'a>(
+    label: &'a str,
+    on_press: Option<Message>,
+    primary: bool,
+) -> Element<'a, Message> {
+    button(container(text(label)).center_y(Length::Fill))
+        .height(style::CONTROL_HEIGHT)
+        .padding([0, 12])
+        .style(move |theme, status| {
+            if primary {
+                style::dialog_button(theme, status, false)
+            } else {
+                style::bordered_button(theme, status, false)
+            }
+        })
+        .on_press_maybe(on_press)
+        .into()
+}
+
 pub fn display_scales<Message>(
     settings: &Settings,
     on_choose: impl Fn(DisplayScale) -> Message,
@@ -449,7 +561,7 @@ fn abbreviate_home(folder: &Path, home: Option<&Path>) -> String {
 /// One setting: its name, an explanation, and the control that changes it.
 struct Setting<'a> {
     label: &'a str,
-    description: &'a str,
+    description: Cow<'a, str>,
     control: Control<'a>,
 }
 
@@ -459,6 +571,8 @@ enum Control<'a> {
     Block(Element<'a, Message>),
     /// A switch: always on the setting's own line, at the right-hand end.
     Switch(Element<'a, Message>),
+    /// Information only.
+    None,
 }
 
 impl<'a> From<Element<'a, Message>> for Control<'a> {
@@ -469,12 +583,12 @@ impl<'a> From<Element<'a, Message>> for Control<'a> {
 
 fn setting<'a>(
     label: &'a str,
-    description: &'a str,
+    description: impl Into<Cow<'a, str>>,
     control: impl Into<Control<'a>>,
 ) -> Setting<'a> {
     Setting {
         label,
-        description,
+        description: description.into(),
         control: control.into(),
     }
 }
@@ -498,6 +612,7 @@ impl<'a> Setting<'a> {
         let (control, beside) = match self.control {
             Control::Switch(control) => (control, true),
             Control::Block(control) => (control, side_by_side),
+            Control::None => return words.into(),
         };
         if beside {
             Row::new()

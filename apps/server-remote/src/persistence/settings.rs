@@ -19,6 +19,7 @@ pub struct Settings {
     pub display: Display,
     pub input: Input,
     pub recording: Recording,
+    pub updates: Updates,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +65,21 @@ impl GraphicsBackend {
         match self {
             GraphicsBackend::DirectX12 => "dx12",
             GraphicsBackend::Vulkan => "vulkan",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Updates {
+    /// Ask GitHub for a newer release each time the app opens.
+    pub check_on_launch: bool,
+}
+
+impl Default for Updates {
+    fn default() -> Self {
+        Updates {
+            check_on_launch: true,
         }
     }
 }

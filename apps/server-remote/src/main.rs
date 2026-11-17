@@ -15,6 +15,7 @@ use crate::tooltip_box::tooltip_box;
 mod persistence;
 mod tooltip_box;
 mod ui;
+mod update;
 
 /// Split a `host[:port]` string, falling back to the protocol's default port.
 fn parse_target(hostname: &str, protocol: ui::connection::Protocol) -> Target {
@@ -390,6 +391,23 @@ mod tests {
             ),
         ];
 
+        let about = vec![
+            Message::SelectTab(Tab::Settings),
+            Message::Settings(ui::settings::Message::Section(ui::settings::Section::About)),
+        ];
+        states.push(("settings-about", false, about.clone()));
+        states.push((
+            "settings-about-update",
+            false,
+            about
+                .into_iter()
+                .chain([Message::UpdateChecked(Ok(update::Outcome::Available {
+                    version: semver::Version::new(0, 2, 0),
+                    url: "https://example.invalid/release".to_owned(),
+                }))])
+                .collect(),
+        ));
+
         // Wide by default; these are also rendered at a narrow width.
         const NARROW: [&str; 1] = ["settings-display-narrow"];
         states.push((
@@ -546,8 +564,19 @@ struct Application {
 
     /// Tracked so the title bar shows restore rather than maximise.
     maximized: bool,
-    /// The window waiting on "Quit?" confirmation, if any.
-    quit_prompt: Option<window::Id>,
+    update: update::Status,
+    /// A dialog over the whole window, if any.
+    modal: Option<AppModal>,
+}
+
+#[derive(Debug, Clone)]
+enum AppModal {
+    /// "Quit?", for the window that asked to close.
+    ConfirmQuit(window::Id),
+    Error {
+        title: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -567,13 +596,14 @@ enum Message {
     Connection(u64, ui::connection::Message),
     Settings(ui::settings::Message),
     RecordingFolderPicked(Option<PathBuf>),
+    UpdateChecked(Result<update::Outcome, update::Error>),
 
     Window(WindowAction),
     Resized(iced::window::Id),
     Maximized(bool),
     RequestClose(iced::window::Id),
     Quit(iced::window::Id),
-    CancelQuit,
+    CloseModal,
 }
 
 /// Window management triggered from the custom title bar.
@@ -588,21 +618,40 @@ enum WindowAction {
 
 impl Application {
     fn new(config_dir: Option<PathBuf>, settings: Settings) -> (Self, Task<Message>) {
-        (
-            Self {
-                connections: Vec::new(),
-                next_id: 0,
-                tab: Tab::Connect,
-                connect_tab: ui::connect::State::new(),
-                sessions: persistence::sessions::Sessions::load(),
-                settings,
-                settings_tab: ui::settings::State::default(),
-                config_dir,
-                maximized: false,
-                quit_prompt: None,
-            },
-            Task::none(),
-        )
+        let check_on_launch = settings.updates.check_on_launch;
+        let mut app = Self {
+            connections: Vec::new(),
+            next_id: 0,
+            tab: Tab::Connect,
+            connect_tab: ui::connect::State::new(),
+            sessions: persistence::sessions::Sessions::load(),
+            settings,
+            settings_tab: ui::settings::State::default(),
+            config_dir,
+            maximized: false,
+            update: update::Status::NotChecked,
+            modal: None,
+        };
+        let task = if check_on_launch {
+            app.check_for_updates()
+        } else {
+            Task::none()
+        };
+        (app, task)
+    }
+
+    fn check_for_updates(&mut self) -> Task<Message> {
+        self.update = update::Status::Checking;
+        Task::perform(update::check(), Message::UpdateChecked)
+    }
+
+    fn open_url(&mut self, url: &str) {
+        if let Err(error) = open::that_detached(url) {
+            self.modal = Some(AppModal::Error {
+                title: "Couldn't open the link".to_owned(),
+                message: format!("{url}: {error}"),
+            });
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -683,10 +732,19 @@ impl Application {
                         Task::none()
                     }
                     ui::settings::Message::ChooseRecordingFolder => pick_recording_folder(),
+                    ui::settings::Message::CheckForUpdates => self.check_for_updates(),
+                    ui::settings::Message::OpenUrl(url) => {
+                        self.open_url(&url);
+                        Task::none()
+                    }
                     ui::settings::Message::Section(_)
                     | ui::settings::Message::Toggle(_)
                     | ui::settings::Message::Dismiss => Task::none(),
                 }
+            }
+            Message::UpdateChecked(result) => {
+                self.update = update::Status::Checked(result);
+                Task::none()
             }
             Message::RecordingFolderPicked(folder) => {
                 if let Some(folder) = folder {
@@ -696,14 +754,14 @@ impl Application {
             }
             Message::RequestClose(id) => {
                 if self.settings.general.confirm_quit && !self.connections.is_empty() {
-                    self.quit_prompt = Some(id);
+                    self.modal = Some(AppModal::ConfirmQuit(id));
                     return Task::none();
                 }
                 window::close(id)
             }
             Message::Quit(id) => window::close(id),
-            Message::CancelQuit => {
-                self.quit_prompt = None;
+            Message::CloseModal => {
+                self.modal = None;
                 Task::none()
             }
         }
@@ -788,14 +846,28 @@ impl Application {
         } else {
             content.into()
         };
-        let window = match self.quit_prompt {
-            Some(id) => stack![window, self.quit_dialog(id)].into(),
+        let window = match &self.modal {
+            Some(modal) => stack![window, self.modal_view(modal)].into(),
             None => window,
         };
         ui::arrow_cursor(window)
     }
 
-    fn quit_dialog(&self, id: window::Id) -> Element<'_, Message> {
+    fn modal_view<'a>(&'a self, modal: &'a AppModal) -> Element<'a, Message> {
+        let id = match modal {
+            AppModal::ConfirmQuit(id) => *id,
+            AppModal::Error { title, message } => {
+                return ui::dialog::view(
+                    title,
+                    message,
+                    vec![ui::dialog::Button {
+                        label: "OK",
+                        on_press: Message::CloseModal,
+                        kind: ui::dialog::Kind::Primary,
+                    }],
+                );
+            }
+        };
         let message = match self.connections.len() {
             1 => "The open connection will be closed.",
             _ => "All open connections will be closed.",
@@ -806,7 +878,7 @@ impl Application {
             vec![
                 ui::dialog::Button {
                     label: "Cancel",
-                    on_press: Message::CancelQuit,
+                    on_press: Message::CloseModal,
                     kind: ui::dialog::Kind::Secondary,
                 },
                 ui::dialog::Button {
@@ -831,9 +903,8 @@ impl Application {
                 }
                 None => text("Connection closed").into(),
             },
-            Tab::Settings => {
-                ui::settings::view(&self.settings_tab, &self.settings).map(Message::Settings)
-            }
+            Tab::Settings => ui::settings::view(&self.settings_tab, &self.settings, &self.update)
+                .map(Message::Settings),
         }
     }
 
