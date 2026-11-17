@@ -6,7 +6,7 @@
 
 use iced::keyboard::key::Named;
 use iced::widget::{Column, Row, Space, button, container, text};
-use iced::{Background, Border, Element, Length, Theme};
+use iced::{Background, Border, Element, Font, Length, Theme};
 use server_remote_icons::{self as icons, Icon};
 
 use super::connection::{KeyboardSize, character_keysym, named_keysym};
@@ -594,17 +594,10 @@ fn key_label<'a>(def: &KeyDef) -> Element<'a, Message> {
             .width(ICON_SIZE)
             .height(ICON_SIZE)
             .into(),
-        None => {
-            let font = if def.condensed {
-                style::CONDENSED
-            } else {
-                style::FONT
-            };
-            text(keycap_legend(def))
-                .font(font)
-                .wrapping(text::Wrapping::None)
-                .into()
-        }
+        None => text(keycap_legend(def))
+            .font(legend_font(def))
+            .wrapping(text::Wrapping::None)
+            .into(),
     }
 }
 
@@ -613,6 +606,16 @@ fn keycap_legend(def: &KeyDef) -> String {
     match def.key {
         Key::Char => def.label.to_uppercase(),
         _ => def.label.to_owned(),
+    }
+}
+
+/// Letters are bold, as on the design's keycaps; word legends are condensed
+/// to fit; everything else (digits, symbols, Esc, F-keys) is regular.
+fn legend_font(def: &KeyDef) -> Font {
+    match def.key {
+        Key::Char if def.label.chars().all(char::is_alphabetic) => style::BOLD,
+        _ if def.condensed => style::CONDENSED,
+        _ => style::FONT,
     }
 }
 
@@ -662,6 +665,34 @@ fn keyboard_container(theme: &Theme) -> container::Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legend_fonts() {
+        let cases = [
+            ("letter is bold", c("q", 1.0), style::BOLD),
+            ("digit is regular", c("1", 1.0), style::FONT),
+            ("symbol is regular", c(";", 1.0), style::FONT),
+            (
+                "word legend is condensed",
+                n("Insert", Named::Insert, 1.0),
+                style::CONDENSED,
+            ),
+            (
+                "modifier is condensed",
+                m("Shift", ModifierKey::Shift, 1.0),
+                style::CONDENSED,
+            ),
+            (
+                "Esc is regular",
+                regular(n("Esc", Named::Escape, 1.0)),
+                style::FONT,
+            ),
+            ("numpad digit is regular", ks("7", KP_7, 1.0), style::FONT),
+        ];
+        for (name, def, expected) in cases {
+            assert_eq!(legend_font(&def), expected, "{name}");
+        }
+    }
 
     #[test]
     fn keycap_legends() {
