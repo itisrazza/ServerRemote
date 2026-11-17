@@ -241,6 +241,8 @@ const TAB_WIDTH: f32 = 150.0;
 const TITLE_BAR_HEIGHT: f32 = ui::style::CONTROL_HEIGHT + 2.0 * ui::style::SPACING;
 
 fn main() -> iced::Result {
+    prefer_dx12();
+
     iced::application::application(Application::boot, Application::update, Application::view)
         .title(Application::title)
         .window(window::Settings {
@@ -255,6 +257,20 @@ fn main() -> iced::Result {
         .theme(ui::style::theme())
         .run()
 }
+
+/// Defaults wgpu to DX12 on Windows, whose swapchain keeps up with live
+/// resizing far better than Vulkan's. iced only takes the backend from the
+/// environment, so set `WGPU_BACKEND` unless the user already chose one.
+#[cfg(target_os = "windows")]
+fn prefer_dx12() {
+    if std::env::var_os("WGPU_BACKEND").is_none() {
+        // SAFETY: runs first thing in `main`, before any other thread exists.
+        unsafe { std::env::set_var("WGPU_BACKEND", "dx12") };
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn prefer_dx12() {}
 
 #[cfg(target_os = "macos")]
 fn platform_specific() -> window::settings::PlatformSpecific {
