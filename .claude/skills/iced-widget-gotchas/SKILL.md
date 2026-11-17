@@ -87,9 +87,13 @@ changes behaviour across the whole app:
   content (the remote display, `ui/kvm_display.rs`) uses a persistent `wgpu`
   texture drawn through `renderer.draw_primitive()`, which is why the app
   depends on `iced_wgpu` directly.
-- Raster images decode on a worker thread: the first frame after creating a
-  handle shows nothing. Static images are fine; just don't test for them in
-  a single-frame snapshot.
+- Raster images decode on a worker thread, keyed by handle ID: drawing an
+  unseen handle queues a decode and draws nothing, and each frame's trim
+  drops decoded images that frame didn't draw. So a raster handle created
+  in `view` (fresh ID per rebuild) **never appears** while messages keep
+  arriving — the contributor avatars were blank for exactly this reason.
+  Create raster handles once (a `LazyLock`, like `AVATARS` in
+  `ui/settings.rs`, or a cache) and clone them into the view.
 - `image::Image::border_radius` exists in 0.14 (round avatars).
 - `Svg` ignores the surrounding text colour and renders `fill="currentColor"`
   or white SVGs in the source colour (black). Always set `.style()`; see

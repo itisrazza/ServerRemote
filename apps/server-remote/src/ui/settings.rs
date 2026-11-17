@@ -7,6 +7,7 @@
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use iced::widget::{
     Column, Row, button, container, image, responsive, scrollable, svg, text, toggler,
@@ -505,10 +506,15 @@ fn about_header<'a>() -> Element<'a, Message> {
 
 /// The contributors, each linking to their GitHub profile.
 fn made_by<'a>() -> Element<'a, Message> {
-    let people = Row::with_children(contributors::ALL.iter().map(contributor_chip))
-        .spacing(style::SPACING)
-        .width(Length::Fill)
-        .wrap();
+    let people = Row::with_children(
+        contributors::ALL
+            .iter()
+            .zip(AVATARS.iter())
+            .map(|(contributor, avatar)| contributor_chip(contributor, avatar.clone())),
+    )
+    .spacing(style::SPACING)
+    .width(Length::Fill)
+    .wrap();
     Row::new()
         .spacing(8)
         .align_y(Alignment::Center)
@@ -517,11 +523,21 @@ fn made_by<'a>() -> Element<'a, Message> {
         .into()
 }
 
-fn contributor_chip(contributor: &contributors::Contributor) -> Element<'_, Message> {
-    let avatar = image(image::Handle::from_bytes(contributor.avatar))
-        .width(16)
-        .height(16)
-        .border_radius(8);
+/// One image handle per contributor's avatar, made once. A handle built in
+/// `view` gets a fresh ID every frame, so iced would restart decoding it each
+/// frame and never get as far as drawing it.
+static AVATARS: LazyLock<Vec<image::Handle>> = LazyLock::new(|| {
+    contributors::ALL
+        .iter()
+        .map(|contributor| image::Handle::from_bytes(contributor.avatar))
+        .collect()
+});
+
+fn contributor_chip(
+    contributor: &contributors::Contributor,
+    avatar: image::Handle,
+) -> Element<'_, Message> {
+    let avatar = image(avatar).width(16).height(16).border_radius(8);
     let label = Row::new()
         .spacing(6)
         .align_y(Alignment::Center)
@@ -823,6 +839,23 @@ fn switch<'a>(on: bool, change: fn(bool) -> Change) -> Control<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn avatar_handles_stay_the_same_between_frames() {
+        assert_eq!(AVATARS.len(), contributors::ALL.len());
+        for (first, second) in AVATARS.iter().zip(AVATARS.iter()) {
+            assert_eq!(first.clone().id(), second.clone().id());
+        }
+    }
+
+    #[test]
+    fn every_avatar_decodes() {
+        for contributor in contributors::ALL {
+            let avatar = ::image::load_from_memory(contributor.avatar)
+                .unwrap_or_else(|error| panic!("@{}'s avatar: {error}", contributor.login));
+            assert!(avatar.width() > 0, "@{}", contributor.login);
+        }
+    }
 
     #[test]
     fn changes_apply_to_their_setting() {

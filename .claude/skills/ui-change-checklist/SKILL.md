@@ -53,6 +53,8 @@ UI bugs here come from building for one of each. Work through this list.
   add to the vocabulary, and show it off in the Dummy connector.
 - **Narrow windows:** settings rows stack below a width threshold, and
   switches always stay beside their label. Check new layouts narrow too.
+- **Raster images:** create each `image::Handle` once and reuse it; one
+  made inside `view` never draws (see `iced-widget-gotchas`).
 - **Generated files:** don't hand-edit `assets/contributors/generated.rs` or
   the fonts; rerun their scripts in `scripts/`.
 

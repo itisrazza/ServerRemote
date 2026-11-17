@@ -4218,6 +4218,7 @@ dependencies = [
  "iced",
  "iced_test",
  "iced_wgpu",
+ "image",
  "open",
  "resvg",
  "rfd",

@@ -532,6 +532,11 @@ mod tests {
                 let _ = app.update(message);
             }
             let mut simulator = iced_test::Simulator::with_size(settings.clone(), size, app.view());
+            // Raster images decode on a worker thread and are missing from
+            // the first frame, so render once, give decoding a moment, and
+            // keep the second frame.
+            let _ = simulator.snapshot(&app.theme()).expect("renders");
+            std::thread::sleep(std::time::Duration::from_millis(250));
             let snapshot = simulator.snapshot(&app.theme()).expect("renders");
             // `matches_image` only writes when no snapshot exists yet, and
             // names the file after the renderer too, so clear old ones first.

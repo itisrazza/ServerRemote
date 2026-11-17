@@ -61,9 +61,10 @@ changing. Window sizes come from the `size` match: give a state the mockup's
 frame size to compare like with like (`settings-about-mockup` is 800×292), or
 list it in `NARROW` to check a reflowing layout at 640px.
 
-- Raster images (avatars) load on a worker thread and are missing from the
-  first frame. To check one appears, temporarily snapshot twice with a short
-  sleep between, then revert.
+- Raster images decode on a worker thread, so the harness renders each
+  state twice with a short pause and keeps the second frame. It builds the
+  view only once, though, so it can't catch a raster handle created inside
+  `view` (which never appears in the real app); see `iced-widget-gotchas`.
 - The test app reports `Checking…` for updates, because the default settings
   check on launch.
 - States can switch theme or language first (see the `light` and `romanian`
