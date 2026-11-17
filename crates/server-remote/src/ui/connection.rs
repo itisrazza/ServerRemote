@@ -15,7 +15,7 @@ use iced::{
     Alignment, Background, Element, Length, Point, Subscription, Task, Theme, border,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
-    widget::{Column, Id, Row, button, center, container, operation, text},
+    widget::{Column, Id, Row, Space, button, center, container, operation, text},
 };
 use server_remote_core::{
     Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
@@ -132,6 +132,8 @@ pub enum ToolbarMenu {
     Display,
     Input,
     Recording,
+    /// Not a menu as such: the popout with technical connection details.
+    Info,
 }
 
 /// Submenus that can currently be opened. Unimplemented ones render disabled
@@ -493,7 +495,7 @@ impl State {
         let submenu_open = |submenu| self.menu.is_some_and(|open| open.submenu == Some(submenu));
 
         Row::new()
-            .spacing(6)
+            .spacing(style::SPACING)
             .align_y(Alignment::Center)
             .push(button_menu(
                 ToolbarMenu::Display,
@@ -510,8 +512,61 @@ impl State {
                 icons::CAMERA,
                 recording_menu(),
             ))
-            .push(style::vertical_divider(24.0))
+            .push(style::vertical_divider(20.0))
+            .push(Space::new().width(Length::Fill))
+            .push(style::vertical_divider(20.0))
+            .push(menu::button_popout(
+                icons::INFORMATION,
+                || self.info(),
+                open_menu(ToolbarMenu::Info).is_some(),
+                Message::ToggleMenu(ToolbarMenu::Info),
+                Message::CloseMenu,
+            ))
             .into()
+    }
+
+    /// Technical details about the connection, for the info popout.
+    fn info(&self) -> Element<'_, Message> {
+        let status = match &self.status {
+            Status::Connecting => "Connecting".to_owned(),
+            Status::Connected => "Connected".to_owned(),
+            Status::Disconnected(reason) => {
+                reason.clone().unwrap_or_else(|| "Disconnected".to_owned())
+            }
+        };
+        let resolution = self.size.map_or_else(
+            || "—".to_owned(),
+            |(width, height)| format!("{width}×{height}"),
+        );
+        let pointer = match self.capabilities.pointer {
+            PointerMode::Absolute => "Absolute",
+            PointerMode::Relative => "Relative",
+        };
+
+        let rows = [
+            ("Protocol", self.protocol.name().to_owned()),
+            (
+                "Address",
+                format!("{}:{}", self.target.host, self.target.port),
+            ),
+            ("Status", status),
+            ("Resolution", resolution),
+            ("Pointer", pointer.to_owned()),
+            ("Frames received", self.next_generation.to_string()),
+        ];
+
+        Column::with_children(rows.into_iter().map(|(label, value)| {
+            Row::new()
+                .spacing(16)
+                .push(text(label).width(110).style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().background.strongest.color),
+                }))
+                .push(text(value))
+                .into()
+        }))
+        .spacing(6)
+        .width(280)
+        .into()
     }
 
     fn input_menu(&self, keyboard_style_open: bool) -> Vec<Item<Message>> {
@@ -583,11 +638,10 @@ impl State {
 
         Row::new()
             .spacing(12)
-            .padding([2, 8])
+            .padding([0, 8])
+            .height(style::CONTROL_HEIGHT)
             .align_y(Alignment::Center)
             .push(state)
-            .push(style::vertical_divider(16.0))
-            .push(text(self.protocol.name()))
             .push(resolution.is_some().then(|| style::vertical_divider(16.0)))
             .push(resolution)
             .into()

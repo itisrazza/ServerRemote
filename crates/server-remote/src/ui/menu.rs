@@ -6,14 +6,13 @@
 
 use iced::widget::svg::Svg;
 use iced::widget::{Column, Row, Space, button, container, mouse_area, rule, text};
-use iced::{Alignment, Background, Border, Element, Length, Theme, border};
+use iced::{Alignment, Background, Element, Length, Theme, border};
 use server_remote_icons::{self as icons, Icon};
 
 use super::popover::{Placement, popover};
-use super::style;
+use super::style::{self, ICON_SIZE};
 
 const MENU_WIDTH: f32 = 200.0;
-const ICON_SIZE: f32 = 16.0;
 
 pub enum Item<Message> {
     Entry {
@@ -100,16 +99,16 @@ pub fn button_menu<'a, Message: Clone + 'a>(
     on_toggle: Message,
     on_dismiss: Message,
 ) -> Element<'a, Message> {
-    let anchor = button(
-        Row::new()
-            .spacing(6)
-            .align_y(Alignment::Center)
-            .push(tinted(icon, ICON_SIZE))
-            .push(tinted(icons::CHEVRON_DOWN, 12.0)),
-    )
-    .padding([6, 8])
-    .style(move |theme, status| style::bordered_button(theme, status, open))
-    .on_press(on_toggle);
+    let content = Row::new()
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .push(tinted(icon, ICON_SIZE))
+        .push(tinted(icons::CHEVRON_DOWN, 12.0));
+    let anchor = button(container(content).center_y(Length::Fill))
+        .height(style::CONTROL_HEIGHT)
+        .padding([0, 6])
+        .style(move |theme, status| style::bordered_button(theme, status, open))
+        .on_press(on_toggle);
 
     popover(
         anchor,
@@ -120,18 +119,37 @@ pub fn button_menu<'a, Message: Clone + 'a>(
     .into()
 }
 
+/// A square toolbar button showing `icon` that opens `content` below it.
+pub fn button_popout<'a, Message: Clone + 'a>(
+    icon: Icon,
+    content: impl FnOnce() -> Element<'a, Message>,
+    open: bool,
+    on_toggle: Message,
+    on_dismiss: Message,
+) -> Element<'a, Message> {
+    let anchor = button(container(tinted(icon, ICON_SIZE)).center(Length::Fill))
+        .width(style::CONTROL_HEIGHT)
+        .height(style::CONTROL_HEIGHT)
+        .padding(0)
+        .style(move |theme, status| style::bordered_button(theme, status, open))
+        .on_press(on_toggle);
+
+    let popup = open.then(|| container(content()).padding(8).style(style::popup).into());
+    popover(anchor, popup, Placement::Below, Some(on_dismiss)).into()
+}
+
 /// The popup itself.
 pub fn view<'a, Message: Clone + 'a>(items: Vec<Item<Message>>) -> Element<'a, Message> {
     let column = Column::with_children(items.into_iter().map(item_view))
         .spacing(2)
         .width(MENU_WIDTH);
 
-    container(column).padding(4).style(menu_container).into()
+    container(column).padding(4).style(style::popup).into()
 }
 
 fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Message> {
     match item {
-        Item::Separator => container(rule::horizontal(1).style(style::divider))
+        Item::Separator => container(rule::horizontal(1).style(style::popup_divider))
             .padding([2, 4])
             .into(),
         Item::Entry {
@@ -233,19 +251,5 @@ fn menu_item(theme: &Theme, status: button::Status) -> button::Style {
         text_color: item_text_color(theme, status != button::Status::Disabled),
         border: border::rounded(4),
         ..button::Style::default()
-    }
-}
-
-fn menu_container(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
-    container::Style {
-        background: Some(Background::Color(palette.background.weak.color)),
-        text_color: Some(palette.background.base.text),
-        border: Border {
-            color: palette.background.strong.color,
-            width: 1.0,
-            radius: 8.0.into(),
-        },
-        ..container::Style::default()
     }
 }

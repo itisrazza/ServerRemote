@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Length, Settings, Subscription, Task, padding,
-    widget::{Column, Row, Scrollable, Space, button, mouse_area, text, tooltip},
+    Alignment, Element, Font, Length, Settings, Subscription, Task, font, padding,
+    widget::{Column, Row, Scrollable, Space, button, container, mouse_area, stack, text, tooltip},
     window,
 };
 use server_remote_core::{Target, TlsPolicy};
@@ -172,7 +172,7 @@ const CUSTOM_DECORATIONS: bool = !cfg!(target_os = "macos");
 const TRAFFIC_LIGHTS_WIDTH: f32 = 72.0;
 /// Thickness of the invisible resize handles around an undecorated window.
 const RESIZE_BORDER: f32 = 4.0;
-const TAB_WIDTH: f32 = 160.0;
+const TAB_WIDTH: f32 = 150.0;
 
 fn main() -> iced::Result {
     iced::application::application(Application::boot, Application::update, Application::view)
@@ -189,6 +189,7 @@ fn main() -> iced::Result {
             ..Default::default()
         })
         .subscription(Application::subscription)
+        .theme(ui::style::theme())
         .run()
 }
 
@@ -367,11 +368,11 @@ impl Application {
         let content = Column::new()
             .push(self.header())
             .push(self.body())
-            .padding(4)
-            .spacing(4);
+            .padding(ui::style::SPACING)
+            .spacing(ui::style::SPACING);
 
         if CUSTOM_DECORATIONS {
-            resize_frame(content.into())
+            stack![content, resize_handles()].into()
         } else {
             content.into()
         }
@@ -423,7 +424,7 @@ impl Application {
                 .map(|connection| self.connection_tab(connection)),
         )
         .push(self.icon_tab(Tab::Connect, icons::ADD_LARGE, "Connect to…"))
-        .spacing(4);
+        .spacing(ui::style::SPACING);
 
         // Empty space in the title bar moves the window, as a native one would.
         let drag_region = mouse_area(
@@ -431,7 +432,7 @@ impl Application {
                 .push((!CUSTOM_DECORATIONS).then(|| Space::new().width(TRAFFIC_LIGHTS_WIDTH)))
                 .push(self.icon_tab(Tab::Manager, icons::VIRTUAL_DESKTOP, "Connection manager"))
                 .push(Scrollable::new(tabs).horizontal().width(Length::Fill))
-                .spacing(4),
+                .spacing(ui::style::SPACING),
         )
         .on_press(Message::Window(WindowAction::Drag))
         .on_double_click(Message::Window(WindowAction::ToggleMaximize));
@@ -447,7 +448,7 @@ impl Application {
                     Message::Window(WindowAction::Close),
                 )
             }))
-            .spacing(4)
+            .spacing(ui::style::SPACING)
             .align_y(Alignment::Center)
             .into()
     }
@@ -455,8 +456,10 @@ impl Application {
     fn icon_tab(&self, tab: Tab, icon: icons::Icon, label: &str) -> Element<'_, Message> {
         let active = self.tab == tab;
         tooltip(
-            button(themed(icon))
-                .padding(8)
+            button(container(themed(icon)).center(Length::Fill))
+                .width(ui::style::CONTROL_HEIGHT)
+                .height(ui::style::CONTROL_HEIGHT)
+                .padding(0)
                 .style(move |theme, status| ui::style::bordered_button(theme, status, active))
                 .on_press(Message::SelectTab(tab)),
             tooltip_box(text(label.to_owned())),
@@ -469,25 +472,39 @@ impl Application {
         let id = connection.id();
         let active = self.tab == Tab::Connection(id);
 
-        let close = button(themed(icons::CLOSE))
-            .padding(2)
+        let close = button(container(themed(icons::CLOSE)).center(Length::Fill))
+            .width(20)
+            .height(20)
+            .padding(0)
             .style(ui::style::flat_button)
             .on_press(Message::Connection(id, ui::connection::Message::Close));
+
+        let weight = if active {
+            font::Weight::Semibold
+        } else {
+            font::Weight::Normal
+        };
 
         button(
             Row::new()
                 .push(themed(connection.protocol().icon()))
                 .push(
                     text(connection.name().as_ref())
+                        .font(Font {
+                            weight,
+                            ..Font::DEFAULT
+                        })
                         .width(Length::Fill)
                         .wrapping(text::Wrapping::None),
                 )
                 .push(close)
-                .spacing(8)
+                .spacing(6)
+                .height(Length::Fill)
                 .align_y(Alignment::Center),
         )
         .width(TAB_WIDTH)
-        .padding(padding::all(4).left(8))
+        .height(ui::style::CONTROL_HEIGHT)
+        .padding(padding::left(8).right(4))
         .style(move |theme, status| ui::style::bordered_button(theme, status, active))
         .on_press(Message::SelectTab(Tab::Connection(id)))
         .into()
@@ -498,9 +515,10 @@ fn themed<'a>(icon: icons::Icon) -> iced::widget::svg::Svg<'a> {
     ui::themed_icon(icon.element(), |palette| palette.background.base.text)
 }
 
-/// Surrounds `content` with invisible handles that resize an undecorated
-/// window, since the OS no longer provides them.
-fn resize_frame(content: Element<'_, Message>) -> Element<'_, Message> {
+/// Invisible handles along the window edges that resize an undecorated
+/// window, since the OS no longer provides them. Layered over the content so
+/// they sit in its outer margin rather than adding to it.
+fn resize_handles<'a>() -> Element<'a, Message> {
     use iced::mouse::Interaction;
     use window::Direction;
 
@@ -527,7 +545,7 @@ fn resize_frame(content: Element<'_, Message>) -> Element<'_, Message> {
         .push(
             Row::new()
                 .push(handle(Direction::West, border, Length::Fill))
-                .push(content)
+                .push(Space::new().width(Length::Fill))
                 .push(handle(Direction::East, border, Length::Fill))
                 .height(Length::Fill),
         )
