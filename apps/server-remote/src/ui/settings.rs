@@ -26,6 +26,8 @@ const CONTENT_WIDTH: f32 = 560.0;
 /// Below this, each control drops beneath its description instead of
 /// sitting beside it.
 const SIDE_BY_SIDE_WIDTH: f32 = 480.0;
+/// Keeps controls off the window's right edge when the column fills it.
+const CONTENT_END_PADDING: f32 = 12.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Section {
@@ -156,7 +158,7 @@ pub fn view<'a>(state: &'a State, settings: &'a Settings) -> Element<'a, Message
     // Laid out against the space actually available, so a narrow window
     // stacks each control under its description rather than squashing it.
     let content = responsive(move |size| {
-        let width = size.width.min(CONTENT_WIDTH);
+        let width = (size.width - CONTENT_END_PADDING).min(CONTENT_WIDTH);
         let side_by_side = width >= SIDE_BY_SIDE_WIDTH;
         let settings = match state.section {
             Section::General => general(state, settings),
@@ -178,9 +180,13 @@ pub fn view<'a>(state: &'a State, settings: &'a Settings) -> Element<'a, Message
             );
         // A vertical scrollable stretches its content to its own width, so
         // the column sits in a full-width container instead.
-        scrollable(container(column).width(Length::Fill))
-            .width(Length::Fill)
-            .into()
+        scrollable(
+            container(column)
+                .width(Length::Fill)
+                .padding(iced::padding::right(CONTENT_END_PADDING)),
+        )
+        .width(Length::Fill)
+        .into()
     });
 
     Row::new()
@@ -444,20 +450,39 @@ fn abbreviate_home(folder: &Path, home: Option<&Path>) -> String {
 struct Setting<'a> {
     label: &'a str,
     description: &'a str,
-    control: Element<'a, Message>,
+    control: Control<'a>,
 }
 
-fn setting<'a>(label: &'a str, description: &'a str, control: Element<'a, Message>) -> Setting<'a> {
+/// How a setting's control sits beside its label.
+enum Control<'a> {
+    /// A dropdown or button: beside the label when there's room, else below.
+    Block(Element<'a, Message>),
+    /// A switch: always on the setting's own line, at the right-hand end.
+    Switch(Element<'a, Message>),
+}
+
+impl<'a> From<Element<'a, Message>> for Control<'a> {
+    fn from(element: Element<'a, Message>) -> Self {
+        Control::Block(element)
+    }
+}
+
+fn setting<'a>(
+    label: &'a str,
+    description: &'a str,
+    control: impl Into<Control<'a>>,
+) -> Setting<'a> {
     Setting {
         label,
         description,
-        control,
+        control: control.into(),
     }
 }
 
 impl<'a> Setting<'a> {
-    /// The label and description, with the control beside them when
-    /// `side_by_side`, or underneath when space is tight.
+    /// The label and description with the control beside them, or with a
+    /// block control underneath when `side_by_side` is false (space is
+    /// tight). Switches always stay beside.
     fn view(self, side_by_side: bool) -> Element<'a, Message> {
         let description = text(self.description)
             .size(11)
@@ -470,19 +495,19 @@ impl<'a> Setting<'a> {
             .push(text(self.label))
             .push(description);
 
-        if side_by_side {
+        let (control, beside) = match self.control {
+            Control::Switch(control) => (control, true),
+            Control::Block(control) => (control, side_by_side),
+        };
+        if beside {
             Row::new()
                 .spacing(16)
                 .align_y(Alignment::Center)
                 .push(words)
-                .push(self.control)
+                .push(control)
                 .into()
         } else {
-            Column::new()
-                .spacing(8)
-                .push(words)
-                .push(self.control)
-                .into()
+            Column::new().spacing(8).push(words).push(control).into()
         }
     }
 }
@@ -502,11 +527,12 @@ fn select<'a>(
     )
 }
 
-fn switch<'a>(on: bool, change: fn(bool) -> Change) -> Element<'a, Message> {
-    // Matches a select's width so controls line up down the page.
-    container(toggler(on).on_toggle(move |on| Message::Change(change(on))))
-        .width(menu::SELECT_WIDTH)
-        .into()
+fn switch<'a>(on: bool, change: fn(bool) -> Change) -> Control<'a> {
+    Control::Switch(
+        toggler(on)
+            .on_toggle(move |on| Message::Change(change(on)))
+            .into(),
+    )
 }
 
 #[cfg(test)]
