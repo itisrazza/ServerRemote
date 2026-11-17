@@ -3,7 +3,7 @@
 
 use iced::window;
 
-const LOGO: &[u8] = include_bytes!("../assets/icon.icon/Assets/logo.svg");
+pub const LOGO: &[u8] = include_bytes!("../assets/icon.icon/Assets/logo.svg");
 /// Large enough for taskbars and Alt-Tab on high-density screens; the
 /// platform scales it down where it needs less.
 const SIZE: u32 = 256;

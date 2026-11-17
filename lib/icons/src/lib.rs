@@ -48,6 +48,7 @@ icons! {
     KEYBOARD = "carbon_keyboard";
     LAUNCH = "carbon_launch";
     LOCKED = "carbon_locked";
+    LOGO_GITHUB = "carbon_logo--github";
     POWER = "carbon_power";
     PROGRESS_BAR_ROUND = "carbon_progress-bar-round";
     RESTART = "carbon_restart";

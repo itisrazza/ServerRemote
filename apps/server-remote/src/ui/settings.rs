@@ -8,8 +8,11 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use iced::widget::{Column, Row, button, container, responsive, scrollable, text, toggler};
+use iced::widget::{
+    Column, Row, button, container, image, responsive, scrollable, svg, text, toggler,
+};
 use iced::{Alignment, Element, Length, Theme};
+use server_remote_icons::{self as icons, Icon};
 
 use crate::persistence::settings::{
     DisplayScale, GraphicsBackend, KeyboardLayout, RecordingFormat, RecordingQuality, Scaling,
@@ -18,18 +21,26 @@ use crate::persistence::settings::{
 
 use super::connection::KeyboardSize;
 use super::menu::{self, Item};
-use super::style;
-use crate::update;
+use super::{style, themed_icon};
+use crate::{contributors, update};
 
-const SIDEBAR_WIDTH: f32 = 180.0;
-const SIDEBAR_GAP: f32 = 24.0;
+const SIDEBAR_WIDTH: f32 = 200.0;
 /// The widest the settings column grows, so labels stay near their controls.
 const CONTENT_WIDTH: f32 = 560.0;
+/// The About page is narrower: it has no dropdowns to make room for.
+const ABOUT_WIDTH: f32 = 464.0;
 /// Below this, each control drops beneath its description instead of
 /// sitting beside it.
 const SIDE_BY_SIDE_WIDTH: f32 = 480.0;
-/// Keeps controls off the window's right edge when the column fills it.
-const CONTENT_END_PADDING: f32 = 12.0;
+/// Keeps the column off the panel's edges when it fills the panel.
+const PANEL_PADDING: f32 = 16.0;
+
+const WEBSITE_URL: &str = "https://serverremote.razza.io/";
+const MIT_LICENSE_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/blob/main/LICENSE-MIT");
+const APACHE_LICENSE_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/blob/main/LICENSE-APACHE");
+const TITLE_SIZE: f32 = 24.0;
+const VERSION_SIZE: f32 = 16.0;
+const LOGO_SIZE: f32 = 64.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Section {
@@ -131,6 +142,8 @@ pub enum Message {
     CheckForUpdates,
     /// Handled by the application, which opens it in the browser.
     OpenUrl(String),
+    /// Handled by the application, which shows them in a dialog.
+    ShowThirdPartyLicences,
 }
 
 impl State {
@@ -149,7 +162,8 @@ impl State {
             | Message::Change(_)
             | Message::ChooseRecordingFolder
             | Message::CheckForUpdates
-            | Message::OpenUrl(_) => {
+            | Message::OpenUrl(_)
+            | Message::ShowThirdPartyLicences => {
                 self.open = None;
             }
         }
@@ -166,54 +180,70 @@ pub fn view<'a>(
         button(container(text(section.label())).center_y(Length::Fill))
             .width(Length::Fill)
             .height(style::CONTROL_HEIGHT)
-            .padding([0, 10])
+            .padding([0, 8])
             .style(move |theme, status| style::sidebar_item(theme, status, active))
             .on_press(Message::Section(section))
             .into()
     }))
-    .spacing(2)
+    .spacing(style::SPACING)
     .width(SIDEBAR_WIDTH);
 
     // Laid out against the space actually available, so a narrow window
     // stacks each control under its description rather than squashing it.
     let content = responsive(move |size| {
-        let width = (size.width - CONTENT_END_PADDING).min(CONTENT_WIDTH);
-        let side_by_side = width >= SIDE_BY_SIDE_WIDTH;
-        let settings = match state.section {
-            Section::General => general(state, settings),
-            Section::Display => display(state, settings),
-            Section::Input => input(state, settings),
-            Section::Recording => recording(state, settings),
-            Section::About => about(settings, update),
+        let available = size.width - 2.0 * PANEL_PADDING;
+        let side_by_side = available.min(CONTENT_WIDTH) >= SIDE_BY_SIDE_WIDTH;
+        let (column, max_width) = match state.section {
+            Section::About => (about(settings, update, side_by_side), ABOUT_WIDTH),
+            _ => (section_view(state, settings, side_by_side), CONTENT_WIDTH),
         };
-        let column = Column::new()
-            .spacing(16)
-            .width(width)
-            .push(text(state.section.label()).size(16).font(style::BOLD))
-            .push(
-                Column::with_children(
-                    settings
-                        .into_iter()
-                        .map(|setting| setting.view(side_by_side)),
-                )
-                .spacing(16),
-            );
         // A vertical scrollable stretches its content to its own width, so
-        // the column sits in a full-width container instead.
+        // the column is centred in a full-width container instead.
         scrollable(
-            container(column)
-                .width(Length::Fill)
-                .padding(iced::padding::right(CONTENT_END_PADDING)),
+            container(container(column).width(available.min(max_width)))
+                .center_x(Length::Fill)
+                .padding([8.0, PANEL_PADDING]),
         )
         .width(Length::Fill)
         .into()
     });
 
     Row::new()
-        .spacing(SIDEBAR_GAP)
-        .padding([8, 0])
+        .spacing(style::SPACING)
         .push(sidebar)
-        .push(content)
+        .push(
+            container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(style::panel),
+        )
+        .into()
+}
+
+/// A section's heading over its settings.
+fn section_view<'a>(
+    state: &'a State,
+    settings: &'a Settings,
+    side_by_side: bool,
+) -> Element<'a, Message> {
+    let settings = match state.section {
+        Section::General => general(state, settings),
+        Section::Display => display(state, settings),
+        Section::Input => input(state, settings),
+        Section::Recording => recording(state, settings),
+        Section::About => Vec::new(),
+    };
+    Column::new()
+        .spacing(16)
+        .push(text(state.section.label()).size(16).font(style::BOLD))
+        .push(
+            Column::with_children(
+                settings
+                    .into_iter()
+                    .map(|setting| setting.view(side_by_side)),
+            )
+            .spacing(16),
+        )
         .into()
 }
 
@@ -369,42 +399,137 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     ]
 }
 
-fn about<'a>(settings: &'a Settings, update: &'a update::Status) -> Vec<Setting<'a>> {
-    vec![
-        setting(
-            concat!("ServerRemote ", env!("CARGO_PKG_VERSION")),
-            env!("CARGO_PKG_DESCRIPTION"),
-            link_button("Project page", update::PROJECT_URL),
+fn about<'a>(
+    settings: &'a Settings,
+    update: &'a update::Status,
+    side_by_side: bool,
+) -> Element<'a, Message> {
+    let check_on_launch = setting(
+        "Check for updates at launch",
+        "",
+        switch(
+            settings.updates.check_on_launch,
+            Change::CheckForUpdatesOnLaunch,
         ),
-        setting(
-            "Check for updates on launch",
-            "Ask GitHub for a newer release each time the app opens.",
-            switch(
-                settings.updates.check_on_launch,
-                Change::CheckForUpdatesOnLaunch,
-            ),
-        ),
-        update_setting(update),
-        setting(
-            "Licence",
-            "MIT or Apache 2.0, at your option.",
-            Control::None,
-        ),
-        setting(
-            "Icons",
-            "Carbon Design System by IBM, under the Apache License 2.0.",
-            link_button(
-                "Website",
-                "https://carbondesignsystem.com/elements/icons/library/",
-            ),
-        ),
-        setting(
-            "Font",
-            "Nunito Sans by the Nunito Sans Project Authors, under the SIL \
-             Open Font License 1.1.",
-            link_button("Website", "https://github.com/googlefonts/NunitoSans"),
-        ),
-    ]
+    );
+    Column::new()
+        .spacing(16)
+        .push(container(about_header()).padding(iced::padding::bottom(4)))
+        .push(made_by())
+        .push(check_on_launch.view(side_by_side))
+        .push(update_setting(update).view(side_by_side))
+        .push(licence())
+        .into()
+}
+
+/// The logo beside the app's name, version and links.
+fn about_header<'a>() -> Element<'a, Message> {
+    let logo = svg(svg::Handle::from_memory(crate::app_icon::LOGO))
+        .width(LOGO_SIZE)
+        .height(LOGO_SIZE);
+    // Lines up the version's baseline with the name's.
+    let version = container(text(concat!("v", env!("CARGO_PKG_VERSION"))).size(VERSION_SIZE))
+        .padding(iced::padding::top(
+            style::baseline(TITLE_SIZE) - style::baseline(VERSION_SIZE),
+        ));
+    let name = Row::new()
+        .spacing(10)
+        .push(text("ServerRemote").size(TITLE_SIZE).font(style::DISPLAY))
+        .push(version);
+    let links = Row::new()
+        .spacing(style::SPACING)
+        .push(icon_link_button(icons::LAUNCH, "Website", WEBSITE_URL))
+        .push(icon_link_button(
+            icons::LOGO_GITHUB,
+            "GitHub",
+            update::PROJECT_URL,
+        ));
+
+    Row::new()
+        .spacing(8)
+        .push(logo)
+        .push(
+            Column::new()
+                .spacing(6)
+                .padding(iced::padding::top(4))
+                .push(name)
+                .push(links),
+        )
+        .into()
+}
+
+/// The contributors, each linking to their GitHub profile.
+fn made_by<'a>() -> Element<'a, Message> {
+    let people = Row::with_children(contributors::ALL.iter().map(contributor_chip))
+        .spacing(style::SPACING)
+        .width(Length::Fill)
+        .wrap();
+    Row::new()
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .push(text("Made by:").font(style::BOLD))
+        .push(people)
+        .into()
+}
+
+fn contributor_chip(contributor: &contributors::Contributor) -> Element<'_, Message> {
+    let avatar = image(image::Handle::from_bytes(contributor.avatar))
+        .width(16)
+        .height(16)
+        .border_radius(8);
+    let label = Row::new()
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .push(text(format!("@{}", contributor.login)))
+        .push(avatar);
+    button(container(label).center_y(Length::Fill))
+        .height(style::CONTROL_HEIGHT)
+        .padding([0, 8])
+        .style(style::filled_button)
+        .on_press(Message::OpenUrl(format!(
+            "https://github.com/{}",
+            contributor.login
+        )))
+        .into()
+}
+
+fn licence<'a>() -> Element<'a, Message> {
+    let links = Row::new()
+        .spacing(style::SPACING)
+        .push(link_button("MIT License", MIT_LICENSE_URL))
+        .push(link_button("Apache 2.0 License", APACHE_LICENSE_URL))
+        .push(action_button(
+            "Third-party licences",
+            Some(Message::ShowThirdPartyLicences),
+            false,
+        ))
+        .wrap();
+    Column::new()
+        .spacing(4)
+        .push(text("Licence").size(14).font(style::BOLD))
+        .push(text(
+            "ServerRemote is licenced under the MIT or Apache 2.0 License, at your option.",
+        ))
+        .push(links)
+        .into()
+}
+
+/// A filled button with an icon before its label, opening `url`.
+fn icon_link_button<'a>(icon: Icon, label: &'a str, url: &str) -> Element<'a, Message> {
+    let content = Row::new()
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .push(themed_icon(
+            svg(svg::Handle::from_memory(icon.svg())),
+            |palette| palette.background.base.text,
+        ))
+        .push(text(label));
+    button(container(content).center_y(Length::Fill))
+        .height(style::CONTROL_HEIGHT)
+        .padding(iced::padding::left(8).right(10))
+        .style(style::filled_button)
+        .on_press(Message::OpenUrl(url.to_owned()))
+        .into()
 }
 
 /// The latest check's result, with the button that moves things on.
@@ -449,7 +574,7 @@ fn action_button<'a>(
 ) -> Element<'a, Message> {
     button(container(text(label)).center_y(Length::Fill))
         .height(style::CONTROL_HEIGHT)
-        .padding([0, 12])
+        .padding([0, 8])
         .style(move |theme, status| {
             if primary {
                 style::dialog_button(theme, status, false)
@@ -571,8 +696,6 @@ enum Control<'a> {
     Block(Element<'a, Message>),
     /// A switch: always on the setting's own line, at the right-hand end.
     Switch(Element<'a, Message>),
-    /// Information only.
-    None,
 }
 
 impl<'a> From<Element<'a, Message>> for Control<'a> {
@@ -598,11 +721,13 @@ impl<'a> Setting<'a> {
     /// block control underneath when `side_by_side` is false (space is
     /// tight). Switches always stay beside.
     fn view(self, side_by_side: bool) -> Element<'a, Message> {
-        let description = text(self.description)
-            .size(12)
-            .style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().background.strongest.color),
-            });
+        let description = (!self.description.is_empty()).then(|| {
+            text(self.description)
+                .size(12)
+                .style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().background.strongest.color),
+                })
+        });
         let words = Column::new()
             .spacing(2)
             .width(Length::Fill)
@@ -612,7 +737,6 @@ impl<'a> Setting<'a> {
         let (control, beside) = match self.control {
             Control::Switch(control) => (control, true),
             Control::Block(control) => (control, side_by_side),
-            Control::None => return words.into(),
         };
         if beside {
             Row::new()

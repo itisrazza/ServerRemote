@@ -78,6 +78,10 @@ Nunito Sans Project Authors, licensed under the
 embedded static instances are generated from the variable font by
 [`scripts/instance-fonts.py`](scripts/instance-fonts.py).
 
+The About page's contributor list and avatars are fetched from GitHub by
+[`scripts/fetch-contributors.py`](scripts/fetch-contributors.py); rerun it to
+refresh them.
+
 ## Licence
 
 Dual-licensed under either of

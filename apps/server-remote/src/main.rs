@@ -13,6 +13,7 @@ use crate::persistence::settings::{GraphicsBackend, Settings};
 use crate::tooltip_box::tooltip_box;
 
 mod app_icon;
+mod contributors;
 mod persistence;
 mod tooltip_box;
 mod ui;
@@ -397,6 +398,18 @@ mod tests {
             Message::Settings(ui::settings::Message::Section(ui::settings::Section::About)),
         ];
         states.push(("settings-about", false, about.clone()));
+        states.push(("settings-about-mockup", false, about.clone()));
+        states.push((
+            "settings-about-licences",
+            false,
+            about
+                .iter()
+                .cloned()
+                .chain([Message::Settings(
+                    ui::settings::Message::ShowThirdPartyLicences,
+                )])
+                .collect(),
+        ));
         states.push((
             "settings-about-update",
             false,
@@ -423,15 +436,18 @@ mod tests {
         ));
 
         for (name, with_session, messages) in states {
-            let size = if NARROW.contains(&name) {
-                (640.0, 680.0)
-            } else {
-                (1024.0, 768.0)
+            let size = match name {
+                // The Figma mockup's frame.
+                "settings-about-mockup" => (800.0, 292.0),
+                name if NARROW.contains(&name) => (640.0, 680.0),
+                _ => (1024.0, 768.0),
             };
             let (mut app, _) = Application::new(None, Settings::default());
             let _ = app.open_connection(request("Connection #1"));
             let _ = app.open_connection(request("Connection #2"));
             app.tab = Tab::Connection(0);
+            // Snapshots render at 2x.
+            let _ = app.update(Message::Rescaled(2.0));
             if with_session {
                 feed_ilo_like_session(&mut app);
             }
@@ -511,6 +527,32 @@ fn apply_graphics_backend(backend: GraphicsBackend) {
     unsafe { std::env::set_var("WGPU_BACKEND", backend.wgpu_name()) };
 }
 
+fn third_party_licences<'a>() -> Element<'a, Message> {
+    let link = |label, url: &str| ui::dialog::Button {
+        label,
+        on_press: Message::Settings(ui::settings::Message::OpenUrl(url.to_owned())),
+        kind: ui::dialog::Kind::Secondary,
+    };
+    ui::dialog::view(
+        "Third-party licences",
+        "Icons: Carbon Design System by IBM, under the Apache License 2.0.\n\n\
+         Font: Nunito Sans by the Nunito Sans Project Authors, under the SIL \
+         Open Font License 1.1.",
+        vec![
+            link(
+                "Carbon",
+                "https://carbondesignsystem.com/elements/icons/library/",
+            ),
+            link("Nunito Sans", "https://github.com/googlefonts/NunitoSans"),
+            ui::dialog::Button {
+                label: "Close",
+                on_press: Message::CloseModal,
+                kind: ui::dialog::Kind::Primary,
+            },
+        ],
+    )
+}
+
 fn pick_recording_folder() -> Task<Message> {
     Task::perform(
         async {
@@ -580,6 +622,7 @@ enum AppModal {
         title: String,
         message: String,
     },
+    ThirdPartyLicences,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -752,6 +795,10 @@ impl Application {
                         self.open_url(&url);
                         Task::none()
                     }
+                    ui::settings::Message::ShowThirdPartyLicences => {
+                        self.modal = Some(AppModal::ThirdPartyLicences);
+                        Task::none()
+                    }
                     ui::settings::Message::Section(_)
                     | ui::settings::Message::Toggle(_)
                     | ui::settings::Message::Dismiss => Task::none(),
@@ -882,6 +929,7 @@ impl Application {
                     }],
                 );
             }
+            AppModal::ThirdPartyLicences => return third_party_licences(),
         };
         let message = match self.connections.len() {
             1 => "The open connection will be closed.",

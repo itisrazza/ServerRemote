@@ -19,10 +19,11 @@ const RADIUS: f32 = 6.0;
 
 /// Nunito Sans, pinned by `scripts/instance-fonts.py` to the design's axis
 /// settings (maximum lowercase height, optical size 12).
-const FONT_FILES: [&[u8]; 3] = [
+const FONT_FILES: [&[u8]; 4] = [
     include_bytes!("../../assets/fonts/NunitoSans-Medium.ttf"),
     include_bytes!("../../assets/fonts/NunitoSans-Bold.ttf"),
     include_bytes!("../../assets/fonts/NunitoSans-CondensedMedium.ttf"),
+    include_bytes!("../../assets/fonts/NunitoSans-SemiExpandedBold.ttf"),
 ];
 
 pub const FONT: Font = Font {
@@ -40,7 +41,24 @@ pub const CONDENSED: Font = Font {
     stretch: Stretch::Condensed,
     ..FONT
 };
+/// Wide and bold, for the app's name on the About page.
+pub const DISPLAY: Font = Font {
+    weight: Weight::Bold,
+    stretch: Stretch::SemiExpanded,
+    ..FONT
+};
 pub const TEXT_SIZE: f32 = 13.0;
+/// iced's default line height, as a multiple of the text size.
+const LINE_HEIGHT: f32 = 1.3;
+/// Nunito Sans's ascent and descent, in ems.
+const ASCENT: f32 = 1.011;
+const DESCENT: f32 = 0.353;
+
+/// How far below the top of its line text of `size` has its baseline, so
+/// text of different sizes in a row can share one.
+pub fn baseline(size: f32) -> f32 {
+    size * (LINE_HEIGHT + ASCENT - DESCENT) / 2.0
+}
 
 /// Application settings carrying the embedded fonts and default text style.
 pub fn settings() -> Settings {
@@ -151,10 +169,11 @@ pub fn tab_close_button(theme: &Theme, status: button::Status, tab_active: bool)
 /// An entry in the Settings tab's section list; `active` is the open one.
 pub fn sidebar_item(theme: &Theme, status: button::Status, active: bool) -> button::Style {
     let palette = theme.extended_palette();
+    // The open section shares the content panel's fill, as if part of it.
     let background = match (active, status) {
-        (true, _) => Some(palette.background.strong.color),
+        (true, _) => Some(palette.background.weak.color),
         (false, button::Status::Hovered | button::Status::Pressed) => {
-            Some(palette.background.neutral.color)
+            Some(palette.background.weaker.color)
         }
         (false, button::Status::Active | button::Status::Disabled) => None,
     };
@@ -178,6 +197,32 @@ pub fn flat_button(theme: &Theme, status: button::Status) -> button::Style {
         text_color: palette.background.base.text,
         border: iced::border::rounded(4),
         ..button::Style::default()
+    }
+}
+
+/// A borderless button with a solid fill, e.g. the About page's links.
+pub fn filled_button(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let background = match status {
+        button::Status::Hovered | button::Status::Pressed => palette.background.strong.color,
+        button::Status::Active | button::Status::Disabled => palette.background.neutral.color,
+    };
+    button::Style {
+        background: Some(Background::Color(background)),
+        text_color: palette.background.base.text,
+        border: iced::border::rounded(RADIUS),
+        ..button::Style::default()
+    }
+}
+
+/// The rounded panel a tab's main content sits in, e.g. a Settings section.
+pub fn panel(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(Background::Color(palette.background.weak.color)),
+        text_color: Some(palette.background.base.text),
+        border: iced::border::rounded(8),
+        ..container::Style::default()
     }
 }
 

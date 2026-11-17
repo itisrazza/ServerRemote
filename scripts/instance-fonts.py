@@ -28,6 +28,7 @@ INSTANCES = [
     ("NunitoSans-Medium", "Medium", 500, 100, 5),
     ("NunitoSans-Bold", "Bold", 700, 100, 5),
     ("NunitoSans-CondensedMedium", "Condensed Medium", 500, 75, 3),
+    ("NunitoSans-SemiExpandedBold", "SemiExpanded Bold", 700, 115, 6),
 ]
 
 
