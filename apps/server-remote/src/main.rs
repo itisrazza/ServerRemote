@@ -237,6 +237,8 @@ const TRAFFIC_LIGHTS_WIDTH: f32 = 72.0;
 /// Thickness of the invisible resize handles around an undecorated window.
 const RESIZE_BORDER: f32 = 4.0;
 const TAB_WIDTH: f32 = 150.0;
+/// Title bar height: the tab buttons plus an equal inset above and below.
+const TITLE_BAR_HEIGHT: f32 = ui::style::CONTROL_HEIGHT + 2.0 * ui::style::SPACING;
 
 fn main() -> iced::Result {
     iced::application::application(Application::boot, Application::update, Application::view)
@@ -263,7 +265,18 @@ fn platform_specific() -> window::settings::PlatformSpecific {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Keeps the DWM frame on the undecorated window so Windows 11 still draws
+/// its rounded corners, accent border and drop shadow.
+#[cfg(target_os = "windows")]
+fn platform_specific() -> window::settings::PlatformSpecific {
+    window::settings::PlatformSpecific {
+        undecorated_shadow: true,
+        corner_preference: window::settings::platform::CornerPreference::Round,
+        ..Default::default()
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn platform_specific() -> window::settings::PlatformSpecific {
     window::settings::PlatformSpecific::default()
 }
@@ -426,13 +439,19 @@ impl Application {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let content = Column::new()
-            .push(self.header())
-            .push(self.body())
-            .padding(ui::style::SPACING)
-            .spacing(ui::style::SPACING);
+        // The header carries its own insets so the window controls can sit
+        // flush in the corner; only the body gets the outer margin.
+        let content = Column::new().push(self.header()).push(
+            container(self.body()).padding(
+                padding::left(ui::style::SPACING)
+                    .right(ui::style::SPACING)
+                    .bottom(ui::style::SPACING),
+            ),
+        );
 
-        if CUSTOM_DECORATIONS {
+        // A maximised window can't be resized, and the handles would steal
+        // the screen corner from the close button.
+        if CUSTOM_DECORATIONS && !self.maximized {
             stack![content, resize_handles()].into()
         } else {
             content.into()
@@ -511,6 +530,15 @@ impl Application {
             }))
             .spacing(ui::style::SPACING)
             .align_y(Alignment::Center)
+            // Tall enough for an even inset above, below and left of the
+            // tabs; the window controls stretch to fill it, flush with the
+            // top and right edges so the screen corner hits close.
+            .height(TITLE_BAR_HEIGHT)
+            .padding(padding::left(ui::style::SPACING).right(if CUSTOM_DECORATIONS {
+                0.0
+            } else {
+                ui::style::SPACING
+            }))
             .into()
     }
 

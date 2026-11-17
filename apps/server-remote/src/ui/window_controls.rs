@@ -10,9 +10,8 @@ use iced::{Element, Font, Length, Theme};
 
 use super::style;
 
-/// Windows caption buttons are 46×32.
+/// Windows caption buttons are 46 wide; the height follows the title bar.
 const WIDTH: f32 = 46.0;
-const HEIGHT: f32 = 32.0;
 const GLYPH_SIZE: f32 = 10.0;
 
 const SEGOE_FLUENT_ICONS: Font = Font::with_name("Segoe Fluent Icons");
@@ -61,13 +60,14 @@ pub fn view<'a, Message: Clone + 'a>(
         .push(control(Glyph::Minimize, on_minimize).style(style::flat_button))
         .push(control(maximize, on_toggle_maximize).style(style::flat_button))
         .push(control(Glyph::Close, on_close).style(close_button))
+        .height(Length::Fill)
         .into()
 }
 
 fn control<'a, Message: 'a>(glyph: Glyph, on_press: Message) -> button::Button<'a, Message> {
     button(center(glyph_view(glyph)))
         .width(WIDTH)
-        .height(HEIGHT)
+        .height(Length::Fill)
         .padding(0)
         .on_press(on_press)
 }
