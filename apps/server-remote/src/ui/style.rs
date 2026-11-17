@@ -23,7 +23,7 @@ const FONT_FILES: [&[u8]; 4] = [
     include_bytes!("../../assets/fonts/NunitoSans-Medium.ttf"),
     include_bytes!("../../assets/fonts/NunitoSans-Bold.ttf"),
     include_bytes!("../../assets/fonts/NunitoSans-CondensedMedium.ttf"),
-    include_bytes!("../../assets/fonts/NunitoSans-SemiExpandedBold.ttf"),
+    include_bytes!("../../assets/fonts/NunitoSans-SemiExpandedBlack.ttf"),
 ];
 
 pub const FONT: Font = Font {
@@ -41,9 +41,9 @@ pub const CONDENSED: Font = Font {
     stretch: Stretch::Condensed,
     ..FONT
 };
-/// Wide and bold, for the app's name on the About page.
+/// Wide and heavy, for the app's name on the About page.
 pub const DISPLAY: Font = Font {
-    weight: Weight::Bold,
+    weight: Weight::Black,
     stretch: Stretch::SemiExpanded,
     ..FONT
 };

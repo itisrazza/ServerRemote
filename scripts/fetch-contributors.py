@@ -98,7 +98,13 @@ def main() -> None:
     kept = {path.name for _, path in avatars} | {GENERATED}
     for stale in (path for path in OUT_DIR.iterdir() if path.name not in kept):
         stale.unlink()
-    (OUT_DIR / GENERATED).write_text(rust_source(avatars))
+    generated = OUT_DIR / GENERATED
+    generated.write_text(rust_source(avatars))
+    formatted = subprocess.run(
+        ["rustfmt", "--edition", "2024", str(generated)], capture_output=True, text=True
+    )
+    if formatted.returncode != 0:
+        sys.exit(f"rustfmt failed on {generated} (exit {formatted.returncode}): {formatted.stderr.strip()}")
     for contributor, path in avatars:
         print(contributor.login, path)
 
