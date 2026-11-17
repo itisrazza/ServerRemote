@@ -25,6 +25,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+**Docs are part of done.** When feature work lands or a feature's status
+changes, update the docs in the same change: the README's status line,
+protocol table and crate list; the status line and crate table in
+[docs/architecture/README.md](docs/architecture/README.md); the
+[roadmap](docs/architecture/roadmap.md) (move items between Done, In
+progress and Next); the architecture page for the area you changed; and the
+crate `description` in `apps/server-remote/Cargo.toml`.
+
 Because of `-D warnings`, a type or function nothing uses yet fails CI as
 dead code. Land a feature together with its first use rather than adding
 `#[allow(dead_code)]`.

@@ -1,6 +1,6 @@
 [package]
 name = "server-remote"
-description = "A universal remote desktop / console client (VNC today; Spice and iLO planned)."
+description = "A universal remote desktop / console client (VNC today; Spice in progress; iLO next)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

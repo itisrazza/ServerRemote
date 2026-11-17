@@ -9,8 +9,8 @@ A universal "server" remote — one client that aims to connect to as many remot
 desktop and console protocols as possible, focused on the ones that lack a good
 client on the platforms I actually use (macOS in particular).
 
-> **Status: early, experimental.** Dummy and VNC work end to end; Spice is in
-> progress; iLO is planned but not started. Interfaces will keep changing.
+> **Status: early, experimental.** VNC works end to end but isn't complete;
+> Spice is in progress; iLO is starting soon. Interfaces will keep changing.
 
 ## Why
 
@@ -28,9 +28,9 @@ gaps:
 | Protocol | Status |
 |---|---|
 | Dummy (test pattern) | ✅ Works |
-| VNC / RFB | ✅ Works — render, mouse, keyboard |
+| VNC / RFB | 🚧 Works end to end (render, mouse, keyboard), not complete |
 | Spice | 🚧 In progress |
-| HPE iLO Remote Console | ⏳ Planned |
+| HPE iLO Remote Console | ⏳ Starting soon |
 
 VNC currently negotiates None / VNC-password auth over plain TCP, using Raw and
 CopyRect encodings. Richer encodings, TLS, and damage updates are on the roadmap.
@@ -55,7 +55,7 @@ It's a Cargo workspace:
 - `connectors/` — one crate per protocol, implementing the core `Connector`.
   - `vnc` (`server-remote-vnc`) — VNC/RFB, on top of [`vnc-rs`](https://crates.io/crates/vnc-rs).
   - `spice` (`server-remote-spice`) — Spice, on top of `lib/spice`.
-  - `ilo` (`server-remote-ilo`) — placeholder for now.
+  - `ilo` (`server-remote-ilo`) — placeholder; work starts soon.
 - `lib/`
   - `core` (`server-remote-core`) — protocol-agnostic traits and types
     (UI-free), plus the dummy connector.

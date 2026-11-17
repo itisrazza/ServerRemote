@@ -1,8 +1,9 @@
 # Architecture
 
-> Status: early but working. Dummy and VNC work end to end (render, mouse,
-> keyboard); Spice connects and takes input but is still in progress; iLO is
-> not started. Expect the shape to keep shifting as it lands.
+> Status: early but working. VNC works end to end (render, mouse, keyboard)
+> but isn't complete; Spice connects and takes input but is still in
+> progress; iLO is starting soon. Expect the shape to keep shifting as it
+> lands.
 
 ## Goal
 
@@ -38,10 +39,10 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`.
 |---|---|
 | `server-remote` | iced GUI front end. |
 | `server-remote-core` | Protocol-agnostic traits and types, plus the Dummy implementation. Does **not** depend on iced. |
-| `server-remote-vnc` | VNC / RFB — implemented, on top of the `vnc-rs` crate. |
-| `server-remote-spice` | Spice — connects and renders, on top of `spice-rs`. |
+| `server-remote-vnc` | VNC / RFB, on top of the `vnc-rs` crate — works end to end, not complete (see the [roadmap](roadmap.md)). |
+| `server-remote-spice` | Spice, on top of `spice-rs` — in progress. |
 | `spice-rs` (`lib/spice`) | Spice protocol client library: wire format, channels, framebuffer. |
-| `server-remote-ilo` | HPE iLO Remote Console — not started. |
+| `server-remote-ilo` | HPE iLO Remote Console — placeholder; work starts soon. |
 | `server-remote-icons` (`lib/icons`) | The app's icon set — [Carbon](https://github.com/carbon-design-system/carbon) icons (Apache-2.0) plus custom ones, exported from the Figma design into `assets/` and embedded with `include_bytes!`. Each icon is an `Icon` constant; the `iced` feature adds `Icon::element()`, which builds an `iced::widget::svg::Svg`. |
 
 Workspace: edition 2024, resolver 3, iced 0.14 (`advanced` feature) on the front
