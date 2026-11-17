@@ -202,6 +202,14 @@ const fn ni(icon: Icon, named: Named, width: f32) -> KeyDef {
     }
 }
 
+/// A modifier key drawn with an icon rather than a text label.
+const fn mi(icon: Icon, modifier: ModifierKey, width: f32) -> KeyDef {
+    KeyDef {
+        icon: Some(icon),
+        ..m("", modifier, width)
+    }
+}
+
 /// A key that spans two rows.
 const fn tall(def: KeyDef) -> KeyDef {
     KeyDef { rows: 2, ..def }
@@ -297,7 +305,7 @@ static NUMBER_ROW: [KeyDef; 14] = [
     c("0", 1.0),
     c("-", 1.0),
     c("=", 1.0),
-    n("Backspace", Named::Backspace, 2.0),
+    ni(icons::KEY_BACKSPACE, Named::Backspace, 2.0),
 ];
 
 static QWERTY_ROW: [KeyDef; 14] = [
@@ -330,7 +338,7 @@ static HOME_ROW: [KeyDef; 13] = [
     c("l", 1.0),
     c(";", 1.0),
     c("'", 1.0),
-    n("Enter", Named::Enter, 2.25),
+    ni(icons::KEY_ENTER, Named::Enter, 2.25),
 ];
 
 static BOTTOM_ROW: [KeyDef; 12] = [
@@ -350,11 +358,11 @@ static BOTTOM_ROW: [KeyDef; 12] = [
 
 static SPACE_ROW: [KeyDef; 8] = [
     m("Control", ModifierKey::Control, 1.5),
-    m("Super", ModifierKey::Super, 1.25),
+    mi(icons::KEY_WINDOWS, ModifierKey::Super, 1.25),
     m("Alt", ModifierKey::Alt, 1.25),
     n("", Named::Space, 6.0),
     m("AltGr", ModifierKey::AltGraph, 1.25),
-    m("Super", ModifierKey::Super, 1.25),
+    mi(icons::KEY_WINDOWS, ModifierKey::Super, 1.25),
     ni(icons::DIAMOND_OUTLINE, Named::ContextMenu, 1.0),
     m("Control", ModifierKey::Control, 1.5),
 ];
@@ -376,7 +384,10 @@ static NUMPAD_SIDE_COLUMN: [KeyDef; 4] = [
     sp(1.0),
     ks("-", KP_SUBTRACT, 1.0),
     tall(ks("+", KP_ADD, 1.0)),
-    tall(ks("Enter", KP_ENTER, 1.0)),
+    tall(KeyDef {
+        icon: Some(icons::KEY_ENTER),
+        ..ks("", KP_ENTER, 1.0)
+    }),
 ];
 
 // The nav/arrow cluster block, to the right of the main block — six rows so
@@ -394,7 +405,7 @@ static NAV_UPPER_ROW: [KeyDef; 3] = [
 ];
 
 static NAV_LOWER_ROW: [KeyDef; 3] = [
-    n("Delete", Named::Delete, 1.0),
+    ni(icons::KEY_DELETE, Named::Delete, 1.0),
     n("End", Named::End, 1.0),
     n("Pg Dn", Named::PageDown, 1.0),
 ];

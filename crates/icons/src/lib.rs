@@ -58,6 +58,10 @@ icons! {
     UPLOAD = "carbon_upload";
     VIRTUAL_DESKTOP = "carbon_virtual-desktop";
     VMDK_DISK = "carbon_vmdk-disk";
+    KEY_BACKSPACE = "key_backspace";
+    KEY_DELETE = "key_delete";
+    KEY_ENTER = "key_enter";
+    KEY_WINDOWS = "key_windows";
     PROTOCOL_ILO = "protocol_ilo";
 }
 
