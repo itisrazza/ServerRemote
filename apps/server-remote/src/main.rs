@@ -318,7 +318,7 @@ mod tests {
         };
 
         // (name, whether a connector session is fed in first, messages)
-        let states: Vec<(&str, bool, Vec<Message>)> = vec![
+        let mut states: Vec<(&str, bool, Vec<Message>)> = vec![
             ("window", false, vec![]),
             ("connector", true, vec![]),
             (
@@ -390,7 +390,25 @@ mod tests {
             ),
         ];
 
+        // Wide by default; these are also rendered at a narrow width.
+        const NARROW: [&str; 1] = ["settings-display-narrow"];
+        states.push((
+            "settings-display-narrow",
+            false,
+            vec![
+                Message::SelectTab(Tab::Settings),
+                Message::Settings(ui::settings::Message::Section(
+                    ui::settings::Section::Display,
+                )),
+            ],
+        ));
+
         for (name, with_session, messages) in states {
+            let size = if NARROW.contains(&name) {
+                (640.0, 680.0)
+            } else {
+                (1024.0, 768.0)
+            };
             let (mut app, _) = Application::new(None, Settings::default());
             let _ = app.open_connection(request("Connection #1"));
             let _ = app.open_connection(request("Connection #2"));
@@ -401,8 +419,7 @@ mod tests {
             for message in messages {
                 let _ = app.update(message);
             }
-            let mut simulator =
-                iced_test::Simulator::with_size(settings.clone(), (1024.0, 768.0), app.view());
+            let mut simulator = iced_test::Simulator::with_size(settings.clone(), size, app.view());
             let snapshot = simulator.snapshot(&theme).expect("renders");
             // `matches_image` only writes when no snapshot exists yet, and
             // names the file after the renderer too, so clear old ones first.

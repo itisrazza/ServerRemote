@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use iced::widget::{Column, Row, button, container, scrollable, text, toggler};
+use iced::widget::{Column, Row, button, container, responsive, scrollable, text, toggler};
 use iced::{Alignment, Element, Length, Theme};
 
 use crate::persistence::settings::{
@@ -20,7 +20,12 @@ use super::menu::{self, Item};
 use super::style;
 
 const SIDEBAR_WIDTH: f32 = 180.0;
+const SIDEBAR_GAP: f32 = 24.0;
+/// The widest the settings column grows, so labels stay near their controls.
 const CONTENT_WIDTH: f32 = 560.0;
+/// Below this, each control drops beneath its description instead of
+/// sitting beside it.
+const SIDE_BY_SIDE_WIDTH: f32 = 480.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Section {
@@ -148,37 +153,53 @@ pub fn view<'a>(state: &'a State, settings: &'a Settings) -> Element<'a, Message
     .spacing(2)
     .width(SIDEBAR_WIDTH);
 
-    let rows = match state.section {
-        Section::General => general(state, settings),
-        Section::Display => display(state, settings),
-        Section::Input => input(state, settings),
-        Section::Recording => recording(state, settings),
-    };
-    let content = Column::new()
-        .spacing(16)
-        .width(CONTENT_WIDTH)
-        .push(text(state.section.label()).size(16).font(style::BOLD))
-        .push(Column::with_children(rows).spacing(16));
+    // Laid out against the space actually available, so a narrow window
+    // stacks each control under its description rather than squashing it.
+    let content = responsive(move |size| {
+        let width = size.width.min(CONTENT_WIDTH);
+        let side_by_side = width >= SIDE_BY_SIDE_WIDTH;
+        let settings = match state.section {
+            Section::General => general(state, settings),
+            Section::Display => display(state, settings),
+            Section::Input => input(state, settings),
+            Section::Recording => recording(state, settings),
+        };
+        let column = Column::new()
+            .spacing(16)
+            .width(width)
+            .push(text(state.section.label()).size(16).font(style::BOLD))
+            .push(
+                Column::with_children(
+                    settings
+                        .into_iter()
+                        .map(|setting| setting.view(side_by_side)),
+                )
+                .spacing(16),
+            );
+        // A vertical scrollable stretches its content to its own width, so
+        // the column sits in a full-width container instead.
+        scrollable(container(column).width(Length::Fill))
+            .width(Length::Fill)
+            .into()
+    });
 
     Row::new()
-        .spacing(24)
+        .spacing(SIDEBAR_GAP)
         .padding([8, 0])
         .push(sidebar)
-        // A vertical scrollable stretches its content to its own width, so
-        // the fixed-width content sits in a full-width container instead.
-        .push(scrollable(container(content).width(Length::Fill)).width(Length::Fill))
+        .push(content)
         .into()
 }
 
-fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Message>> {
-    let confirm_quit = row(
+fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
+    let confirm_quit = setting(
         "Confirm before quitting",
         "Ask before closing the window while connections are open.",
         switch(settings.general.confirm_quit, Change::ConfirmQuit),
     );
     // Only Windows offers a choice of graphics API worth making.
     let backend = cfg!(windows).then(|| {
-        row(
+        setting(
             "Graphics backend",
             "DirectX 12 keeps up with window resizing better; try Vulkan if \
              drawing misbehaves. Takes effect when the app is next opened.",
@@ -201,9 +222,9 @@ fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Mess
         .collect()
 }
 
-fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Message>> {
+fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     vec![
-        row(
+        setting(
             "Scaling",
             "How the remote display fits the window.",
             select(
@@ -218,12 +239,12 @@ fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Mess
                 ),
             ),
         ),
-        row(
+        setting(
             "Keep aspect ratio",
             "Letterbox the remote display rather than stretch it.",
             switch(settings.display.keep_aspect_ratio, Change::KeepAspectRatio),
         ),
-        row(
+        setting(
             "Display scale",
             "How remote pixels map to this screen's.",
             select(
@@ -238,9 +259,9 @@ fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Mess
     ]
 }
 
-fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Message>> {
+fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     vec![
-        row(
+        setting(
             "Keyboard style",
             "The virtual keyboard's layout when a connection opens.",
             select(
@@ -255,7 +276,7 @@ fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Messag
                 ),
             ),
         ),
-        row(
+        setting(
             "Show virtual keyboard on connect",
             "Open the virtual keyboard as soon as a connection opens.",
             switch(
@@ -263,7 +284,7 @@ fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Messag
                 Change::OpenKeyboardOnConnect,
             ),
         ),
-        row(
+        setting(
             "Keyboard layout",
             "The remote machine's keyboard layout.",
             select(
@@ -278,14 +299,14 @@ fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Messag
     ]
 }
 
-fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Message>> {
+fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     let folder = settings
         .recording
         .folder
         .as_deref()
         .map_or_else(default_recording_folder_label, folder_label);
     vec![
-        row(
+        setting(
             "Save to",
             "Where new recordings are saved.",
             select(
@@ -295,7 +316,7 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Me
                 recording_folders(settings, Message::Change, Message::ChooseRecordingFolder),
             ),
         ),
-        row(
+        setting(
             "Format",
             "ServerRemote recordings also keep keyboard and mouse input.",
             select(
@@ -307,7 +328,7 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Element<'a, Me
                 }),
             ),
         ),
-        row(
+        setting(
             "Quality",
             "Higher quality makes larger files.",
             select(
@@ -419,29 +440,51 @@ fn abbreviate_home(folder: &Path, home: Option<&Path>) -> String {
     }
 }
 
-/// A setting: its name and explanation on the left, its control on the right.
-fn row<'a>(
+/// One setting: its name, an explanation, and the control that changes it.
+struct Setting<'a> {
     label: &'a str,
     description: &'a str,
     control: Element<'a, Message>,
-) -> Element<'a, Message> {
-    let description = text(description)
-        .size(11)
-        .style(|theme: &Theme| text::Style {
-            color: Some(theme.extended_palette().background.strongest.color),
-        });
-    Row::new()
-        .spacing(16)
-        .align_y(Alignment::Center)
-        .push(
+}
+
+fn setting<'a>(label: &'a str, description: &'a str, control: Element<'a, Message>) -> Setting<'a> {
+    Setting {
+        label,
+        description,
+        control,
+    }
+}
+
+impl<'a> Setting<'a> {
+    /// The label and description, with the control beside them when
+    /// `side_by_side`, or underneath when space is tight.
+    fn view(self, side_by_side: bool) -> Element<'a, Message> {
+        let description = text(self.description)
+            .size(11)
+            .style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().background.strongest.color),
+            });
+        let words = Column::new()
+            .spacing(2)
+            .width(Length::Fill)
+            .push(text(self.label))
+            .push(description);
+
+        if side_by_side {
+            Row::new()
+                .spacing(16)
+                .align_y(Alignment::Center)
+                .push(words)
+                .push(self.control)
+                .into()
+        } else {
             Column::new()
-                .spacing(2)
-                .width(Length::Fill)
-                .push(text(label))
-                .push(description),
-        )
-        .push(control)
-        .into()
+                .spacing(8)
+                .push(words)
+                .push(self.control)
+                .into()
+        }
+    }
 }
 
 fn select<'a>(
