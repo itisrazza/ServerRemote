@@ -3625,6 +3625,7 @@ dependencies = [
  "iced_wgpu",
  "serde",
  "server-remote-core",
+ "server-remote-icons",
  "server-remote-spice",
  "server-remote-vnc",
  "tempfile",
@@ -3638,6 +3639,13 @@ version = "0.1.0"
 dependencies = [
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "server-remote-icons"
+version = "0.1.0"
+dependencies = [
+ "iced",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@ members = [
     "crates/server-remote-spice",
     "crates/server-remote-ilo",
     "crates/spice-rs",
+    "crates/icons",
     "crates/bootstrap-icons",
     "crates/bootstrap-icons-codegen",
     "crates/bootstrap-icons-macros",
