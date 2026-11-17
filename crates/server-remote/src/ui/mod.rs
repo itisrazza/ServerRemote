@@ -7,6 +7,7 @@ mod popover;
 pub mod style;
 mod virtual_keyboard;
 mod virtual_trackpad;
+pub mod window_controls;
 
 /// Sizes an icon and tints it to match the given button's text color —
 /// `Svg` ignores the ambient text color buttons apply to their other

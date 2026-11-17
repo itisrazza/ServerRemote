@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Length, Settings, Subscription, Task, Theme, padding,
+    Alignment, Element, Length, Settings, Subscription, Task, padding,
     widget::{Column, Row, Scrollable, Space, button, mouse_area, text, tooltip},
     window,
 };
@@ -214,6 +214,9 @@ struct Application {
     connect_tab: ui::connect::State,
 
     sessions: persistence::sessions::Sessions,
+
+    /// Tracked so the title bar shows restore rather than maximise.
+    maximized: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,6 +236,8 @@ enum Message {
     Connection(u64, ui::connection::Message),
 
     Window(WindowAction),
+    Resized(iced::window::Id),
+    Maximized(bool),
     RequestClose(iced::window::Id),
 }
 
@@ -255,6 +260,7 @@ impl Application {
                 tab: Tab::Connect,
                 connect_tab: ui::connect::State::new(),
                 sessions: persistence::sessions::Sessions::load(),
+                maximized: false,
             },
             Task::none(),
         )
@@ -305,6 +311,11 @@ impl Application {
                 WindowAction::Close => Task::done(Message::RequestClose(id)),
                 WindowAction::Resize(direction) => window::drag_resize(id, direction),
             }),
+            Message::Resized(id) => window::is_maximized(id).map(Message::Maximized),
+            Message::Maximized(maximized) => {
+                self.maximized = maximized;
+                Task::none()
+            }
             Message::RequestClose(id) => {
                 // TODO: check if there are any active connections
                 window::close(id)
@@ -401,7 +412,8 @@ impl Application {
 
         // Keyboard input is captured directly by the focused `kvm_display`
         // widget on the active connection tab, not routed here.
-        Subscription::batch([close_requests].into_iter().chain(connections))
+        let resizes = window::resize_events().map(|(id, _size)| Message::Resized(id));
+        Subscription::batch([close_requests, resizes].into_iter().chain(connections))
     }
 
     fn header(&self) -> Element<'_, Message> {
@@ -427,7 +439,14 @@ impl Application {
         Row::new()
             .push(drag_region)
             .push(self.icon_tab(Tab::Settings, icons::SETTINGS, "Settings"))
-            .push(CUSTOM_DECORATIONS.then(window_controls))
+            .push(CUSTOM_DECORATIONS.then(|| {
+                ui::window_controls::view(
+                    self.maximized,
+                    Message::Window(WindowAction::Minimize),
+                    Message::Window(WindowAction::ToggleMaximize),
+                    Message::Window(WindowAction::Close),
+                )
+            }))
             .spacing(4)
             .align_y(Alignment::Center)
             .into()
@@ -477,48 +496,6 @@ impl Application {
 
 fn themed<'a>(icon: icons::Icon) -> iced::widget::svg::Svg<'a> {
     ui::themed_icon(icon.element(), |palette| palette.background.base.text)
-}
-
-/// Minimise, maximise and close, for platforms where the app draws its own
-/// title bar.
-fn window_controls() -> Element<'static, Message> {
-    let control = |icon: iced::widget::svg::Svg<'static>, action| {
-        button(ui::themed_icon(icon, |palette| {
-            palette.background.base.text
-        }))
-        .padding([8, 14])
-        .on_press(Message::Window(action))
-    };
-
-    Row::new()
-        .push(
-            control(
-                bootstrap_icons::iced::bi!(dash - lg),
-                WindowAction::Minimize,
-            )
-            .style(ui::style::flat_button),
-        )
-        .push(
-            control(
-                bootstrap_icons::iced::bi!(square),
-                WindowAction::ToggleMaximize,
-            )
-            .style(ui::style::flat_button),
-        )
-        .push(control(icons::CLOSE_LARGE.element(), WindowAction::Close).style(close_button))
-        .spacing(2)
-        .into()
-}
-
-fn close_button(theme: &Theme, status: button::Status) -> button::Style {
-    let base = ui::style::flat_button(theme, status);
-    match status {
-        button::Status::Hovered | button::Status::Pressed => {
-            let danger = theme.extended_palette().danger.base;
-            base.with_background(danger.color)
-        }
-        button::Status::Active | button::Status::Disabled => base,
-    }
 }
 
 /// Surrounds `content` with invisible handles that resize an undecorated
