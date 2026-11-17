@@ -3,9 +3,12 @@
 //!
 //! Colours and sizes follow the Figma mockups.
 
+use std::borrow::Cow;
+
+use iced::font::{Family, Stretch, Weight};
 use iced::theme::{Palette, palette};
 use iced::widget::{button, container, rule};
-use iced::{Background, Border, Color, Element, Theme};
+use iced::{Background, Border, Color, Element, Font, Settings, Theme};
 
 /// Height of every title bar and toolbar control, so they line up.
 pub const CONTROL_HEIGHT: f32 = 28.0;
@@ -13,6 +16,41 @@ pub const ICON_SIZE: f32 = 16.0;
 /// Gap between neighbouring controls, and the window's outer margin.
 pub const SPACING: f32 = 4.0;
 const RADIUS: f32 = 6.0;
+
+/// Nunito Sans, pinned by `scripts/instance-fonts.py` to the design's axis
+/// settings (maximum lowercase height, optical size 12).
+const FONT_FILES: [&[u8]; 3] = [
+    include_bytes!("../../assets/fonts/NunitoSans-Medium.ttf"),
+    include_bytes!("../../assets/fonts/NunitoSans-Bold.ttf"),
+    include_bytes!("../../assets/fonts/NunitoSans-CondensedMedium.ttf"),
+];
+
+pub const FONT: Font = Font {
+    family: Family::Name("Nunito Sans"),
+    weight: Weight::Medium,
+    stretch: Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
+pub const BOLD: Font = Font {
+    weight: Weight::Bold,
+    ..FONT
+};
+/// The narrowest width, for word legends on the virtual keyboard's keys.
+pub const CONDENSED: Font = Font {
+    stretch: Stretch::Condensed,
+    ..FONT
+};
+pub const TEXT_SIZE: f32 = 12.0;
+
+/// Application settings carrying the embedded fonts and default text style.
+pub fn settings() -> Settings {
+    Settings {
+        fonts: FONT_FILES.into_iter().map(Cow::Borrowed).collect(),
+        default_font: FONT,
+        default_text_size: TEXT_SIZE.into(),
+        ..Settings::default()
+    }
+}
 
 const PALETTE: Palette = Palette {
     background: Color::from_rgb8(0x12, 0x12, 0x12),
@@ -80,6 +118,31 @@ pub fn bordered_button(theme: &Theme, status: button::Status, active: bool) -> b
             color: border,
             width: 1.0,
             radius: RADIUS.into(),
+        },
+        ..button::Style::default()
+    }
+}
+
+/// The small bordered close button inside a tab, outlined in the same colour
+/// as the tab around it.
+pub fn tab_close_button(theme: &Theme, status: button::Status, tab_active: bool) -> button::Style {
+    let palette = theme.extended_palette();
+    let background = match status {
+        button::Status::Hovered | button::Status::Pressed => Some(palette.background.neutral.color),
+        button::Status::Active | button::Status::Disabled => None,
+    };
+    let border = if tab_active {
+        palette.background.strongest.color
+    } else {
+        palette.background.strong.color
+    };
+    button::Style {
+        background: background.map(Background::Color),
+        text_color: palette.background.base.text,
+        border: Border {
+            color: border,
+            width: 1.0,
+            radius: 4.0.into(),
         },
         ..button::Style::default()
     }

@@ -10,6 +10,7 @@ use iced::{Background, Border, Element, Length, Theme};
 use server_remote_icons::{self as icons, Icon};
 
 use super::connection::{KeyboardSize, character_keysym, named_keysym};
+use super::style;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKey {
@@ -142,6 +143,8 @@ struct KeyDef {
     width: f32,
     /// Height in rows; the numpad's + and Enter span two.
     rows: u8,
+    /// Word legends use the condensed face so they fit a key.
+    condensed: bool,
 }
 
 const fn c(label: &'static str, width: f32) -> KeyDef {
@@ -151,6 +154,7 @@ const fn c(label: &'static str, width: f32) -> KeyDef {
         icon: None,
         width,
         rows: 1,
+        condensed: false,
     }
 }
 
@@ -161,6 +165,7 @@ const fn n(label: &'static str, named: Named, width: f32) -> KeyDef {
         icon: None,
         width,
         rows: 1,
+        condensed: true,
     }
 }
 
@@ -171,6 +176,7 @@ const fn ks(label: &'static str, keysym: u32, width: f32) -> KeyDef {
         icon: None,
         width,
         rows: 1,
+        condensed: false,
     }
 }
 
@@ -181,6 +187,7 @@ const fn m(label: &'static str, modifier: ModifierKey, width: f32) -> KeyDef {
         icon: None,
         width,
         rows: 1,
+        condensed: true,
     }
 }
 
@@ -191,6 +198,7 @@ const fn sp(width: f32) -> KeyDef {
         icon: None,
         width,
         rows: 1,
+        condensed: false,
     }
 }
 
@@ -207,6 +215,15 @@ const fn mi(icon: Icon, modifier: ModifierKey, width: f32) -> KeyDef {
     KeyDef {
         icon: Some(icon),
         ..m("", modifier, width)
+    }
+}
+
+/// A named key whose legend keeps the regular width, as Esc and the
+/// function keys do in the design.
+const fn regular(def: KeyDef) -> KeyDef {
+    KeyDef {
+        condensed: false,
+        ..def
     }
 }
 
@@ -237,7 +254,7 @@ const KP_9: u32 = 0xFFB9;
 // The "small" layout is a flat supplementary bar (not a full keyboard
 // shape), so its rows stay simple and don't need to line up with anything.
 static MODIFIER_ROW: [KeyDef; 8] = [
-    n("Esc", Named::Escape, 1.0),
+    regular(n("Esc", Named::Escape, 1.0)),
     n("Tab", Named::Tab, 1.0),
     m("Ctrl", ModifierKey::Control, 1.5),
     m("Alt", ModifierKey::Alt, 1.5),
@@ -273,22 +290,22 @@ static SYSTEM_ROW: [KeyDef; 4] = [
 // upper pair sits beside the number/qwerty rows, its arrow cluster sits
 // beside the bottom/space rows, and the numpad spans the same six rows.
 static FUNCTION_ROW: [KeyDef; 16] = [
-    n("Esc", Named::Escape, 1.0),
+    regular(n("Esc", Named::Escape, 1.0)),
     sp(FUNCTION_GAP),
-    n("F1", Named::F1, 1.0),
-    n("F2", Named::F2, 1.0),
-    n("F3", Named::F3, 1.0),
-    n("F4", Named::F4, 1.0),
+    regular(n("F1", Named::F1, 1.0)),
+    regular(n("F2", Named::F2, 1.0)),
+    regular(n("F3", Named::F3, 1.0)),
+    regular(n("F4", Named::F4, 1.0)),
     sp(FUNCTION_GAP),
-    n("F5", Named::F5, 1.0),
-    n("F6", Named::F6, 1.0),
-    n("F7", Named::F7, 1.0),
-    n("F8", Named::F8, 1.0),
+    regular(n("F5", Named::F5, 1.0)),
+    regular(n("F6", Named::F6, 1.0)),
+    regular(n("F7", Named::F7, 1.0)),
+    regular(n("F8", Named::F8, 1.0)),
     sp(FUNCTION_GAP),
-    n("F9", Named::F9, 1.0),
-    n("F10", Named::F10, 1.0),
-    n("F11", Named::F11, 1.0),
-    n("F12", Named::F12, 1.0),
+    regular(n("F9", Named::F9, 1.0)),
+    regular(n("F10", Named::F10, 1.0)),
+    regular(n("F11", Named::F11, 1.0)),
+    regular(n("F12", Named::F12, 1.0)),
 ];
 
 static NUMBER_ROW: [KeyDef; 14] = [
@@ -578,11 +595,13 @@ fn key_label<'a>(def: &KeyDef) -> Element<'a, Message> {
             .height(ICON_SIZE)
             .into(),
         None => {
-            let legend = keycap_legend(def);
-            // Words like "Insert" and "Pg Up" have to fit a single-unit key.
-            let size = if legend.chars().count() > 1 { 11 } else { 13 };
-            text(legend)
-                .size(size)
+            let font = if def.condensed {
+                style::CONDENSED
+            } else {
+                style::FONT
+            };
+            text(keycap_legend(def))
+                .font(font)
                 .wrapping(text::Wrapping::None)
                 .into()
         }

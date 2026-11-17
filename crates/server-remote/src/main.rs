@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced::{
-    Alignment, Element, Font, Length, Settings, Subscription, Task, font, padding,
+    Alignment, Element, Length, Subscription, Task, padding,
     widget::{Column, Row, Scrollable, Space, button, container, mouse_area, stack, text, tooltip},
     window,
 };
@@ -165,10 +165,7 @@ mod tests {
     fn render_review_snapshots() {
         let dir =
             std::path::PathBuf::from(std::env::var("SNAPSHOT_DIR").expect("SNAPSHOT_DIR is set"));
-        let settings = Settings {
-            default_text_size: iced::Pixels(13.0),
-            ..Settings::default()
-        };
+        let settings = ui::style::settings();
         let theme = ui::style::theme();
 
         let states: [(&str, Vec<ui::connection::Message>); 4] = [
@@ -251,10 +248,7 @@ fn main() -> iced::Result {
             platform_specific: platform_specific(),
             ..Default::default()
         })
-        .settings(Settings {
-            default_text_size: iced::Pixels(13.0),
-            ..Default::default()
-        })
+        .settings(ui::style::settings())
         .subscription(Application::subscription)
         .theme(ui::style::theme())
         .run()
@@ -540,16 +534,16 @@ impl Application {
         let active = self.tab == Tab::Connection(id);
 
         let close = button(container(themed(icons::CLOSE)).center(Length::Fill))
-            .width(20)
-            .height(20)
+            .width(18)
+            .height(18)
             .padding(0)
-            .style(ui::style::flat_button)
+            .style(move |theme, status| ui::style::tab_close_button(theme, status, active))
             .on_press(Message::Connection(id, ui::connection::Message::Close));
 
-        let weight = if active {
-            font::Weight::Semibold
+        let font = if active {
+            ui::style::BOLD
         } else {
-            font::Weight::Normal
+            ui::style::FONT
         };
 
         button(
@@ -557,21 +551,18 @@ impl Application {
                 .push(themed(connection.protocol().icon()))
                 .push(
                     text(connection.name().as_ref())
-                        .font(Font {
-                            weight,
-                            ..Font::DEFAULT
-                        })
+                        .font(font)
                         .width(Length::Fill)
                         .wrapping(text::Wrapping::None),
                 )
                 .push(close)
-                .spacing(6)
+                .spacing(4)
                 .height(Length::Fill)
                 .align_y(Alignment::Center),
         )
         .width(TAB_WIDTH)
         .height(ui::style::CONTROL_HEIGHT)
-        .padding(padding::left(8).right(4))
+        .padding(padding::left(5).right(5))
         .style(move |theme, status| ui::style::bordered_button(theme, status, active))
         .on_press(Message::SelectTab(Tab::Connection(id)))
         .into()

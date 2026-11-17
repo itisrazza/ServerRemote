@@ -64,6 +64,12 @@ Icons are from IBM's [Carbon Design System](https://carbondesignsystem.com/eleme
 ([`carbon-design-system/carbon`](https://github.com/carbon-design-system/carbon)),
 licensed under the [Apache License 2.0](LICENSE-APACHE).
 
+The UI font is [Nunito Sans](https://github.com/googlefonts/NunitoSans) by the
+Nunito Sans Project Authors, licensed under the
+[SIL Open Font License 1.1](crates/server-remote/assets/fonts/OFL.txt). The
+embedded static instances are generated from the variable font by
+[`scripts/instance-fonts.py`](scripts/instance-fonts.py).
+
 ## Licence
 
 Dual-licensed under either of
