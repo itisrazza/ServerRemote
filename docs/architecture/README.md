@@ -58,4 +58,14 @@ end.
   certificates without switching verification off.
 - [Roadmap](roadmap.md) — what's done and what's next.
 
+## Protocol references
+
+Wire-level notes for protocols without a public spec live in
+[`docs/protocols/`](../protocols/):
+
+- [iLO 4 Integrated Remote Console](../protocols/ilo4.md) — reconstructed
+  from the decompiled .NET client and checked against a live iLO 4
+  (firmware 2.82): login and `rc_info`, connection negotiation and ciphers,
+  the KVM video codec, input, the command channel, virtual media.
+
 [`Target`]: ../../lib/core/src/transport.rs

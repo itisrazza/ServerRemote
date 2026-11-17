@@ -22,7 +22,11 @@ In progress:
 
 Next:
 
-1. iLO, starting soon — effectively from-scratch protocol work.
+1. iLO, starting soon — effectively from-scratch protocol work, against the
+   [iLO 4 protocol notes](../protocols/ilo4.md). Record a real iLO 4's
+   traffic and build a mock iLO server that replays it, so the connector is
+   tested without hardware (see
+   [Testing during implementation](../protocols/ilo4.md#testing-during-implementation)).
 2. Real TLS transport (`rustls` / `tokio-rustls`) with the trust-on-first-use
    flow, driven from a UI prompt.
 3. VNC polish for real networks: richer encodings (ZRLE/Tight), TLS and more
