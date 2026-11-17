@@ -12,6 +12,7 @@ use server_remote_icons as icons;
 use crate::persistence::settings::{GraphicsBackend, Settings};
 use crate::tooltip_box::tooltip_box;
 
+mod app_icon;
 mod persistence;
 mod tooltip_box;
 mod ui;
@@ -486,7 +487,7 @@ fn main() -> iced::Result {
     iced::application::application(boot, Application::update, Application::view)
         .title(Application::title)
         .window(window::Settings {
-            icon: None, // TODO: add window icon
+            icon: Some(app_icon::window_icon()),
             exit_on_close_request: false,
             decorations: !CUSTOM_DECORATIONS,
             platform_specific: platform_specific(),

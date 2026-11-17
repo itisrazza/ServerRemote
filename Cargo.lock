@@ -3933,6 +3933,7 @@ dependencies = [
  "iced_test",
  "iced_wgpu",
  "open",
+ "resvg",
  "rfd",
  "semver",
  "serde",
