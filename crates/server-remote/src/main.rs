@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use iced::{
-    Element, Length, Settings, Subscription, Task,
-    widget::{Column, Row, Scrollable, button, text, tooltip},
+    Alignment, Element, Length, Settings, Subscription, Task, Theme, padding,
+    widget::{Column, Row, Scrollable, Space, button, mouse_area, text, tooltip},
     window,
 };
 use server_remote_core::{Target, TlsPolicy};
+use server_remote_icons as icons;
 
 use crate::tooltip_box::tooltip_box;
 
@@ -164,12 +165,23 @@ mod tests {
     }
 }
 
+/// Whether the app draws its own window controls and resize edges. macOS keeps
+/// its native traffic lights over a transparent titlebar instead.
+const CUSTOM_DECORATIONS: bool = !cfg!(target_os = "macos");
+/// Room left for the macOS traffic lights at the start of the title bar.
+const TRAFFIC_LIGHTS_WIDTH: f32 = 72.0;
+/// Thickness of the invisible resize handles around an undecorated window.
+const RESIZE_BORDER: f32 = 4.0;
+const TAB_WIDTH: f32 = 160.0;
+
 fn main() -> iced::Result {
     iced::application::application(Application::boot, Application::update, Application::view)
         .title(Application::title)
-        .window(iced::window::Settings {
+        .window(window::Settings {
             icon: None, // TODO: add window icon
             exit_on_close_request: false,
+            decorations: !CUSTOM_DECORATIONS,
+            platform_specific: platform_specific(),
             ..Default::default()
         })
         .settings(Settings {
@@ -178,6 +190,20 @@ fn main() -> iced::Result {
         })
         .subscription(Application::subscription)
         .run()
+}
+
+#[cfg(target_os = "macos")]
+fn platform_specific() -> window::settings::PlatformSpecific {
+    window::settings::PlatformSpecific {
+        title_hidden: true,
+        titlebar_transparent: true,
+        fullsize_content_view: true,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn platform_specific() -> window::settings::PlatformSpecific {
+    window::settings::PlatformSpecific::default()
 }
 
 struct Application {
@@ -206,7 +232,18 @@ enum Message {
     Manager(ui::manager::Message),
     Connection(u64, ui::connection::Message),
 
+    Window(WindowAction),
     RequestClose(iced::window::Id),
+}
+
+/// Window management triggered from the custom title bar.
+#[derive(Debug, Clone, Copy)]
+enum WindowAction {
+    Drag,
+    ToggleMaximize,
+    Minimize,
+    Close,
+    Resize(window::Direction),
 }
 
 impl Application {
@@ -261,6 +298,13 @@ impl Application {
                     .update(message)
                     .map(move |message| Message::Connection(id, message))
             }
+            Message::Window(action) => window::latest().and_then(move |id| match action {
+                WindowAction::Drag => window::drag(id),
+                WindowAction::ToggleMaximize => window::toggle_maximize(id),
+                WindowAction::Minimize => window::minimize(id, true),
+                WindowAction::Close => Task::done(Message::RequestClose(id)),
+                WindowAction::Resize(direction) => window::drag_resize(id, direction),
+            }),
             Message::RequestClose(id) => {
                 // TODO: check if there are any active connections
                 window::close(id)
@@ -308,26 +352,35 @@ impl Application {
         }
     }
 
-    fn view<'state>(&'state self) -> Element<'state, Message> {
-        Column::new()
+    fn view(&self) -> Element<'_, Message> {
+        let content = Column::new()
             .push(self.header())
-            .push(match &self.tab {
-                Tab::Manager => ui::manager::view(&self.sessions.saved).map(Message::Manager),
-                Tab::Connect => self.connect_tab.view().map(Message::ConnectTab),
-                Tab::Connection(id) => match self.connections.iter().find(|c| c.id() == *id) {
-                    Some(connection) => {
-                        let id = *id;
-                        connection
-                            .view()
-                            .map(move |message| Message::Connection(id, message))
-                    }
-                    None => text("Connection closed").into(),
-                },
-                Tab::Settings => text("Settings").into(),
-            })
+            .push(self.body())
             .padding(4)
-            .spacing(4)
-            .into()
+            .spacing(4);
+
+        if CUSTOM_DECORATIONS {
+            resize_frame(content.into())
+        } else {
+            content.into()
+        }
+    }
+
+    fn body(&self) -> Element<'_, Message> {
+        match &self.tab {
+            Tab::Manager => ui::manager::view(&self.sessions.saved).map(Message::Manager),
+            Tab::Connect => self.connect_tab.view().map(Message::ConnectTab),
+            Tab::Connection(id) => match self.connections.iter().find(|c| c.id() == *id) {
+                Some(connection) => {
+                    let id = *id;
+                    connection
+                        .view()
+                        .map(move |message| Message::Connection(id, message))
+                }
+                None => text("Connection closed").into(),
+            },
+            Tab::Settings => text("Settings").into(),
+        }
     }
 
     fn title(&self) -> String {
@@ -351,71 +404,161 @@ impl Application {
         Subscription::batch([close_requests].into_iter().chain(connections))
     }
 
-    fn header<'state>(&'state self) -> Element<'state, Message> {
-        let tab_button = |tab: Tab, short: &str, long: &str| {
-            tooltip(
-                button(text(short.to_owned()))
-                    .style(if self.tab == tab {
-                        button::primary
-                    } else {
-                        button::subtle
-                    })
-                    .on_press(Message::SelectTab(tab)),
-                tooltip_box(text(long.to_owned())),
-                tooltip::Position::Bottom,
-            )
-        };
-
-        let icon_tab_button =
-            |tab: Tab, icon: iced::widget::svg::Svg<'static, iced::Theme>, long: &str| {
-                let active = self.tab == tab;
-                tooltip(
-                    button(ui::themed_icon(icon, move |palette| {
-                        if active {
-                            palette.primary.base.text
-                        } else {
-                            palette.background.weakest.text
-                        }
-                    }))
-                    .style(if active {
-                        button::primary
-                    } else {
-                        button::subtle
-                    })
-                    .on_press(Message::SelectTab(tab)),
-                    tooltip_box(text(long.to_owned())),
-                    tooltip::Position::Bottom,
-                )
-            };
-
-        let connection_tabs = Row::from_iter(self.connections.iter().map(|connection| {
-            let name = connection.name().as_ref();
-            tab_button(Tab::Connection(connection.id()), name, name).into()
-        }))
+    fn header(&self) -> Element<'_, Message> {
+        let tabs = Row::with_children(
+            self.connections
+                .iter()
+                .map(|connection| self.connection_tab(connection)),
+        )
+        .push(self.icon_tab(Tab::Connect, icons::ADD_LARGE, "Connect to…"))
         .spacing(4);
 
+        // Empty space in the title bar moves the window, as a native one would.
+        let drag_region = mouse_area(
+            Row::new()
+                .push((!CUSTOM_DECORATIONS).then(|| Space::new().width(TRAFFIC_LIGHTS_WIDTH)))
+                .push(self.icon_tab(Tab::Manager, icons::VIRTUAL_DESKTOP, "Connection manager"))
+                .push(Scrollable::new(tabs).horizontal().width(Length::Fill))
+                .spacing(4),
+        )
+        .on_press(Message::Window(WindowAction::Drag))
+        .on_double_click(Message::Window(WindowAction::ToggleMaximize));
+
         Row::new()
-            .push(icon_tab_button(
-                Tab::Manager,
-                bootstrap_icons::iced::bi!(hdd - network),
-                "Connection manager",
-            ))
-            .push(icon_tab_button(
-                Tab::Connect,
-                bootstrap_icons::iced::bi!(plus - lg),
-                "Connect to...",
-            ))
-            .push(
-                Scrollable::new(connection_tabs)
-                    .horizontal()
-                    .width(Length::Fill),
-            )
-            .push(icon_tab_button(
-                Tab::Settings,
-                bootstrap_icons::iced::bi!(gear - wide - connected),
-                "Settings",
-            ))
+            .push(drag_region)
+            .push(self.icon_tab(Tab::Settings, icons::SETTINGS, "Settings"))
+            .push(CUSTOM_DECORATIONS.then(window_controls))
             .spacing(4)
+            .align_y(Alignment::Center)
             .into()
     }
+
+    fn icon_tab(&self, tab: Tab, icon: icons::Icon, label: &str) -> Element<'_, Message> {
+        let active = self.tab == tab;
+        tooltip(
+            button(themed(icon))
+                .padding(8)
+                .style(move |theme, status| ui::style::bordered_button(theme, status, active))
+                .on_press(Message::SelectTab(tab)),
+            tooltip_box(text(label.to_owned())),
+            tooltip::Position::Bottom,
+        )
+        .into()
+    }
+
+    fn connection_tab<'a>(&self, connection: &'a ui::connection::State) -> Element<'a, Message> {
+        let id = connection.id();
+        let active = self.tab == Tab::Connection(id);
+
+        let close = button(themed(icons::CLOSE))
+            .padding(2)
+            .style(ui::style::flat_button)
+            .on_press(Message::Connection(id, ui::connection::Message::Close));
+
+        button(
+            Row::new()
+                .push(themed(connection.protocol().icon()))
+                .push(
+                    text(connection.name().as_ref())
+                        .width(Length::Fill)
+                        .wrapping(text::Wrapping::None),
+                )
+                .push(close)
+                .spacing(8)
+                .align_y(Alignment::Center),
+        )
+        .width(TAB_WIDTH)
+        .padding(padding::all(4).left(8))
+        .style(move |theme, status| ui::style::bordered_button(theme, status, active))
+        .on_press(Message::SelectTab(Tab::Connection(id)))
+        .into()
+    }
+}
+
+fn themed<'a>(icon: icons::Icon) -> iced::widget::svg::Svg<'a> {
+    ui::themed_icon(icon.element(), |palette| palette.background.base.text)
+}
+
+/// Minimise, maximise and close, for platforms where the app draws its own
+/// title bar.
+fn window_controls() -> Element<'static, Message> {
+    let control = |icon: iced::widget::svg::Svg<'static>, action| {
+        button(ui::themed_icon(icon, |palette| {
+            palette.background.base.text
+        }))
+        .padding([8, 14])
+        .on_press(Message::Window(action))
+    };
+
+    Row::new()
+        .push(
+            control(
+                bootstrap_icons::iced::bi!(dash - lg),
+                WindowAction::Minimize,
+            )
+            .style(ui::style::flat_button),
+        )
+        .push(
+            control(
+                bootstrap_icons::iced::bi!(square),
+                WindowAction::ToggleMaximize,
+            )
+            .style(ui::style::flat_button),
+        )
+        .push(control(icons::CLOSE_LARGE.element(), WindowAction::Close).style(close_button))
+        .spacing(2)
+        .into()
+}
+
+fn close_button(theme: &Theme, status: button::Status) -> button::Style {
+    let base = ui::style::flat_button(theme, status);
+    match status {
+        button::Status::Hovered | button::Status::Pressed => {
+            let danger = theme.extended_palette().danger.base;
+            base.with_background(danger.color)
+        }
+        button::Status::Active | button::Status::Disabled => base,
+    }
+}
+
+/// Surrounds `content` with invisible handles that resize an undecorated
+/// window, since the OS no longer provides them.
+fn resize_frame(content: Element<'_, Message>) -> Element<'_, Message> {
+    use iced::mouse::Interaction;
+    use window::Direction;
+
+    let handle = |direction: Direction, width: Length, height: Length| {
+        let interaction = match direction {
+            Direction::North | Direction::South => Interaction::ResizingVertically,
+            Direction::East | Direction::West => Interaction::ResizingHorizontally,
+            Direction::NorthWest | Direction::SouthEast => Interaction::ResizingDiagonallyDown,
+            Direction::NorthEast | Direction::SouthWest => Interaction::ResizingDiagonallyUp,
+        };
+        mouse_area(Space::new().width(width).height(height))
+            .interaction(interaction)
+            .on_press(Message::Window(WindowAction::Resize(direction)))
+    };
+    let border = Length::Fixed(RESIZE_BORDER);
+
+    Column::new()
+        .push(
+            Row::new()
+                .push(handle(Direction::NorthWest, border, border))
+                .push(handle(Direction::North, Length::Fill, border))
+                .push(handle(Direction::NorthEast, border, border)),
+        )
+        .push(
+            Row::new()
+                .push(handle(Direction::West, border, Length::Fill))
+                .push(content)
+                .push(handle(Direction::East, border, Length::Fill))
+                .height(Length::Fill),
+        )
+        .push(
+            Row::new()
+                .push(handle(Direction::SouthWest, border, border))
+                .push(handle(Direction::South, Length::Fill, border))
+                .push(handle(Direction::SouthEast, border, border)),
+        )
+        .into()
 }
