@@ -1,10 +1,11 @@
 # ServerRemote — agent guide
 
 For any coding agent working in this repo. Read [README.md](README.md)
-(build, layout, translations, credits) and
-[docs/architecture.md](docs/architecture.md) (connectors, sessions,
-capabilities, connector-contributed UI) first. This file covers what those
-don't.
+(build, layout, translations, credits) and the architecture index,
+[docs/architecture/README.md](docs/architecture/README.md) (goal, crates,
+transport vs protocol), first; open the parts it links (sessions,
+capabilities, TLS, roadmap) when your task touches them. This file covers
+what those don't.
 
 ## Before starting
 
