@@ -1,3 +1,4 @@
+mod arrow_cursor;
 pub mod connect;
 pub mod connection;
 mod contributed;
@@ -10,6 +11,8 @@ pub mod style;
 mod virtual_keyboard;
 mod virtual_trackpad;
 pub mod window_controls;
+
+pub use arrow_cursor::arrow_cursor;
 
 /// Sizes an icon and tints it to match the given button's text color —
 /// `Svg` ignores the ambient text color buttons apply to their other

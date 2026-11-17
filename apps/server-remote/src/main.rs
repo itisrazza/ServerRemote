@@ -619,11 +619,12 @@ impl Application {
 
         // A maximised window can't be resized, and the handles would steal
         // the screen corner from the close button.
-        if CUSTOM_DECORATIONS && !self.maximized {
+        let window: Element<'_, Message> = if CUSTOM_DECORATIONS && !self.maximized {
             stack![content, resize_handles()].into()
         } else {
             content.into()
-        }
+        };
+        ui::arrow_cursor(window)
     }
 
     fn body(&self) -> Element<'_, Message> {
@@ -702,11 +703,13 @@ impl Application {
             // tabs; the window controls stretch to fill it, flush with the
             // top and right edges so the screen corner hits close.
             .height(TITLE_BAR_HEIGHT)
-            .padding(padding::left(ui::style::SPACING).right(if CUSTOM_DECORATIONS {
-                0.0
-            } else {
-                ui::style::SPACING
-            }))
+            .padding(
+                padding::left(ui::style::SPACING).right(if CUSTOM_DECORATIONS {
+                    0.0
+                } else {
+                    ui::style::SPACING
+                }),
+            )
             .into()
     }
 
