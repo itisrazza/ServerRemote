@@ -1,8 +1,8 @@
 # Architecture
 
-> Status: early but working. Dummy, VNC and Spice connect end to end (render,
-> mouse, keyboard); iLO is not started. Expect the shape to keep shifting as it
-> lands.
+> Status: early but working. Dummy and VNC work end to end (render, mouse,
+> keyboard); Spice connects and takes input but is still in progress; iLO is
+> not started. Expect the shape to keep shifting as it lands.
 
 ## Goal
 

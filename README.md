@@ -9,8 +9,8 @@ A universal "server" remote — one client that aims to connect to as many remot
 desktop and console protocols as possible, focused on the ones that lack a good
 client on the platforms I actually use (macOS in particular).
 
-> **Status: early, experimental.** Dummy and VNC work end to end; Spice and iLO
-> are planned but not started. Interfaces will keep changing.
+> **Status: early, experimental.** Dummy and VNC work end to end; Spice is in
+> progress; iLO is planned but not started. Interfaces will keep changing.
 
 ## Why
 
