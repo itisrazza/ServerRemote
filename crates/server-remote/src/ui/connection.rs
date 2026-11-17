@@ -1,6 +1,6 @@
 //! A single connection tab: runs a [`Connector`] on a background subscription,
-//! renders the framebuffer it streams back, and drives a capability-driven
-//! toolbar.
+//! renders the framebuffer it streams back, and drives a toolbar of dropdown
+//! menus and a status bar.
 //!
 //! The subscription worker owns the connection's [`SessionHandle`] events end
 //! and hands the UI the input and command senders, so the UI talks to the
@@ -12,22 +12,23 @@ use std::sync::Arc;
 
 use iced::keyboard::key::Named;
 use iced::{
-    Alignment, Element, Length, Point, Subscription, Task,
+    Alignment, Background, Element, Length, Point, Subscription, Task, Theme, border,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
-    widget::{Column, Id, Row, Space, button, center, operation, pick_list, text, tooltip},
+    widget::{Column, Id, Row, button, center, container, operation, text},
 };
 use server_remote_core::{
     Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
     SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
 };
+use server_remote_icons as icons;
 use server_remote_spice::SpiceConnector;
 use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
-use crate::tooltip_box::tooltip_box;
-
 use super::kvm_display::{DisplayFrame, kvm_display};
+use super::menu::{self, Item};
+use super::style;
 use super::virtual_keyboard;
 use super::virtual_trackpad;
 
@@ -56,6 +57,25 @@ impl Protocol {
             Protocol::Vnc => "vnc",
             Protocol::Spice => "spice",
             Protocol::Ilo => "ilo",
+        }
+    }
+
+    /// Human-facing name, as shown in the status bar.
+    pub fn name(self) -> &'static str {
+        match self {
+            Protocol::Dummy => "Dummy",
+            Protocol::Vnc => "VNC",
+            Protocol::Spice => "SPICE",
+            Protocol::Ilo => "iLO",
+        }
+    }
+
+    pub fn icon(self) -> icons::Icon {
+        match self {
+            Protocol::Dummy => icons::DIAMOND_OUTLINE,
+            Protocol::Vnc => icons::SCREEN,
+            Protocol::Spice => icons::SCREEN,
+            Protocol::Ilo => icons::PROTOCOL_ILO,
         }
     }
 
@@ -93,9 +113,9 @@ impl KeyboardSize {
 
     fn label(self) -> &'static str {
         match self {
-            KeyboardSize::Small => "small",
-            KeyboardSize::Medium => "medium",
-            KeyboardSize::Large => "large",
+            KeyboardSize::Small => "Compact",
+            KeyboardSize::Medium => "Tenkeyless",
+            KeyboardSize::Large => "Full size",
         }
     }
 }
@@ -104,6 +124,27 @@ impl std::fmt::Display for KeyboardSize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.label())
     }
+}
+
+/// The toolbar's dropdown menus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolbarMenu {
+    Display,
+    Input,
+    Recording,
+}
+
+/// Submenus that can currently be opened. Unimplemented ones render disabled
+/// and so never need a variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Submenu {
+    KeyboardStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OpenMenu {
+    menu: ToolbarMenu,
+    submenu: Option<Submenu>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -144,6 +185,7 @@ pub struct State {
     /// Whether the virtual trackpad panel is shown.
     show_virtual_trackpad: bool,
     virtual_trackpad: virtual_trackpad::State,
+    menu: Option<OpenMenu>,
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +220,27 @@ pub enum Message {
     VirtualKeyboard(virtual_keyboard::Message),
     /// A message produced by the virtual trackpad widget.
     VirtualTrackpad(virtual_trackpad::Message),
+    /// Open the given toolbar menu, or close it if it's already open.
+    ToggleMenu(ToolbarMenu),
+    /// Open a submenu of the currently open toolbar menu.
+    OpenSubmenu(Submenu),
+    /// Close whichever menu is open.
+    CloseMenu,
+}
+
+impl Message {
+    /// Whether handling this message should close the open menu — true for
+    /// the actions menu entries trigger.
+    fn closes_menu(&self) -> bool {
+        matches!(
+            self,
+            Message::Action(_)
+                | Message::ToggleVirtualKeyboard
+                | Message::SetKeyboardSize(_)
+                | Message::ToggleVirtualTrackpad
+                | Message::CloseMenu
+        )
+    }
 }
 
 impl State {
@@ -208,6 +271,7 @@ impl State {
             virtual_keyboard: virtual_keyboard::State::default(),
             show_virtual_trackpad: false,
             virtual_trackpad: virtual_trackpad::State::default(),
+            menu: None,
         }
     }
 
@@ -219,7 +283,14 @@ impl State {
         &self.name
     }
 
+    pub fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        if message.closes_menu() {
+            self.menu = None;
+        }
         match message {
             Message::Ready(controls) => self.controls = Some(controls),
             Message::Session(event) => {
@@ -260,7 +331,10 @@ impl State {
             Message::ToggleVirtualKeyboard => {
                 self.show_virtual_keyboard = !self.show_virtual_keyboard;
             }
-            Message::SetKeyboardSize(size) => self.keyboard_size = size,
+            Message::SetKeyboardSize(size) => {
+                self.keyboard_size = size;
+                self.show_virtual_keyboard = true;
+            }
             Message::ToggleVirtualTrackpad => {
                 self.show_virtual_trackpad = !self.show_virtual_trackpad;
             }
@@ -294,6 +368,21 @@ impl State {
                     }
                 }
             }
+            Message::ToggleMenu(menu) => {
+                self.menu = match self.menu {
+                    Some(open) if open.menu == menu => None,
+                    _ => Some(OpenMenu {
+                        menu,
+                        submenu: None,
+                    }),
+                };
+            }
+            Message::OpenSubmenu(submenu) => {
+                if let Some(open) = &mut self.menu {
+                    open.submenu = Some(submenu);
+                }
+            }
+            Message::CloseMenu => {}
         }
         Task::none()
     }
@@ -367,13 +456,7 @@ impl State {
             ),
         };
 
-        let mut view = Column::new().spacing(4);
-        if !matches!(self.status, Status::Disconnected(_)) {
-            view = view.push(self.toolbar());
-        }
-        view = view.push(center(body));
-
-        if self.show_virtual_keyboard || self.show_virtual_trackpad {
+        let panel = (self.show_virtual_keyboard || self.show_virtual_trackpad).then(|| {
             let mut panel = Row::new().spacing(6).align_y(Alignment::Center);
             if self.show_virtual_keyboard {
                 panel = panel.push(
@@ -384,102 +467,129 @@ impl State {
             if self.show_virtual_trackpad {
                 panel = panel.push(virtual_trackpad::view().map(Message::VirtualTrackpad));
             }
-            view = view.push(center(panel));
-        }
+            center(panel).height(Length::Shrink)
+        });
 
-        view.into()
+        Column::new()
+            .spacing(4)
+            .push((!matches!(self.status, Status::Disconnected(_))).then(|| self.toolbar()))
+            .push(center(body))
+            .push(panel)
+            .push(self.status_bar())
+            .into()
     }
 
     fn toolbar(&self) -> Element<'_, Message> {
-        let mut actions = Row::new().spacing(4);
-        for action in &self.capabilities.actions {
-            match &action.control {
-                Control::Button => {
-                    actions = actions.push(
-                        button(text(action.label.to_string()))
-                            .style(button::subtle)
-                            .on_press(Message::Action(action.id.clone())),
-                    );
-                }
-            }
-        }
-
-        let show_virtual_keyboard = self.show_virtual_keyboard;
-        let keyboard_toggle = tooltip(
-            button(super::themed_icon(
-                bootstrap_icons::iced::bi!(keyboard),
-                move |palette| {
-                    if show_virtual_keyboard {
-                        palette.primary.base.text
-                    } else {
-                        palette.background.weakest.text
-                    }
-                },
-            ))
-            .style(if self.show_virtual_keyboard {
-                button::primary
-            } else {
-                button::subtle
-            })
-            .on_press(Message::ToggleVirtualKeyboard),
-            tooltip_box(text("Keyboard")),
-            tooltip::Position::Bottom,
-        );
-
-        let keyboard_size_picker: Element<'_, Message> = if self.show_virtual_keyboard {
-            pick_list(
-                KeyboardSize::ALL,
-                Some(self.keyboard_size),
-                Message::SetKeyboardSize,
+        let open_menu = |menu| self.menu.filter(|open| open.menu == menu);
+        let button_menu = |menu, icon, items| {
+            menu::button_menu(
+                icon,
+                items,
+                open_menu(menu).is_some(),
+                Message::ToggleMenu(menu),
+                Message::CloseMenu,
             )
-            .into()
-        } else {
-            Space::new().into()
         };
-
-        let show_virtual_trackpad = self.show_virtual_trackpad;
-        let trackpad_toggle = tooltip(
-            button(super::themed_icon(
-                bootstrap_icons::iced::bi!(mouse2),
-                move |palette| {
-                    if show_virtual_trackpad {
-                        palette.primary.base.text
-                    } else {
-                        palette.background.weakest.text
-                    }
-                },
-            ))
-            .style(if self.show_virtual_trackpad {
-                button::primary
-            } else {
-                button::subtle
-            })
-            .on_press(Message::ToggleVirtualTrackpad),
-            tooltip_box(text("Trackpad")),
-            tooltip::Position::Bottom,
-        );
+        let submenu_open = |submenu| self.menu.is_some_and(|open| open.submenu == Some(submenu));
 
         Row::new()
-            .push(actions)
-            .push(keyboard_toggle)
-            .push(keyboard_size_picker)
-            .push(trackpad_toggle)
-            .push(Space::new().width(Length::Fill))
-            .push(
-                button(
-                    Row::new()
-                        .spacing(4)
-                        .align_y(Alignment::Center)
-                        .push(super::themed_icon(
-                            bootstrap_icons::iced::bi!(x - circle),
-                            |palette| palette.danger.base.text,
-                        ))
-                        .push(text("Disconnect")),
-                )
-                .style(button::danger)
-                .on_press(Message::Close),
-            )
-            .spacing(4)
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .push(button_menu(
+                ToolbarMenu::Display,
+                icons::SCREEN,
+                display_menu(),
+            ))
+            .push(button_menu(
+                ToolbarMenu::Input,
+                icons::KEYBOARD,
+                self.input_menu(submenu_open(Submenu::KeyboardStyle)),
+            ))
+            .push(button_menu(
+                ToolbarMenu::Recording,
+                icons::CAMERA,
+                recording_menu(),
+            ))
+            .push(style::vertical_divider(24.0))
+            .into()
+    }
+
+    fn input_menu(&self, keyboard_style_open: bool) -> Vec<Item<Message>> {
+        let actions = self
+            .capabilities
+            .actions
+            .iter()
+            .map(|action| match action.control {
+                Control::Button => Item::entry(
+                    action.label.to_string(),
+                    Some(Message::Action(action.id.clone())),
+                ),
+            });
+        let separator = (!self.capabilities.actions.is_empty()).then_some(Item::Separator);
+
+        let keyboard_styles = KeyboardSize::ALL
+            .into_iter()
+            .map(|size| {
+                Item::entry(size.to_string(), Some(Message::SetKeyboardSize(size)))
+                    .checked(self.show_virtual_keyboard && size == self.keyboard_size)
+            })
+            .collect();
+
+        actions
+            .chain(separator)
+            .chain([
+                Item::entry("Virtual keyboard", Some(Message::ToggleVirtualKeyboard))
+                    .icon(icons::KEYBOARD)
+                    .checked(self.show_virtual_keyboard),
+                Item::entry("Virtual trackpad", Some(Message::ToggleVirtualTrackpad))
+                    .icon(icons::CURSOR_1)
+                    .checked(self.show_virtual_trackpad),
+                Item::Separator,
+                Item::submenu("Keyboard layout", Vec::new(), false, None),
+                Item::submenu(
+                    "Keyboard style",
+                    keyboard_styles,
+                    keyboard_style_open,
+                    Some(Message::OpenSubmenu(Submenu::KeyboardStyle)),
+                ),
+                Item::Separator,
+                Item::entry("Input settings…", None).icon(icons::SETTINGS),
+            ])
+            .collect()
+    }
+
+    fn status_bar(&self) -> Element<'_, Message> {
+        let (label, color): (&str, fn(&Theme) -> iced::Color) = match self.status {
+            Status::Connecting => ("Connecting…", |theme| {
+                theme.extended_palette().warning.base.color
+            }),
+            Status::Connected => ("Connected", |theme| {
+                theme.extended_palette().success.base.color
+            }),
+            Status::Disconnected(_) => ("Disconnected", |theme| {
+                theme.extended_palette().danger.base.color
+            }),
+        };
+
+        let state = Row::new()
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .push(status_dot(color))
+            .push(text(label));
+
+        let resolution = self
+            .size
+            .map(|(width, height)| text(format!("{width}×{height}")));
+
+        Row::new()
+            .spacing(12)
+            .padding([2, 8])
+            .align_y(Alignment::Center)
+            .push(state)
+            .push(style::vertical_divider(16.0))
+            .push(text(self.protocol.name()))
+            .push(resolution.is_some().then(|| style::vertical_divider(16.0)))
+            .push(resolution)
             .into()
     }
 
@@ -503,6 +613,48 @@ impl State {
             worker,
         )
     }
+}
+
+/// Display options. Scaling is fixed to fit-with-aspect-ratio for now, so
+/// these only reflect that and are otherwise disabled.
+fn display_menu() -> Vec<Item<Message>> {
+    vec![
+        Item::entry("Keep aspect ratio", None).checked(true),
+        Item::submenu("Display scale", Vec::new(), false, None),
+        Item::Separator,
+        Item::entry("Scale to fit", None).checked(true),
+        Item::Separator,
+        Item::entry("Zoom out", None),
+        Item::entry("100%", None),
+        Item::entry("Zoom in", None),
+        Item::Separator,
+        Item::entry("Display settings…", None).icon(icons::SETTINGS),
+    ]
+}
+
+/// Recording isn't implemented yet; the menu is laid out but disabled.
+fn recording_menu() -> Vec<Item<Message>> {
+    vec![
+        Item::entry("Start recording", None).icon(icons::CAMERA),
+        Item::Separator,
+        Item::submenu("Save to", Vec::new(), false, None),
+        Item::submenu("Quality", Vec::new(), false, None),
+        Item::submenu("Format", Vec::new(), false, None),
+        Item::Separator,
+        Item::entry("Recording settings…", None).icon(icons::SETTINGS),
+    ]
+}
+
+fn status_dot<'a>(color: fn(&Theme) -> iced::Color) -> Element<'a, Message> {
+    container(text(""))
+        .width(8)
+        .height(8)
+        .style(move |theme| container::Style {
+            background: Some(Background::Color(color(theme))),
+            border: border::rounded(4),
+            ..container::Style::default()
+        })
+        .into()
 }
 
 /// Translate an iced key into an X11 keysym, which is what RFB/Spice expect.
