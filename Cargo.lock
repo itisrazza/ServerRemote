@@ -477,28 +477,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bootstrap-icons"
-version = "0.1.0"
-dependencies = [
- "bootstrap-icons-codegen",
- "bootstrap-icons-macros",
- "iced",
-]
-
-[[package]]
-name = "bootstrap-icons-codegen"
-version = "0.1.0"
-
-[[package]]
-name = "bootstrap-icons-macros"
-version = "0.1.0"
-dependencies = [
- "bootstrap-icons-codegen",
- "proc-macro2",
- "quote",
-]
-
-[[package]]
 name = "built"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3619,7 +3597,6 @@ dependencies = [
 name = "server-remote"
 version = "0.1.0"
 dependencies = [
- "bootstrap-icons",
  "directories",
  "iced",
  "iced_wgpu",

@@ -36,19 +36,6 @@ CopyRect encodings. Richer encodings, TLS, and damage updates are on the roadmap
 
 Requires a recent Rust toolchain (edition 2024, Rust ≥ 1.85).
 
-The [Bootstrap Icons](https://github.com/twbs/icons) icon set is vendored as a
-git submodule, so clone with `--recurse-submodules`:
-
-```sh
-git clone --recurse-submodules https://github.com/itisrazza/ServerRemote.git
-```
-
-or, in an existing clone:
-
-```sh
-git submodule update --init --recursive
-```
-
 ```sh
 cargo run -p server-remote
 ```
@@ -65,13 +52,17 @@ It's a Cargo workspace:
   dummy connector.
 - `server-remote-vnc` — VNC/RFB, on top of [`vnc-rs`](https://crates.io/crates/vnc-rs).
 - `server-remote-spice`, `server-remote-ilo` — placeholders for now.
-- `bootstrap-icons` — [Bootstrap Icons](https://github.com/twbs/icons), vendored
-  as a submodule and embedded at build time, with optional `iced` integration.
-- `bootstrap-icons-macros`, `bootstrap-icons-codegen` — support crates behind
-  `bootstrap-icons`' `bi!` macros; not meant to be depended on directly.
+- `server-remote-icons` — the app's icon set, embedded at build time, with
+  optional `iced` integration.
 
 See [docs/architecture.md](docs/architecture.md) for how connectors, sessions,
 and the capability-driven UI fit together.
+
+## Credits
+
+Icons are from IBM's [Carbon Design System](https://carbondesignsystem.com/elements/icons/library/)
+([`carbon-design-system/carbon`](https://github.com/carbon-design-system/carbon)),
+licensed under the [Apache License 2.0](LICENSE-APACHE).
 
 ## Licence
 

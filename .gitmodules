@@ -1,3 +1,0 @@
-[submodule "crates/bootstrap-icons/vendor/bootstrap-icons"]
-	path = crates/bootstrap-icons/vendor/bootstrap-icons
-	url = https://github.com/twbs/icons.git
