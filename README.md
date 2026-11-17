@@ -26,7 +26,7 @@ gaps:
 |---|---|
 | Dummy (test pattern) | ✅ Works |
 | VNC / RFB | ✅ Works — render, mouse, keyboard |
-| Spice | ⏳ Planned |
+| Spice | 🚧 In progress |
 | HPE iLO Remote Console | ⏳ Planned |
 
 VNC currently negotiates None / VNC-password auth over plain TCP, using Raw and
