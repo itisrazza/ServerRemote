@@ -378,6 +378,16 @@ mod tests {
                 false,
                 vec![Message::RequestClose(window::Id::unique())],
             ),
+            (
+                // The Settings tab is shorter than the window; the prompt's
+                // backdrop must still cover all of it.
+                "quit-over-settings",
+                false,
+                vec![
+                    Message::SelectTab(Tab::Settings),
+                    Message::RequestClose(window::Id::unique()),
+                ],
+            ),
         ];
 
         for (name, with_session, messages) in states {
@@ -737,13 +747,22 @@ impl Application {
     fn view(&self) -> Element<'_, Message> {
         // The header carries its own insets so the window controls can sit
         // flush in the corner; only the body gets the outer margin.
-        let content = Column::new().push(self.header()).push(
-            container(self.body()).padding(
-                padding::left(ui::style::SPACING)
-                    .right(ui::style::SPACING)
-                    .bottom(ui::style::SPACING),
-            ),
-        );
+        // Fills the window whatever the tab holds: layers stacked over it
+        // (the resize handles, the quit prompt) take their size from it.
+        let content = Column::new()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .push(self.header())
+            .push(
+                container(self.body())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .padding(
+                        padding::left(ui::style::SPACING)
+                            .right(ui::style::SPACING)
+                            .bottom(ui::style::SPACING),
+                    ),
+            );
 
         // A maximised window can't be resized, and the handles would steal
         // the screen corner from the close button.
