@@ -9,5 +9,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+server-remote-icons = { path = "../icons" }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["sync", "rt", "time", "macros"] }

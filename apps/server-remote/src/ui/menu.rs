@@ -4,11 +4,11 @@
 //! Which menu (and submenu) is open is owned by the caller, which passes it
 //! back in as `open` flags — the same way the rest of the UI is driven.
 
-use iced::widget::svg::Svg;
 use iced::widget::{Column, Row, Space, button, container, mouse_area, rule, text};
 use iced::{Alignment, Background, Element, Length, Padding, Theme, border};
-use server_remote_icons::{self as icons, Icon};
+use server_remote_icons as icons;
 
+use super::icon;
 use super::popover::{Placement, popover};
 use super::style::{self, ICON_SIZE};
 
@@ -29,7 +29,7 @@ const SEPARATOR_INSET: f32 = 10.0 - MENU_BORDER;
 
 pub enum Item<Message> {
     Entry {
-        icon: Option<Icon>,
+        icon: Option<icon::Handle>,
         label: String,
         checked: bool,
         /// `None` renders the entry disabled.
@@ -55,7 +55,8 @@ impl<Message> Item<Message> {
         }
     }
 
-    pub fn icon(self, icon: Icon) -> Self {
+    pub fn icon(self, icon: impl Into<icon::Handle>) -> Self {
+        let icon = icon.into();
         match self {
             Item::Entry {
                 label,
@@ -106,7 +107,7 @@ impl<Message> Item<Message> {
 
 /// A toolbar button showing `icon` and a chevron that opens `items` below it.
 pub fn button_menu<'a, Message: Clone + 'a>(
-    icon: Icon,
+    icon: icon::Handle,
     items: Vec<Item<Message>>,
     open: bool,
     on_toggle: Message,
@@ -116,7 +117,7 @@ pub fn button_menu<'a, Message: Clone + 'a>(
         .spacing(2)
         .align_y(Alignment::Center)
         .push(tinted(icon, ICON_SIZE))
-        .push(tinted(icons::CHEVRON_DOWN, ICON_SIZE));
+        .push(tinted(icons::CHEVRON_DOWN.into(), ICON_SIZE));
     let anchor = button(container(content).center_y(Length::Fill))
         .height(style::CONTROL_HEIGHT)
         .padding([0, 5])
@@ -134,7 +135,7 @@ pub fn button_menu<'a, Message: Clone + 'a>(
 
 /// A square toolbar button showing `icon` that opens `content` below it.
 pub fn button_popout<'a, Message: Clone + 'a>(
-    icon: Icon,
+    icon: icon::Handle,
     content: impl FnOnce() -> Element<'a, Message>,
     open: bool,
     on_toggle: Message,
@@ -173,7 +174,7 @@ fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Messag
             checked,
             on_press,
         } => {
-            let leading = checked.then_some(icons::CHECKMARK).or(icon);
+            let leading = checked.then(|| icons::CHECKMARK.into()).or(icon);
             let enabled = on_press.is_some();
             button(item_row(leading, label, None, enabled))
                 .width(Length::Fill)
@@ -190,18 +191,23 @@ fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Messag
             on_open,
         } => {
             let enabled = on_open.is_some();
-            let row = button(item_row(None, label, Some(icons::CHEVRON_RIGHT), enabled))
-                .width(Length::Fill)
-                .height(ITEM_HEIGHT)
-                .padding(ITEM_PADDING)
-                .style(move |theme, status| {
-                    if open {
-                        menu_item(theme, button::Status::Hovered)
-                    } else {
-                        menu_item(theme, status)
-                    }
-                })
-                .on_press_maybe(on_open.clone());
+            let row = button(item_row(
+                None,
+                label,
+                Some(icons::CHEVRON_RIGHT.into()),
+                enabled,
+            ))
+            .width(Length::Fill)
+            .height(ITEM_HEIGHT)
+            .padding(ITEM_PADDING)
+            .style(move |theme, status| {
+                if open {
+                    menu_item(theme, button::Status::Hovered)
+                } else {
+                    menu_item(theme, status)
+                }
+            })
+            .on_press_maybe(on_open.clone());
 
             let row: Element<'a, Message> = match on_open {
                 Some(on_open) => mouse_area(row).on_enter(on_open).into(),
@@ -214,14 +220,14 @@ fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Messag
 }
 
 fn item_row<'a, Message: 'a>(
-    leading: Option<Icon>,
+    leading: Option<icon::Handle>,
     label: String,
-    trailing: Option<Icon>,
+    trailing: Option<icon::Handle>,
     enabled: bool,
 ) -> Element<'a, Message> {
-    let slot = |icon: Option<Icon>| -> Element<'a, Message> {
-        match icon {
-            Some(icon) => tinted_by(icon, ICON_SIZE, enabled).into(),
+    let slot = |handle: Option<icon::Handle>| -> Element<'a, Message> {
+        match handle {
+            Some(handle) => tinted_by(handle, ICON_SIZE, enabled),
             None => Space::new().width(ICON_SIZE).height(ICON_SIZE).into(),
         }
     };
@@ -232,21 +238,20 @@ fn item_row<'a, Message: 'a>(
         .align_y(Alignment::Center)
         .push(slot(leading))
         .push(text(label).width(Length::Fill))
-        .push(trailing.map(|icon| tinted_by(icon, ICON_SIZE, enabled)))
+        .push(trailing.map(|handle| tinted_by(handle, ICON_SIZE, enabled)))
         .into()
 }
 
-fn tinted<'a>(icon: Icon, size: f32) -> Svg<'a> {
-    tinted_by(icon, size, true)
+fn tinted<'a, Message: 'a>(handle: icon::Handle, size: f32) -> Element<'a, Message> {
+    tinted_by(handle, size, true)
 }
 
-fn tinted_by<'a>(icon: Icon, size: f32, enabled: bool) -> Svg<'a> {
-    icon.element()
-        .width(size)
-        .height(size)
-        .style(move |theme: &Theme, _status| iced::widget::svg::Style {
-            color: Some(item_text_color(theme, enabled)),
-        })
+fn tinted_by<'a, Message: 'a>(
+    handle: icon::Handle,
+    size: f32,
+    enabled: bool,
+) -> Element<'a, Message> {
+    icon::view(handle, size, move |theme| item_text_color(theme, enabled))
 }
 
 fn item_text_color(theme: &Theme, enabled: bool) -> iced::Color {

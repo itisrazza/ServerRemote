@@ -1,10 +1,11 @@
 //! A live session and the events flowing across it.
 
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use tokio::sync::mpsc;
 
-use crate::Capabilities;
+use crate::{Capabilities, Status};
 
 /// A decoded framebuffer: RGBA8, row-major, exactly `width * height * 4` bytes.
 #[derive(Debug, Clone)]
@@ -62,8 +63,10 @@ pub enum SessionEvent {
     /// The remote framebuffer changed size.
     Resized { width: u32, height: u32 },
     /// The session's capabilities changed mid-session (e.g. the server switched
-    /// pointer mode).
+    /// pointer mode, or an action became available).
     Capabilities(Capabilities),
+    /// A fresh snapshot of what's going on in the session.
+    Status(Status),
     /// The session ended. `reason` is `None` on a clean close.
     Disconnected { reason: Option<String> },
 }
@@ -74,8 +77,19 @@ pub enum SessionEvent {
 /// [`Capabilities`] advertises.
 #[derive(Debug, Clone)]
 pub enum SessionCommand {
-    /// Invoke a declarative [`Action`](crate::Action) by id.
-    Action { id: Cow<'static, str> },
+    /// Invoke a declarative [`Action`](crate::Action) by id, with the value
+    /// its [`Control`](crate::Control) collected, if any.
+    Action {
+        id: Cow<'static, str>,
+        value: Option<ActionValue>,
+    },
+}
+
+/// The input a [`Control`](crate::Control) collected for an action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionValue {
+    /// From [`Control::File`](crate::Control::File).
+    File(PathBuf),
 }
 
 /// The UI's end of a live session.

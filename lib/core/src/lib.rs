@@ -9,12 +9,18 @@ pub mod capabilities;
 pub mod connector;
 pub mod dummy;
 pub mod session;
+pub mod status;
 pub mod tls;
 pub mod transport;
 
-pub use capabilities::{Action, Capabilities, Control, PointerMode};
+pub use capabilities::{
+    Action, Capabilities, Confirmation, Control, Icon, MenuItem, PointerMode, ToolbarItem,
+};
 pub use connector::{ConnectError, Connector};
 pub use dummy::DummyConnector;
-pub use session::{Frame, InputEvent, PointerButton, SessionCommand, SessionEvent, SessionHandle};
+pub use session::{
+    ActionValue, Frame, InputEvent, PointerButton, SessionCommand, SessionEvent, SessionHandle,
+};
+pub use status::{Chip, Detail, IndicatorState, Status, StatusItem, Traffic};
 pub use tls::{CertFingerprint, TlsPolicy};
 pub use transport::Target;

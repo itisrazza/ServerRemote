@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use iced::font::{Family, Stretch, Weight};
 use iced::theme::{Palette, palette};
 use iced::widget::{button, container, rule};
-use iced::{Background, Border, Color, Element, Font, Settings, Theme};
+use iced::{Background, Border, Color, Element, Font, Settings, Shadow, Theme, Vector};
 
 /// Height of every title bar and toolbar control, so they line up.
 pub const CONTROL_HEIGHT: f32 = 28.0;
@@ -57,7 +57,7 @@ const PALETTE: Palette = Palette {
     text: Color::WHITE,
     primary: Color::from_rgb8(0x4c, 0x8d, 0xff),
     success: Color::from_rgb8(0x00, 0xc9, 0x50),
-    warning: Color::from_rgb8(0xff, 0xc8, 0x3d),
+    warning: Color::from_rgb8(0xff, 0xd2, 0x30),
     danger: Color::from_rgb8(0xc4, 0x2b, 0x1c),
 };
 
@@ -175,6 +175,96 @@ pub fn popup(theme: &Theme) -> container::Style {
             radius: 8.0.into(),
         },
         ..container::Style::default()
+    }
+}
+
+/// An ongoing thing in the toolbar (a mounted image, a recording), drawn like
+/// the active tab.
+pub fn chip(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(Background::Color(palette.background.strong.color)),
+        text_color: Some(palette.background.base.text),
+        border: Border {
+            color: palette.background.strongest.color,
+            width: 1.0,
+            radius: RADIUS.into(),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The states a status bar dot can show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Indicator {
+    Ok,
+    Warning,
+    Error,
+    Inactive,
+}
+
+impl Indicator {
+    fn color(self, theme: &Theme) -> Color {
+        let palette = theme.extended_palette();
+        match self {
+            Indicator::Ok => palette.success.base.color,
+            Indicator::Warning => palette.warning.base.color,
+            Indicator::Error => Color::from_rgb8(0xfb, 0x2c, 0x36),
+            Indicator::Inactive => Color::from_rgb8(0x62, 0x74, 0x8e),
+        }
+    }
+}
+
+/// The 8pt coloured dot beside a status bar label.
+pub fn status_dot<'a, Message: 'a>(indicator: Indicator) -> Element<'a, Message> {
+    container(iced::widget::Space::new())
+        .width(8)
+        .height(8)
+        .style(move |theme| container::Style {
+            background: Some(Background::Color(indicator.color(theme))),
+            border: iced::border::rounded(4),
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// The dimmed layer behind a modal dialog.
+pub fn backdrop(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba8(0, 0, 0, 0.5))),
+        ..container::Style::default()
+    }
+}
+
+/// A modal dialog's panel.
+pub fn dialog(theme: &Theme) -> container::Style {
+    container::Style {
+        shadow: Shadow {
+            color: Color::from_rgba8(0, 0, 0, 0.5),
+            offset: Vector::new(0.0, 8.0),
+            blur_radius: 24.0,
+        },
+        ..popup(theme)
+    }
+}
+
+/// A dialog's main button; `destructive` paints it red.
+pub fn dialog_button(theme: &Theme, status: button::Status, destructive: bool) -> button::Style {
+    let palette = theme.extended_palette();
+    let (base, strong) = if destructive {
+        (palette.danger.base, palette.danger.strong)
+    } else {
+        (palette.primary.base, palette.primary.strong)
+    };
+    let background = match status {
+        button::Status::Hovered | button::Status::Pressed => strong.color,
+        button::Status::Active | button::Status::Disabled => base.color,
+    };
+    button::Style {
+        background: Some(Background::Color(background)),
+        text_color: base.text,
+        border: iced::border::rounded(RADIUS),
+        ..button::Style::default()
     }
 }
 

@@ -8,24 +8,29 @@
 //! status, the reported [`Capabilities`], and those senders.
 
 use std::borrow::Cow;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use iced::keyboard::key::Named;
 use iced::{
-    Alignment, Background, Element, Length, Point, Subscription, Task, Theme, border,
+    Alignment, Element, Length, Point, Subscription, Task, Theme,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
-    widget::{Column, Id, Row, Space, button, center, container, operation, text},
+    widget::{Column, Id, Row, Space, button, center, container, opaque, operation, stack, text},
 };
 use server_remote_core::{
-    Capabilities, Connector, Control, DummyConnector, InputEvent, PointerButton, PointerMode,
-    SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
+    Action, ActionValue, Capabilities, Connector, Control, DummyConnector, InputEvent,
+    PointerButton, PointerMode, SessionCommand, SessionEvent, SessionHandle,
+    Status as SessionStatus, Target, TlsPolicy, Traffic,
 };
 use server_remote_icons as icons;
 use server_remote_spice::SpiceConnector;
 use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
+use super::contributed;
+use super::icon;
 use super::kvm_display::{DisplayFrame, kvm_display};
 use super::menu::{self, Item};
 use super::style;
@@ -127,30 +132,95 @@ impl std::fmt::Display for KeyboardSize {
 }
 
 /// The toolbar's dropdown menus.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolbarMenu {
     Display,
     Input,
     Recording,
     /// Not a menu as such: the popout with technical connection details.
     Info,
+    /// A menu the connector contributed, by its id.
+    Contributed(Cow<'static, str>),
 }
 
 /// Submenus that can currently be opened. Unimplemented ones render disabled
 /// and so never need a variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Submenu {
     KeyboardStyle,
+    /// A submenu of a contributed menu, by its index path through the tree.
+    Contributed(Vec<usize>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct OpenMenu {
-    menu: ToolbarMenu,
-    submenu: Option<Submenu>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenMenu {
+    pub menu: ToolbarMenu,
+    pub submenu: Option<Submenu>,
 }
 
+/// A dialog shown over the connection.
+#[derive(Debug, Clone)]
+enum Modal {
+    /// Asks before invoking an action that has a
+    /// [`Confirmation`](server_remote_core::Confirmation).
+    Confirm(Action),
+    Error {
+        title: String,
+        message: String,
+    },
+}
+
+/// Turns the connector's cumulative byte counters into rates.
+#[derive(Debug, Default)]
+struct TrafficMeter {
+    last: Option<(Instant, Traffic)>,
+    rate: Option<Rate>,
+}
+
+/// Bytes per second in each direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Rate {
+    received: f64,
+    sent: f64,
+}
+
+impl TrafficMeter {
+    /// Samples closer together than this would make the rate jumpy, so
+    /// they're skipped until enough time has passed.
+    const MIN_INTERVAL: Duration = Duration::from_millis(500);
+
+    fn sample(&mut self, at: Instant, traffic: Traffic) {
+        let Some((then, previous)) = self.last else {
+            self.last = Some((at, traffic));
+            return;
+        };
+        let elapsed = at.saturating_duration_since(then);
+        if elapsed < Self::MIN_INTERVAL {
+            return;
+        }
+        let per_second =
+            |now: u64, before: u64| now.saturating_sub(before) as f64 / elapsed.as_secs_f64();
+        self.rate = Some(Rate {
+            received: per_second(traffic.received, previous.received),
+            sent: per_second(traffic.sent, previous.sent),
+        });
+        self.last = Some((at, traffic));
+    }
+}
+
+/// A rate in bits per second, the way network rates are usually written.
+fn format_rate(bytes_per_second: f64) -> String {
+    let bits = bytes_per_second * 8.0;
+    if bits < 1_000_000.0 {
+        format!("{:.0} kb/s", bits / 1_000.0)
+    } else {
+        format!("{:.1} Mb/s", bits / 1_000_000.0)
+    }
+}
+
+/// Where the connection is in its lifecycle.
 #[derive(Debug, PartialEq)]
-enum Status {
+enum Phase {
     Connecting,
     Connected,
     Disconnected(Option<String>),
@@ -170,7 +240,7 @@ pub struct State {
     target: Target,
     tls: TlsPolicy,
     password: String,
-    status: Status,
+    phase: Phase,
     capabilities: Capabilities,
     frame: Option<DisplayFrame>,
     next_generation: u64,
@@ -188,6 +258,11 @@ pub struct State {
     show_virtual_trackpad: bool,
     virtual_trackpad: virtual_trackpad::State,
     menu: Option<OpenMenu>,
+    /// The connector's latest status snapshot.
+    session_status: SessionStatus,
+    traffic: TrafficMeter,
+    icons: icon::Cache,
+    modal: Option<Modal>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,8 +280,22 @@ pub enum Message {
     },
     /// A key was pressed or released while this connection is the active tab.
     Key { key: keyboard::Key, pressed: bool },
-    /// Invoke a declarative action advertised in [`Capabilities`].
-    Action(Cow<'static, str>),
+    /// Invoke a declarative action from [`Capabilities`]: confirm it and
+    /// collect its value first if it needs either.
+    Invoke(Action),
+    /// Go ahead with the action awaiting confirmation.
+    Confirm,
+    /// Close the open dialog without doing anything.
+    CloseModal,
+    /// The file picker for an action closed; `path` is `None` if cancelled.
+    FilePicked {
+        id: Cow<'static, str>,
+        path: Option<PathBuf>,
+    },
+    /// Send an action by id straight away, e.g. from a chip's close button.
+    SendAction(Cow<'static, str>),
+    /// Open a connector-supplied link in the browser.
+    OpenUrl(Cow<'static, str>),
     /// Disconnect and close the tab. Handled by the application, which owns the
     /// tab list; dropping the tab tears the session down. An *unexpected* close
     /// arrives as a `Session(Disconnected { .. })` event instead, so its reason
@@ -236,7 +325,9 @@ impl Message {
     fn closes_menu(&self) -> bool {
         matches!(
             self,
-            Message::Action(_)
+            Message::Invoke(_)
+                | Message::SendAction(_)
+                | Message::OpenUrl(_)
                 | Message::ToggleVirtualKeyboard
                 | Message::SetKeyboardSize(_)
                 | Message::ToggleVirtualTrackpad
@@ -262,7 +353,7 @@ impl State {
             target,
             tls,
             password,
-            status: Status::Connecting,
+            phase: Phase::Connecting,
             capabilities: Capabilities::default(),
             frame: None,
             next_generation: 0,
@@ -274,6 +365,10 @@ impl State {
             show_virtual_trackpad: false,
             virtual_trackpad: virtual_trackpad::State::default(),
             menu: None,
+            session_status: SessionStatus::default(),
+            traffic: TrafficMeter::default(),
+            icons: icon::Cache::default(),
+            modal: None,
         }
     }
 
@@ -322,9 +417,25 @@ impl State {
                     let _ = controls.input.try_send(InputEvent::Key { keysym, pressed });
                 }
             }
-            Message::Action(id) => {
-                if let Some(controls) = &self.controls {
-                    let _ = controls.commands.try_send(SessionCommand::Action { id });
+            Message::Invoke(action) => return self.invoke(action),
+            Message::Confirm => {
+                if let Some(Modal::Confirm(action)) = self.modal.take() {
+                    return self.collect_and_send(action);
+                }
+            }
+            Message::CloseModal => self.modal = None,
+            Message::FilePicked { id, path } => {
+                if let Some(path) = path {
+                    self.send_action(id, Some(ActionValue::File(path)));
+                }
+            }
+            Message::SendAction(id) => self.send_action(id, None),
+            Message::OpenUrl(url) => {
+                if let Err(error) = open::that_detached(url.as_ref()) {
+                    self.modal = Some(Modal::Error {
+                        title: "Couldn't open the link".to_owned(),
+                        message: format!("{url}: {error}"),
+                    });
                 }
             }
             // The application owns the tab list, so it intercepts `Close`; this
@@ -371,7 +482,7 @@ impl State {
                 }
             }
             Message::ToggleMenu(menu) => {
-                self.menu = match self.menu {
+                self.menu = match self.menu.take() {
                     Some(open) if open.menu == menu => None,
                     _ => Some(OpenMenu {
                         menu,
@@ -393,8 +504,8 @@ impl State {
         match event {
             SessionEvent::Connected { size, capabilities } => {
                 self.size = Some(size);
-                self.capabilities = capabilities;
-                self.status = Status::Connected;
+                self.set_capabilities(capabilities);
+                self.phase = Phase::Connected;
             }
             SessionEvent::Frame(frame) => {
                 self.size = Some((frame.width, frame.height));
@@ -409,11 +520,79 @@ impl State {
                 });
             }
             SessionEvent::Resized { width, height } => self.size = Some((width, height)),
-            SessionEvent::Capabilities(capabilities) => self.capabilities = capabilities,
+            SessionEvent::Capabilities(capabilities) => self.set_capabilities(capabilities),
+            SessionEvent::Status(status) => {
+                if let Some(traffic) = status.traffic {
+                    self.traffic.sample(Instant::now(), traffic);
+                }
+                self.session_status = status;
+                self.refresh_icons();
+            }
             SessionEvent::Disconnected { reason } => {
-                self.status = Status::Disconnected(reason);
+                self.phase = Phase::Disconnected(reason);
                 self.controls = None;
             }
+        }
+    }
+
+    fn set_capabilities(&mut self, capabilities: Capabilities) {
+        // A contributed menu that disappeared can't stay open.
+        if let Some(OpenMenu {
+            menu: ToolbarMenu::Contributed(id),
+            ..
+        }) = &self.menu
+        {
+            let still_there = capabilities.toolbar.iter().any(|item| {
+                matches!(item, server_remote_core::ToolbarItem::Menu { id: menu_id, .. } if menu_id == id)
+            });
+            if !still_there {
+                self.menu = None;
+            }
+        }
+        self.capabilities = capabilities;
+        self.refresh_icons();
+    }
+
+    fn refresh_icons(&mut self) {
+        self.icons.refresh(
+            icons_in_capabilities(&self.capabilities).chain(icons_in_status(&self.session_status)),
+        );
+    }
+
+    /// Invoking an action: confirm it first if asked to, then collect its
+    /// value and send it.
+    fn invoke(&mut self, action: Action) -> Task<Message> {
+        if !action.enabled {
+            return Task::none();
+        }
+        if action.confirm.is_some() {
+            self.modal = Some(Modal::Confirm(action));
+            return Task::none();
+        }
+        self.collect_and_send(action)
+    }
+
+    fn collect_and_send(&mut self, action: Action) -> Task<Message> {
+        match action.control {
+            Control::Button => {
+                self.send_action(action.id, None);
+                Task::none()
+            }
+            Control::File { extensions } => {
+                let id = action.id;
+                Task::perform(pick_file(extensions), move |path| Message::FilePicked {
+                    id,
+                    path,
+                })
+            }
+        }
+    }
+
+    fn send_action(&self, id: Cow<'static, str>, value: Option<ActionValue>) {
+        if let Some(controls) = &self.controls {
+            let _ = controls
+                .commands
+                .try_send(SessionCommand::Action { id, value });
         }
     }
 
@@ -435,9 +614,9 @@ impl State {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let body: Element<'_, Message> = match (&self.status, &self.frame) {
-            (Status::Connecting, _) => text("Connecting…").into(),
-            (Status::Disconnected(reason), _) => {
+        let body: Element<'_, Message> = match (&self.phase, &self.frame) {
+            (Phase::Connecting, _) => text("Connecting…").into(),
+            (Phase::Disconnected(reason), _) => {
                 let reason = reason.clone().unwrap_or_else(|| "Disconnected".to_owned());
                 Column::new()
                     .spacing(8)
@@ -450,8 +629,8 @@ impl State {
                     )
                     .into()
             }
-            (Status::Connected, None) => text("Waiting for first frame…").into(),
-            (Status::Connected, Some(frame)) => kvm_display(
+            (Phase::Connected, None) => text("Waiting for first frame…").into(),
+            (Phase::Connected, Some(frame)) => kvm_display(
                 frame.clone(),
                 self.capabilities.pointer,
                 self.display_id.clone(),
@@ -472,27 +651,40 @@ impl State {
             center(panel).height(Length::Shrink)
         });
 
-        Column::new()
+        let content = Column::new()
             .spacing(4)
-            .push((!matches!(self.status, Status::Disconnected(_))).then(|| self.toolbar()))
+            .push((!matches!(self.phase, Phase::Disconnected(_))).then(|| self.toolbar()))
             .push(center(body))
             .push(panel)
-            .push(self.status_bar())
-            .into()
+            .push(self.status_bar());
+
+        match &self.modal {
+            Some(modal) => stack![content, modal_view(modal)].into(),
+            None => content.into(),
+        }
     }
 
     fn toolbar(&self) -> Element<'_, Message> {
-        let open_menu = |menu| self.menu.filter(|open| open.menu == menu);
-        let button_menu = |menu, icon, items| {
+        let is_open =
+            |menu: &ToolbarMenu| self.menu.as_ref().is_some_and(|open| open.menu == *menu);
+        let button_menu = |menu: ToolbarMenu, icon: icons::Icon, items| {
             menu::button_menu(
-                icon,
+                icon.into(),
                 items,
-                open_menu(menu).is_some(),
+                is_open(&menu),
                 Message::ToggleMenu(menu),
                 Message::CloseMenu,
             )
         };
-        let submenu_open = |submenu| self.menu.is_some_and(|open| open.submenu == Some(submenu));
+        let submenu_open = |submenu: Submenu| {
+            self.menu
+                .as_ref()
+                .is_some_and(|open| open.submenu == Some(submenu.clone()))
+        };
+        let contributed_menus =
+            contributed::toolbar_menus(&self.capabilities, &self.icons, self.menu.as_ref());
+        let chips = contributed::chips(&self.session_status, &self.icons);
+        let links = contributed::toolbar_links(&self.capabilities, &self.icons);
 
         Row::new()
             .spacing(style::SPACING)
@@ -513,12 +705,18 @@ impl State {
                 recording_menu(),
             ))
             .push(style::vertical_divider(20.0))
+            .push(
+                (!contributed_menus.is_empty())
+                    .then(|| with_divider(Row::with_children(contributed_menus))),
+            )
+            .push(Row::with_children(chips).spacing(style::SPACING))
             .push(Space::new().width(Length::Fill))
             .push(style::vertical_divider(20.0))
+            .push(Row::with_children(links).spacing(style::SPACING))
             .push(menu::button_popout(
-                icons::INFORMATION,
+                icons::INFORMATION.into(),
                 || self.info(),
-                open_menu(ToolbarMenu::Info).is_some(),
+                is_open(&ToolbarMenu::Info),
                 Message::ToggleMenu(ToolbarMenu::Info),
                 Message::CloseMenu,
             ))
@@ -527,10 +725,10 @@ impl State {
 
     /// Technical details about the connection, for the info popout.
     fn info(&self) -> Element<'_, Message> {
-        let status = match &self.status {
-            Status::Connecting => "Connecting".to_owned(),
-            Status::Connected => "Connected".to_owned(),
-            Status::Disconnected(reason) => {
+        let status = match &self.phase {
+            Phase::Connecting => "Connecting".to_owned(),
+            Phase::Connected => "Connected".to_owned(),
+            Phase::Disconnected(reason) => {
                 reason.clone().unwrap_or_else(|| "Disconnected".to_owned())
             }
         };
@@ -543,7 +741,13 @@ impl State {
             PointerMode::Relative => "Relative",
         };
 
-        let rows = [
+        let encryption = self
+            .session_status
+            .encryption
+            .as_deref()
+            .unwrap_or("None")
+            .to_owned();
+        let built_in = [
             ("Protocol", self.protocol.name().to_owned()),
             (
                 "Address",
@@ -553,9 +757,15 @@ impl State {
             ("Resolution", resolution),
             ("Pointer", pointer.to_owned()),
             ("Frames received", self.next_generation.to_string()),
+            ("Encryption", encryption),
         ];
+        let details = self
+            .session_status
+            .details
+            .iter()
+            .map(|detail| (detail.label.as_ref(), detail.value.to_string()));
 
-        Column::with_children(rows.into_iter().map(|(label, value)| {
+        Column::with_children(built_in.into_iter().chain(details).map(|(label, value)| {
             Row::new()
                 .spacing(16)
                 .push(text(label).width(110).style(|theme: &Theme| text::Style {
@@ -572,15 +782,10 @@ impl State {
     fn input_menu(&self, keyboard_style_open: bool) -> Vec<Item<Message>> {
         let actions = self
             .capabilities
-            .actions
+            .input_actions
             .iter()
-            .map(|action| match action.control {
-                Control::Button => Item::entry(
-                    action.label.to_string(),
-                    Some(Message::Action(action.id.clone())),
-                ),
-            });
-        let separator = (!self.capabilities.actions.is_empty()).then_some(Item::Separator);
+            .map(|action| contributed::action_item(action, &self.icons));
+        let separator = (!self.capabilities.input_actions.is_empty()).then_some(Item::Separator);
 
         let keyboard_styles = KeyboardSize::ALL
             .into_iter()
@@ -614,41 +819,77 @@ impl State {
     }
 
     fn status_bar(&self) -> Element<'_, Message> {
-        let (label, color): (&str, fn(&Theme) -> iced::Color) = match self.status {
-            Status::Connecting => ("Connecting…", |theme| {
-                theme.extended_palette().warning.base.color
-            }),
-            Status::Connected => ("Connected", |theme| {
-                theme.extended_palette().success.base.color
-            }),
-            Status::Disconnected(_) => ("Disconnected", |theme| {
-                theme.extended_palette().danger.base.color
-            }),
+        let (label, indicator) = match self.phase {
+            Phase::Connecting => ("Connecting…", style::Indicator::Warning),
+            Phase::Connected => ("Connected", style::Indicator::Ok),
+            Phase::Disconnected(_) => ("Disconnected", style::Indicator::Error),
         };
-
-        let state = Row::new()
+        let phase = Row::new()
             .spacing(6)
             .align_y(Alignment::Center)
-            .push(status_dot(color))
+            .push(style::status_dot(indicator))
             .push(text(label));
 
+        let traffic = self.traffic.rate.map(|rate| {
+            Row::new()
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .push(status_icon(icons::DOWNLOAD))
+                .push(text(format_rate(rate.received)))
+                .push(Space::new().width(6))
+                .push(status_icon(icons::UPLOAD))
+                .push(text(format_rate(rate.sent)))
+                .into()
+        });
         let resolution = self
             .size
-            .map(|(width, height)| text(format!("{width}×{height}")));
+            .map(|(width, height)| text(format!("{width}×{height}")).into());
+        let encryption = self.session_status.encryption.as_ref().map(|encryption| {
+            Row::new()
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .push(status_icon(icons::LOCKED))
+                .push(text(encryption.as_ref()))
+                .into()
+        });
+        let items = contributed::status_items(&self.session_status, &self.icons);
+        let connector_items = (!items.is_empty()).then(|| {
+            Row::with_children(items)
+                .spacing(16)
+                .align_y(Alignment::Center)
+                .into()
+        });
 
-        Row::new()
-            .spacing(12)
+        // Groups are separated by dividers; the connector's own items sit
+        // together in the last group.
+        let groups: Vec<Element<'_, Message>> = [
+            Some(phase.into()),
+            traffic,
+            resolution,
+            encryption,
+            connector_items,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let count = groups.len();
+        let row = groups
+            .into_iter()
+            .enumerate()
+            .fold(Row::new(), |row, (index, group)| {
+                row.push(group)
+                    .push((index + 1 < count).then(|| style::vertical_divider(16.0)))
+            });
+
+        row.spacing(12)
             .padding([0, 8])
             .height(style::CONTROL_HEIGHT)
             .align_y(Alignment::Center)
-            .push(state)
-            .push(resolution.is_some().then(|| style::vertical_divider(16.0)))
-            .push(resolution)
             .into()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        if let Status::Disconnected(_) = self.status {
+        if let Phase::Disconnected(_) = self.phase {
             return Subscription::none();
         }
 
@@ -699,15 +940,134 @@ fn recording_menu() -> Vec<Item<Message>> {
     ]
 }
 
-fn status_dot<'a>(color: fn(&Theme) -> iced::Color) -> Element<'a, Message> {
-    container(text(""))
-        .width(8)
-        .height(8)
-        .style(move |theme| container::Style {
-            background: Some(Background::Color(color(theme))),
-            border: border::rounded(4),
-            ..container::Style::default()
+fn status_icon<'a>(icon: icons::Icon) -> Element<'a, Message> {
+    super::icon::view(icon.into(), style::ICON_SIZE, |theme| {
+        theme.extended_palette().background.base.text
+    })
+}
+
+/// `row` followed by a divider, for a group of toolbar buttons.
+fn with_divider(row: Row<'_, Message>) -> Element<'_, Message> {
+    Row::new()
+        .spacing(style::SPACING)
+        .align_y(Alignment::Center)
+        .push(row.spacing(style::SPACING))
+        .push(style::vertical_divider(20.0))
+        .into()
+}
+
+fn icons_in_capabilities(
+    capabilities: &Capabilities,
+) -> impl Iterator<Item = &server_remote_core::Icon> {
+    fn in_menu(items: &[server_remote_core::MenuItem]) -> Vec<&server_remote_core::Icon> {
+        items
+            .iter()
+            .flat_map(|item| match item {
+                server_remote_core::MenuItem::Action(action) => action.icon.iter().collect(),
+                server_remote_core::MenuItem::Submenu { items, .. } => in_menu(items),
+                server_remote_core::MenuItem::Separator => Vec::new(),
+            })
+            .collect()
+    }
+
+    let toolbar = capabilities.toolbar.iter().flat_map(|item| match item {
+        server_remote_core::ToolbarItem::Menu { icon, items, .. } => std::iter::once(icon)
+            .chain(in_menu(items))
+            .collect::<Vec<_>>(),
+        server_remote_core::ToolbarItem::Link { icon, .. } => vec![icon],
+    });
+    capabilities
+        .input_actions
+        .iter()
+        .filter_map(|action| action.icon.as_ref())
+        .chain(toolbar)
+}
+
+fn icons_in_status(status: &SessionStatus) -> impl Iterator<Item = &server_remote_core::Icon> {
+    let items = status.items.iter().filter_map(|item| match item {
+        server_remote_core::StatusItem::Text { icon, .. } => icon.as_ref(),
+        server_remote_core::StatusItem::Indicator { .. } => None,
+    });
+    let chips = status.chips.iter().filter_map(|chip| chip.icon.as_ref());
+    items.chain(chips)
+}
+
+async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
+    let dialog = rfd::AsyncFileDialog::new();
+    let dialog = if extensions.is_empty() {
+        dialog
+    } else {
+        dialog.add_filter("Supported files", &extensions)
+    };
+    dialog
+        .pick_file()
+        .await
+        .map(|file| file.path().to_path_buf())
+}
+
+fn modal_view(modal: &Modal) -> Element<'_, Message> {
+    let (title, message, confirm) = match modal {
+        Modal::Confirm(action) => {
+            let confirmation = action
+                .confirm
+                .as_ref()
+                .expect("only actions with a confirmation are confirmed");
+            (
+                confirmation.title.as_ref(),
+                confirmation.message.as_ref(),
+                Some((
+                    confirmation.confirm_label.as_ref(),
+                    confirmation.destructive,
+                )),
+            )
+        }
+        Modal::Error { title, message } => (title.as_str(), message.as_str(), None),
+    };
+
+    let buttons = match confirm {
+        Some((label, destructive)) => Row::new()
+            .push(dialog_button("Cancel", Message::CloseModal, None))
+            .push(dialog_button(label, Message::Confirm, Some(destructive))),
+        None => Row::new().push(dialog_button("OK", Message::CloseModal, Some(false))),
+    };
+
+    let dialog = container(
+        Column::new()
+            .spacing(12)
+            .push(text(title).size(14).font(style::BOLD))
+            .push(text(message))
+            .push(
+                Row::new()
+                    .push(Space::new().width(Length::Fill))
+                    .push(buttons.spacing(8)),
+            ),
+    )
+    .width(320)
+    .padding(16)
+    .style(style::dialog);
+
+    opaque(
+        container(dialog)
+            .center(Length::Fill)
+            .style(style::backdrop),
+    )
+}
+
+/// `primary` is `None` for a secondary (bordered) button, or whether the
+/// primary button is destructive.
+fn dialog_button<'a>(
+    label: &'a str,
+    on_press: Message,
+    primary: Option<bool>,
+) -> Element<'a, Message> {
+    button(container(text(label)).center_y(Length::Fill))
+        .height(style::CONTROL_HEIGHT)
+        .padding([0, 12])
+        .style(move |theme, status| match primary {
+            Some(destructive) => style::dialog_button(theme, status, destructive),
+            None => style::bordered_button(theme, status, false),
         })
+        .on_press(on_press)
         .into()
 }
 
@@ -885,7 +1245,7 @@ mod tests {
         let mut state = state();
         let capabilities = Capabilities {
             pointer: PointerMode::Relative,
-            actions: Vec::new(),
+            ..Capabilities::default()
         };
         state.apply(SessionEvent::Connected {
             size: (800, 600),
@@ -894,7 +1254,7 @@ mod tests {
 
         assert_eq!(state.size, Some((800, 600)));
         assert_eq!(state.capabilities.pointer, PointerMode::Relative);
-        assert_eq!(state.status, Status::Connected);
+        assert_eq!(state.phase, Phase::Connected);
     }
 
     #[test]
@@ -931,8 +1291,8 @@ mod tests {
         });
 
         assert_eq!(
-            state.status,
-            Status::Disconnected(Some("connection reset".to_owned()))
+            state.phase,
+            Phase::Disconnected(Some("connection reset".to_owned()))
         );
         assert!(state.controls.is_none());
     }
@@ -1001,17 +1361,177 @@ mod tests {
         assert!(input_rx.try_recv().is_err());
     }
 
+    fn confirmed(action: Action) -> Action {
+        action.confirm(server_remote_core::Confirmation {
+            title: Cow::Borrowed("Sure?"),
+            message: Cow::Borrowed("Really?"),
+            confirm_label: Cow::Borrowed("Yes"),
+            destructive: false,
+        })
+    }
+
+    /// Actions sent to the session, as `(id, value)`.
+    type Sent = Vec<(String, Option<ActionValue>)>;
+
+    fn sent(command_rx: &mut mpsc::Receiver<SessionCommand>) -> Sent {
+        std::iter::from_fn(|| command_rx.try_recv().ok())
+            .map(|SessionCommand::Action { id, value }| (id.into_owned(), value))
+            .collect()
+    }
+
     #[test]
-    fn action_message_forwards_the_action_id() {
+    fn action_flows() {
+        let iso = PathBuf::from("/images/disk.iso");
+        let cases: Vec<(&str, Vec<Message>, Sent)> = vec![
+            (
+                "button is sent straight away",
+                vec![Message::Invoke(Action::button("cad", "Ctrl+Alt+Del"))],
+                vec![("cad".into(), None)],
+            ),
+            (
+                "disabled action is ignored",
+                vec![Message::Invoke(
+                    Action::button("cad", "Ctrl+Alt+Del").enabled(false),
+                )],
+                vec![],
+            ),
+            (
+                "confirmation holds the action back",
+                vec![Message::Invoke(confirmed(Action::button(
+                    "off",
+                    "Power off",
+                )))],
+                vec![],
+            ),
+            (
+                "confirming sends it",
+                vec![
+                    Message::Invoke(confirmed(Action::button("off", "Power off"))),
+                    Message::Confirm,
+                ],
+                vec![("off".into(), None)],
+            ),
+            (
+                "cancelling drops it",
+                vec![
+                    Message::Invoke(confirmed(Action::button("off", "Power off"))),
+                    Message::CloseModal,
+                    Message::Confirm,
+                ],
+                vec![],
+            ),
+            (
+                "picked file is sent as the value",
+                vec![Message::FilePicked {
+                    id: Cow::Borrowed("mount"),
+                    path: Some(iso.clone()),
+                }],
+                vec![("mount".into(), Some(ActionValue::File(iso.clone())))],
+            ),
+            (
+                "cancelled file picker sends nothing",
+                vec![Message::FilePicked {
+                    id: Cow::Borrowed("mount"),
+                    path: None,
+                }],
+                vec![],
+            ),
+            (
+                "chip close sends its action",
+                vec![Message::SendAction(Cow::Borrowed("eject"))],
+                vec![("eject".into(), None)],
+            ),
+        ];
+
+        for (name, messages, expected) in cases {
+            let mut state = state();
+            let (controls, _input_rx, mut command_rx) = wired_controls();
+            state.controls = Some(controls);
+            for message in messages {
+                let _ = state.update(message);
+            }
+            assert_eq!(sent(&mut command_rx), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn invoking_a_confirmed_action_opens_the_dialog() {
         let mut state = state();
-        let (controls, _input_rx, mut command_rx) = wired_controls();
-        state.controls = Some(controls);
+        let _ = state.update(Message::Invoke(confirmed(Action::button(
+            "off",
+            "Power off",
+        ))));
+        assert!(matches!(state.modal, Some(Modal::Confirm(_))));
+    }
 
-        let _ = state.update(Message::Action(Cow::Borrowed("ctrl-alt-del")));
+    #[test]
+    fn status_event_is_stored() {
+        let mut state = state();
+        state.apply(SessionEvent::Status(SessionStatus {
+            encryption: Some(Cow::Borrowed("RC4")),
+            ..SessionStatus::default()
+        }));
+        assert_eq!(state.session_status.encryption.as_deref(), Some("RC4"));
+    }
 
-        match command_rx.try_recv() {
-            Ok(SessionCommand::Action { id }) => assert_eq!(id, "ctrl-alt-del"),
-            other => panic!("expected an action command, got {other:?}"),
+    #[test]
+    fn traffic_rates() {
+        let start = Instant::now();
+        let at = |millis| start + Duration::from_millis(millis);
+        let traffic = |received, sent| Traffic { received, sent };
+        let cases = [
+            ("one sample has no rate", vec![(0, traffic(0, 0))], None),
+            (
+                "rate over one second",
+                vec![(0, traffic(0, 0)), (1_000, traffic(1_000, 500))],
+                Some(Rate {
+                    received: 1_000.0,
+                    sent: 500.0,
+                }),
+            ),
+            (
+                "too-close samples are skipped",
+                vec![(0, traffic(0, 0)), (100, traffic(900, 900))],
+                None,
+            ),
+            (
+                "rate measured from the last kept sample",
+                vec![
+                    (0, traffic(0, 0)),
+                    (100, traffic(900, 900)),
+                    (2_000, traffic(4_000, 2_000)),
+                ],
+                Some(Rate {
+                    received: 2_000.0,
+                    sent: 1_000.0,
+                }),
+            ),
+        ];
+
+        for (name, samples, expected) in cases {
+            let mut meter = TrafficMeter::default();
+            for (millis, traffic) in samples {
+                meter.sample(at(millis), traffic);
+            }
+            assert_eq!(meter.rate, expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn rate_formatting() {
+        let cases = [
+            (0.0, "0 kb/s"),
+            (18_750.0, "150 kb/s"),
+            (124_999.0, "1000 kb/s"),
+            (125_000.0, "1.0 Mb/s"),
+            (1_500_000.0, "12.0 Mb/s"),
+        ];
+        for (bytes_per_second, expected) in cases {
+            assert_eq!(
+                format_rate(bytes_per_second),
+                expected,
+                "{bytes_per_second}"
+            );
         }
     }
 

@@ -160,6 +160,124 @@ mod tests {
 
     /// Renders the window chrome to PNGs for comparing against the design.
     /// Run with `SNAPSHOT_DIR=<dir> cargo test -p server-remote -- --ignored`.
+    /// Capabilities shaped like the iLO mockups, for review snapshots.
+    fn ilo_like_capabilities() -> server_remote_core::Capabilities {
+        use server_remote_core::{
+            Action, Capabilities, Confirmation, Control, MenuItem, ToolbarItem,
+        };
+        use server_remote_icons as icons;
+
+        let power = |id: &'static str, label: &'static str, icon, verb: &'static str, hard| {
+            MenuItem::Action(Action::button(id, label).icon(icon).confirm(Confirmation {
+                title: format!("{verb}?").into(),
+                message: if hard {
+                    "Cuts power immediately. Unsaved work will be lost.".into()
+                } else {
+                    "Asks the operating system to do this gracefully.".into()
+                },
+                confirm_label: verb.into(),
+                destructive: hard,
+            }))
+        };
+        Capabilities {
+            input_actions: vec![Action::button("cad", "Ctrl+Alt+Delete").icon(icons::RESTART)],
+            toolbar: vec![
+                ToolbarItem::Menu {
+                    id: "power".into(),
+                    icon: icons::POWER.into(),
+                    label: "Power".into(),
+                    items: vec![
+                        power(
+                            "power.shut-down",
+                            "Shut down…",
+                            icons::POWER,
+                            "Shut down",
+                            false,
+                        ),
+                        power(
+                            "power.restart",
+                            "Restart…",
+                            icons::RESTART,
+                            "Restart",
+                            false,
+                        ),
+                        MenuItem::Separator,
+                        power("power.off", "Power off…", icons::POWER, "Power off", true),
+                        power(
+                            "power.cold-boot",
+                            "Cold boot…",
+                            icons::RESTART,
+                            "Cold boot",
+                            true,
+                        ),
+                    ],
+                },
+                ToolbarItem::Menu {
+                    id: "media".into(),
+                    icon: icons::VMDK_DISK.into(),
+                    label: "Virtual media".into(),
+                    items: vec![MenuItem::Action(
+                        Action::button("media.mount", "Mount image…").control(Control::File {
+                            extensions: vec!["iso".into()],
+                        }),
+                    )],
+                },
+                ToolbarItem::Link {
+                    icon: icons::LAUNCH.into(),
+                    label: "Open iLO in web browser".into(),
+                    url: "https://ilo.invalid".into(),
+                },
+            ],
+            ..Capabilities::default()
+        }
+    }
+
+    /// Connects the first tab to an iLO-like session, with two status
+    /// samples far enough apart for traffic rates to show.
+    fn feed_ilo_like_session(app: &mut Application) {
+        use server_remote_core::{Chip, IndicatorState, SessionEvent, Status, StatusItem, Traffic};
+        use server_remote_icons as icons;
+
+        let status = |received, sent| Status {
+            encryption: Some("RC4".into()),
+            traffic: Some(Traffic { received, sent }),
+            items: vec![
+                StatusItem::Indicator {
+                    label: "Powered on".into(),
+                    state: IndicatorState::Ok,
+                },
+                StatusItem::Indicator {
+                    label: "POST: 5000".into(),
+                    state: IndicatorState::Inactive,
+                },
+                StatusItem::Indicator {
+                    label: "ACT".into(),
+                    state: IndicatorState::Ok,
+                },
+                StatusItem::Indicator {
+                    label: "Health".into(),
+                    state: IndicatorState::Warning,
+                },
+            ],
+            chips: vec![Chip {
+                icon: Some(icons::PROGRESS_BAR_ROUND.into()),
+                label: "proxmox-ve_9.2-1.iso".into(),
+                close_action: Some("media.eject".into()),
+            }],
+            details: Vec::new(),
+        };
+        let session = |event| Message::Connection(0, ui::connection::Message::Session(event));
+
+        let _ = app.update(session(SessionEvent::Connected {
+            size: (1024, 768),
+            capabilities: ilo_like_capabilities(),
+        }));
+        let _ = app.update(session(SessionEvent::Status(status(0, 0))));
+        // 150 kb/s down and 95 kb/s up over the 0.6 s between samples.
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let _ = app.update(session(SessionEvent::Status(status(11_250, 7_125))));
+    }
+
     #[test]
     #[ignore = "writes review snapshots; needs SNAPSHOT_DIR"]
     fn render_review_snapshots() {
@@ -168,16 +286,46 @@ mod tests {
         let settings = ui::style::settings();
         let theme = ui::style::theme();
 
-        let states: [(&str, Vec<ui::connection::Message>); 4] = [
-            ("window", vec![]),
+        use ui::connection::{Message as Conn, ToolbarMenu};
+
+        let power_off = ilo_like_capabilities()
+            .toolbar
+            .into_iter()
+            .find_map(|item| match item {
+                server_remote_core::ToolbarItem::Menu { items, .. } => {
+                    items.into_iter().find_map(|item| match item {
+                        server_remote_core::MenuItem::Action(action)
+                            if action.id == "power.off" =>
+                        {
+                            Some(action)
+                        }
+                        _ => None,
+                    })
+                }
+                server_remote_core::ToolbarItem::Link { .. } => None,
+            })
+            .expect("the power menu has a power-off action");
+
+        // (name, whether a connector session is fed in first, messages)
+        let states: [(&str, bool, Vec<Conn>); 7] = [
+            ("window", false, vec![]),
+            ("connector", true, vec![]),
+            (
+                "power-menu",
+                true,
+                vec![Conn::ToggleMenu(ToolbarMenu::Contributed("power".into()))],
+            ),
+            ("confirm", true, vec![Conn::Invoke(power_off)]),
             (
                 "display-menu",
+                false,
                 vec![ui::connection::Message::ToggleMenu(
                     ui::connection::ToolbarMenu::Display,
                 )],
             ),
             (
                 "input-menu",
+                false,
                 vec![
                     ui::connection::Message::ToggleMenu(ui::connection::ToolbarMenu::Input),
                     ui::connection::Message::OpenSubmenu(ui::connection::Submenu::KeyboardStyle),
@@ -185,17 +333,21 @@ mod tests {
             ),
             (
                 "keyboard",
+                false,
                 vec![ui::connection::Message::SetKeyboardSize(
                     ui::connection::KeyboardSize::Large,
                 )],
             ),
         ];
 
-        for (name, messages) in states {
+        for (name, with_session, messages) in states {
             let (mut app, _) = Application::boot();
             let _ = app.open_connection(request("Connection #1"));
             let _ = app.open_connection(request("Connection #2"));
             app.tab = Tab::Connection(0);
+            if with_session {
+                feed_ilo_like_session(&mut app);
+            }
             for message in messages {
                 let _ = app.update(Message::Connection(0, message));
             }

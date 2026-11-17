@@ -7,12 +7,11 @@
 
 mod framebuffer;
 
-use std::borrow::Cow;
 use std::time::Duration;
 
 use framebuffer::Framebuffer;
 use server_remote_core::{
-    Action, Capabilities, ConnectError, Connector, Control, InputEvent, PointerButton, PointerMode,
+    Action, Capabilities, ConnectError, Connector, InputEvent, PointerButton, PointerMode,
     SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
 };
 use tokio::net::TcpStream;
@@ -95,11 +94,8 @@ fn connect_error(error: VncError) -> ConnectError {
 fn capabilities() -> Capabilities {
     Capabilities {
         pointer: PointerMode::Absolute,
-        actions: vec![Action {
-            id: Cow::Borrowed(CAD_ACTION),
-            label: Cow::Borrowed("Ctrl+Alt+Del"),
-            control: Control::Button,
-        }],
+        input_actions: vec![Action::button(CAD_ACTION, "Ctrl+Alt+Del")],
+        ..Capabilities::default()
     }
 }
 
@@ -165,7 +161,7 @@ async fn run_session(
                 None => return,
             },
             command = command_rx.recv(), if commands_open => match command {
-                Some(SessionCommand::Action { id }) if id == CAD_ACTION => send_cad(&client).await,
+                Some(SessionCommand::Action { id, .. }) if id == CAD_ACTION => send_cad(&client).await,
                 Some(_) => {}
                 None => commands_open = false,
             },
@@ -319,6 +315,7 @@ async fn disconnect(event_tx: &mpsc::Sender<SessionEvent>, reason: Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use server_remote_core::Control;
     use tokio::net::TcpListener;
 
     #[tokio::test]
@@ -373,9 +370,9 @@ mod tests {
     fn capabilities_report_absolute_pointer_and_ctrl_alt_del() {
         let caps = capabilities();
         assert_eq!(caps.pointer, PointerMode::Absolute);
-        assert_eq!(caps.actions.len(), 1);
-        assert_eq!(caps.actions[0].id, CAD_ACTION);
-        assert!(matches!(caps.actions[0].control, Control::Button));
+        assert_eq!(caps.input_actions.len(), 1);
+        assert_eq!(caps.input_actions[0].id, CAD_ACTION);
+        assert!(matches!(caps.input_actions[0].control, Control::Button));
     }
 
     #[test]

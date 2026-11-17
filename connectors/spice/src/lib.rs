@@ -6,11 +6,9 @@
 //! types and `server-remote-core`'s, the same relationship
 //! `server-remote-vnc` has with `vnc-rs`.
 
-use std::borrow::Cow;
-
 use server_remote_core::{
-    Action, Capabilities, ConnectError, Connector, Control, Frame, InputEvent, PointerButton,
-    PointerMode, SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
+    Action, Capabilities, ConnectError, Connector, Frame, InputEvent, PointerButton, PointerMode,
+    SessionCommand, SessionEvent, SessionHandle, Target, TlsPolicy,
 };
 use tokio::sync::mpsc;
 
@@ -74,11 +72,8 @@ fn connect_error(error: spice_rs::SpiceConnectError) -> ConnectError {
 fn capabilities() -> Capabilities {
     Capabilities {
         pointer: PointerMode::Absolute,
-        actions: vec![Action {
-            id: Cow::Borrowed(CAD_ACTION),
-            label: Cow::Borrowed("Ctrl+Alt+Del"),
-            control: Control::Button,
-        }],
+        input_actions: vec![Action::button(CAD_ACTION, "Ctrl+Alt+Del")],
+        ..Capabilities::default()
     }
 }
 
@@ -115,7 +110,7 @@ async fn forward_session(
                 None => return,
             },
             command = command_rx.recv(), if commands_open => match command {
-                Some(SessionCommand::Action { id }) if id == CAD_ACTION => send_cad(&spice_input).await,
+                Some(SessionCommand::Action { id, .. }) if id == CAD_ACTION => send_cad(&spice_input).await,
                 Some(_) => {}
                 None => commands_open = false,
             },
@@ -189,6 +184,7 @@ async fn send_cad(input: &mpsc::Sender<spice_rs::SpiceInput>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use server_remote_core::Control;
     use tokio::net::TcpListener;
 
     #[tokio::test]
@@ -231,9 +227,9 @@ mod tests {
     fn capabilities_report_absolute_pointer_and_ctrl_alt_del() {
         let caps = capabilities();
         assert_eq!(caps.pointer, PointerMode::Absolute);
-        assert_eq!(caps.actions.len(), 1);
-        assert_eq!(caps.actions[0].id, CAD_ACTION);
-        assert!(matches!(caps.actions[0].control, Control::Button));
+        assert_eq!(caps.input_actions.len(), 1);
+        assert_eq!(caps.input_actions[0].id, CAD_ACTION);
+        assert!(matches!(caps.input_actions[0].control, Control::Button));
     }
 
     #[test]

@@ -92,37 +92,49 @@ handle's `events`) signals shutdown. This gives type erasure for free (all
 sessions are the same concrete type) and keeps `core` free of any UI dependency.
 
 - **`SessionEvent`** — `Connected { size, capabilities }`, `Frame(Frame)`,
-  `Resized { .. }`, `Capabilities(..)` (mid-session change), `Disconnected {
-  reason }`.
+  `Resized { .. }`, `Capabilities(..)` (mid-session change), `Status(..)` (a
+  fresh status snapshot), `Disconnected { reason }`.
 - **`InputEvent`** — `PointerMoved` (absolute), `PointerMotion` (relative
   deltas), `PointerButton`, `Key { keysym, .. }` (X11 keysyms, matching what RFB
   and Spice expect).
-- **`SessionCommand`** — non-input requests, currently `Action { id }` to invoke
-  a declarative capability.
+- **`SessionCommand`** — non-input requests, currently `Action { id, value }`
+  to invoke a declarative action, with the `ActionValue` its control collected
+  (e.g. a picked file).
 - **`Frame`** — a decoded framebuffer, RGBA8, row-major, `width * height * 4`
   bytes. Full-frame for now; regional/damage updates are a later optimisation.
 
-### Capabilities
+### Capabilities and status
 
-The connection toolbar is **capability-driven**: a session reports what it
-supports and the UI renders from that, rather than hardcoding per-protocol
-buttons.
-
-```rust
-pub struct Capabilities {
-    pub pointer: PointerMode,   // Absolute | Relative
-    pub actions: Vec<Action>,   // protocol-specific, declarative
-}
-```
-
-Common capabilities are typed fields (e.g. `pointer`, which decides whether the
-UI sends absolute positions or grabs the pointer and sends deltas).
-Protocol-specific ones are **declarative `Action`s** — an `id`, a `label`, and a
-`Control` from a small vocabulary (`Button` today; `File`/`Toggle`/`Choose` when
-Spice/iLO media mounting lands). The UI renders them generically and reports the
-invoked one back as a `SessionCommand::Action { id }`; the plugin recognises its
-own id. This lets a protocol contribute toolbar UI **as data**, so `core` and
+The connection's toolbar and status bar are **capability-driven**: a session
+describes what it offers and what's going on, and the UI renders from that
+rather than hardcoding per-protocol UI. Everything is **data**, so `core` and
 every protocol crate stay UI-free.
+
+Two snapshots, each sent whole whenever it changes:
+
+- **`Capabilities`** — what the session can do. `pointer` (absolute vs
+  relative) decides how the UI sends pointer input; `input_actions` (e.g.
+  Ctrl+Alt+Del) go in the Input menu; `toolbar` holds the connector's own
+  toolbar entries: `Menu`s of actions (Power, Virtual media) and `Link`s the UI
+  opens in the browser itself (a management processor's web interface).
+- **`Status`** — what's going on. `encryption` and cumulative `traffic`
+  counters are common to every protocol (the UI turns the counters into rates);
+  `items` are protocol-specific status bar entries — coloured `Indicator`s
+  ("Powered on", "Health") or `Text` ("POST: 5000"); `chips` are ongoing things
+  shown in the toolbar (a mounted image), optionally dismissable via an action;
+  `details` add rows to the connection info popout.
+
+An **`Action`** has an `id`, `label`, optional `icon`, `checked` and `enabled`
+flags, a `Control` saying how to collect input (`Button`, or `File` to open the
+native file picker), and an optional `Confirmation` that makes the UI ask in a
+modal dialog first. The UI reports the invoked action back as a
+`SessionCommand::Action { id, value }`; the connector recognises its own id.
+
+Icons are either one of the app's own (`server-remote-icons`) or image data the
+connector supplies — an SVG, tinted like the built-in icons, or a raster image.
+
+Recording is deliberately **not** a capability: the app records any session
+itself, since it already sees every frame and every input event it sends.
 
 If the declarative vocabulary can't express something, the plan is an **opt-in**
 trait for a plugin to provide its own iced UI — kept opt-in so protocols that
@@ -175,7 +187,7 @@ Next:
 2. VNC polish for real networks: richer encodings (ZRLE/Tight) and damage
    updates instead of full-frame snapshots; nearest-neighbour image filtering.
 3. Pointer capture for `PointerMode::Relative`, and grow the `Control` vocabulary
-   (`File`/`Toggle`/`Choose`) alongside Spice/iLO media mounting.
+   (e.g. `Toggle`/`Choose`) as protocols need it.
 4. Spice, then iLO — effectively from-scratch protocol work.
 
 [`Target`]: ../lib/core/src/transport.rs
