@@ -40,7 +40,7 @@ pub const CONDENSED: Font = Font {
     stretch: Stretch::Condensed,
     ..FONT
 };
-pub const TEXT_SIZE: f32 = 12.0;
+pub const TEXT_SIZE: f32 = 13.0;
 
 /// Application settings carrying the embedded fonts and default text style.
 pub fn settings() -> Settings {

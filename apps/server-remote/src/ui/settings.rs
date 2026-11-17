@@ -599,7 +599,7 @@ impl<'a> Setting<'a> {
     /// tight). Switches always stay beside.
     fn view(self, side_by_side: bool) -> Element<'a, Message> {
         let description = text(self.description)
-            .size(11)
+            .size(12)
             .style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().background.strongest.color),
             });
