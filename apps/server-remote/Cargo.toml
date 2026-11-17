@@ -13,10 +13,10 @@ directories = "6.0.0"
 iced = { version = "0.14.0", features = ["advanced", "tokio", "image"] }
 iced_wgpu = "0.14.0"
 serde = { version = "1.0.228", features = ["derive"] }
-server-remote-core = { path = "../server-remote-core" }
-server-remote-icons = { path = "../icons", features = ["iced"] }
-server-remote-spice = { path = "../server-remote-spice" }
-server-remote-vnc = { path = "../server-remote-vnc" }
+server-remote-core = { path = "../../lib/core" }
+server-remote-icons = { path = "../../lib/icons", features = ["iced"] }
+server-remote-spice = { path = "../../connectors/spice" }
+server-remote-vnc = { path = "../../connectors/vnc" }
 tokio = { version = "1.52.3", features = ["sync"] }
 toml = "1.1.3"
 

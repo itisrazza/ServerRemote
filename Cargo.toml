@@ -1,13 +1,13 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/server-remote",
-    "crates/server-remote-core",
-    "crates/server-remote-vnc",
-    "crates/server-remote-spice",
-    "crates/server-remote-ilo",
-    "crates/spice-rs",
-    "crates/icons",
+    "apps/server-remote",
+    "connectors/ilo",
+    "connectors/spice",
+    "connectors/vnc",
+    "lib/core",
+    "lib/icons",
+    "lib/spice",
 ]
 
 [workspace.package]

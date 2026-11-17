@@ -41,7 +41,7 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`.
 | `server-remote-vnc` | VNC / RFB — implemented, on top of the `vnc-rs` crate. |
 | `server-remote-spice` | Spice — not started. |
 | `server-remote-ilo` | HPE iLO Remote Console — not started. |
-| `server-remote-icons` (`crates/icons`) | The app's icon set — [Carbon](https://github.com/carbon-design-system/carbon) icons (Apache-2.0) plus custom ones, exported from the Figma design into `assets/` and embedded with `include_bytes!`. Each icon is an `Icon` constant; the `iced` feature adds `Icon::element()`, which builds an `iced::widget::svg::Svg`. |
+| `server-remote-icons` (`lib/icons`) | The app's icon set — [Carbon](https://github.com/carbon-design-system/carbon) icons (Apache-2.0) plus custom ones, exported from the Figma design into `assets/` and embedded with `include_bytes!`. Each icon is an `Icon` constant; the `iced` feature adds `Icon::element()`, which builds an `iced::widget::svg::Svg`. |
 
 Workspace: edition 2024, resolver 3, iced 0.14 (`advanced` feature) on the front
 end.
@@ -178,4 +178,4 @@ Next:
    (`File`/`Toggle`/`Choose`) alongside Spice/iLO media mounting.
 4. Spice, then iLO — effectively from-scratch protocol work.
 
-[`Target`]: ../crates/server-remote-core/src/transport.rs
+[`Target`]: ../lib/core/src/transport.rs

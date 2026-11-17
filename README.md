@@ -47,13 +47,18 @@ connect. VNC's default port is 5900.
 
 It's a Cargo workspace:
 
-- `server-remote` — the [iced](https://iced.rs) GUI front end.
-- `server-remote-core` — protocol-agnostic traits and types (UI-free), plus the
-  dummy connector.
-- `server-remote-vnc` — VNC/RFB, on top of [`vnc-rs`](https://crates.io/crates/vnc-rs).
-- `server-remote-spice`, `server-remote-ilo` — placeholders for now.
-- `server-remote-icons` — the app's icon set, embedded at build time, with
-  optional `iced` integration.
+- `apps/`
+  - `server-remote` — the [iced](https://iced.rs) GUI front end.
+- `connectors/` — one crate per protocol, implementing the core `Connector`.
+  - `vnc` (`server-remote-vnc`) — VNC/RFB, on top of [`vnc-rs`](https://crates.io/crates/vnc-rs).
+  - `spice` (`server-remote-spice`) — Spice, on top of `lib/spice`.
+  - `ilo` (`server-remote-ilo`) — placeholder for now.
+- `lib/`
+  - `core` (`server-remote-core`) — protocol-agnostic traits and types
+    (UI-free), plus the dummy connector.
+  - `spice` (`spice-rs`) — Spice protocol client library.
+  - `icons` (`server-remote-icons`) — the app's icon set, embedded at build
+    time, with optional `iced` integration.
 
 See [docs/architecture.md](docs/architecture.md) for how connectors, sessions,
 and the capability-driven UI fit together.
@@ -66,7 +71,7 @@ licensed under the [Apache License 2.0](LICENSE-APACHE).
 
 The UI font is [Nunito Sans](https://github.com/googlefonts/NunitoSans) by the
 Nunito Sans Project Authors, licensed under the
-[SIL Open Font License 1.1](crates/server-remote/assets/fonts/OFL.txt). The
+[SIL Open Font License 1.1](apps/server-remote/assets/fonts/OFL.txt). The
 embedded static instances are generated from the variable font by
 [`scripts/instance-fonts.py`](scripts/instance-fonts.py).
 
