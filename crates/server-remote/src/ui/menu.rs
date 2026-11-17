@@ -6,13 +6,26 @@
 
 use iced::widget::svg::Svg;
 use iced::widget::{Column, Row, Space, button, container, mouse_area, rule, text};
-use iced::{Alignment, Background, Element, Length, Theme, border};
+use iced::{Alignment, Background, Element, Length, Padding, Theme, border};
 use server_remote_icons::{self as icons, Icon};
 
 use super::popover::{Placement, popover};
 use super::style::{self, ICON_SIZE};
 
 const MENU_WIDTH: f32 = 200.0;
+/// The popup's 1pt border, which iced counts as padding.
+const MENU_BORDER: f32 = 1.0;
+const ITEM_HEIGHT: f32 = 25.0;
+/// Item content is inset 6pt on the left (to the icon) and 8pt on the right
+/// (to the chevron), measured from the popup's outer edge.
+const ITEM_PADDING: Padding = Padding {
+    top: 0.0,
+    right: 8.0 - MENU_BORDER,
+    bottom: 0.0,
+    left: 6.0 - MENU_BORDER,
+};
+/// Separators stop 10pt short of either edge.
+const SEPARATOR_INSET: f32 = 10.0 - MENU_BORDER;
 
 pub enum Item<Message> {
     Entry {
@@ -100,13 +113,13 @@ pub fn button_menu<'a, Message: Clone + 'a>(
     on_dismiss: Message,
 ) -> Element<'a, Message> {
     let content = Row::new()
-        .spacing(4)
+        .spacing(2)
         .align_y(Alignment::Center)
         .push(tinted(icon, ICON_SIZE))
-        .push(tinted(icons::CHEVRON_DOWN, 12.0));
+        .push(tinted(icons::CHEVRON_DOWN, ICON_SIZE));
     let anchor = button(container(content).center_y(Length::Fill))
         .height(style::CONTROL_HEIGHT)
-        .padding([0, 6])
+        .padding([0, 5])
         .style(move |theme, status| style::bordered_button(theme, status, open))
         .on_press(on_toggle);
 
@@ -141,16 +154,18 @@ pub fn button_popout<'a, Message: Clone + 'a>(
 /// The popup itself.
 pub fn view<'a, Message: Clone + 'a>(items: Vec<Item<Message>>) -> Element<'a, Message> {
     let column = Column::with_children(items.into_iter().map(item_view))
-        .spacing(2)
-        .width(MENU_WIDTH);
+        .width(MENU_WIDTH - 2.0 * MENU_BORDER);
 
-    container(column).padding(4).style(style::popup).into()
+    container(column)
+        .padding(MENU_BORDER)
+        .style(style::popup)
+        .into()
 }
 
 fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Message> {
     match item {
         Item::Separator => container(rule::horizontal(1).style(style::popup_divider))
-            .padding([2, 4])
+            .padding([0.0, SEPARATOR_INSET])
             .into(),
         Item::Entry {
             icon,
@@ -162,7 +177,8 @@ fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Messag
             let enabled = on_press.is_some();
             button(item_row(leading, label, None, enabled))
                 .width(Length::Fill)
-                .padding([5, 8])
+                .height(ITEM_HEIGHT)
+                .padding(ITEM_PADDING)
                 .style(menu_item)
                 .on_press_maybe(on_press)
                 .into()
@@ -176,7 +192,8 @@ fn item_view<'a, Message: Clone + 'a>(item: Item<Message>) -> Element<'a, Messag
             let enabled = on_open.is_some();
             let row = button(item_row(None, label, Some(icons::CHEVRON_RIGHT), enabled))
                 .width(Length::Fill)
-                .padding([5, 8])
+                .height(ITEM_HEIGHT)
+                .padding(ITEM_PADDING)
                 .style(move |theme, status| {
                     if open {
                         menu_item(theme, button::Status::Hovered)
@@ -210,11 +227,12 @@ fn item_row<'a, Message: 'a>(
     };
 
     Row::new()
-        .spacing(8)
+        .spacing(4)
+        .height(Length::Fill)
         .align_y(Alignment::Center)
         .push(slot(leading))
         .push(text(label).width(Length::Fill))
-        .push(trailing.map(|icon| tinted_by(icon, 12.0, enabled)))
+        .push(trailing.map(|icon| tinted_by(icon, ICON_SIZE, enabled)))
         .into()
 }
 
