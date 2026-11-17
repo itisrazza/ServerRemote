@@ -41,7 +41,18 @@ UI bugs here come from building for one of each. Work through this list.
   immediately (theme, language) is handled where the app applies changes
   (`Application::change_setting`) or read in `Application::theme`.
 - **Dialogs** go through `ui::dialog::view`; app-level ones are an
-  `AppModal` variant in `main.rs`.
+  `AppModal` variant in `main.rs`, connection-level ones a `Modal` in
+  `ui/connection.rs`.
+- **App-wide effects from a connection tab** (opening Settings, changing a
+  setting, closing the tab, picking a folder) are `connection::Message`
+  variants that `Application::update` intercepts before forwarding; the
+  connection's own `update` only lists them for exhaustiveness.
+- **Connector-contributed UI** (toolbar menus, links, chips, status bar
+  items) is declared as data in `lib/core` (`Capabilities`, `Status`) and
+  rendered in `ui/contributed.rs`. Don't special-case a protocol in the UI;
+  add to the vocabulary, and show it off in the Dummy connector.
+- **Narrow windows:** settings rows stack below a width threshold, and
+  switches always stay beside their label. Check new layouts narrow too.
 - **Generated files:** don't hand-edit `assets/contributors/generated.rs` or
   the fonts; rerun their scripts in `scripts/`.
 
@@ -50,8 +61,9 @@ UI bugs here come from building for one of each. Work through this list.
 1. `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
    `cargo test --workspace`.
 2. Add or extend a state in `render_review_snapshots`, render it, and look
-   at it in **dark, light and Romanian** (see the `ui-mockup-match` skill for
-   the command and measuring tool).
+   at it in **dark, light and Romanian**, and narrow if it's a layout that
+   reflows (see the `ui-mockup-match` skill for the command and measuring
+   tool).
 3. Think about **1× displays**: the layout is snapped to physical pixels
    (`ui::pixel_snap` at the root), but anything you draw at a computed offset
    inside a widget isn't. Keep borders and lines on layout edges.

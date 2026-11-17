@@ -53,9 +53,13 @@ SNAPSHOT_DIR=<scratch dir> cargo test -p server-remote render_review_snapshots -
 ```
 
 This writes `<name>-wgpu.png` at 2× for every state listed in
-`render_review_snapshots` (`apps/server-remote/src/main.rs`). Add a state for
-the screen you're changing. To compare like with like, give it the mockup's
-frame size in the `size` match, as `settings-about-mockup` does (800×292).
+`render_review_snapshots` (`apps/server-remote/src/main.rs`). Each state is a
+name, whether to feed in a connected iLO-like session first (toolbar menus,
+chips and status bar items, via `feed_ilo_like_session`), and the app
+`Message`s that set the screen up. Add a state for the screen you're
+changing. Window sizes come from the `size` match: give a state the mockup's
+frame size to compare like with like (`settings-about-mockup` is 800×292), or
+list it in `NARROW` to check a reflowing layout at 640px.
 
 - Raster images (avatars) load on a worker thread and are missing from the
   first frame. To check one appears, temporarily snapshot twice with a short

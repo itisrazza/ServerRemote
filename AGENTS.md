@@ -3,7 +3,16 @@
 For any coding agent working in this repo. Read [README.md](README.md)
 (build, layout, translations, credits) and
 [docs/architecture.md](docs/architecture.md) (connectors, sessions,
-capabilities) first. This file covers what those don't.
+capabilities, connector-contributed UI) first. This file covers what those
+don't.
+
+## Before starting
+
+Other agent sessions commit to `main` too, sometimes while you work. Run
+`git fetch` and read `git log --oneline origin/main -15` before trusting
+anything you remember about the code (including this file), rebase onto
+`origin/main` before building on it, and re-read a file before rewriting it
+whole.
 
 ## Checks
 
@@ -15,8 +24,31 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+Because of `-D warnings`, a type or function nothing uses yet fails CI as
+dead code. Land a feature together with its first use rather than adding
+`#[allow(dead_code)]`.
+
 Never screen-capture or drive the GUI to check UI work. The app renders
 headlessly through an ignored snapshot test; the UI guides below explain it.
+
+## Rules that apply everywhere
+
+- **Tests never touch the user's real files.** Build the app with
+  `Application::new(None, Settings::default())`; persistence takes an
+  `Option<&Path>` config directory and stores nothing without one. Tasks
+  returned by `update` aren't run in unit tests, so nothing reaches the
+  network either.
+- **Platform-specific code:** prefer `if cfg!(windows)` over `#[cfg(windows)]`
+  items where practical, so the Windows path still type-checks (and isn't
+  flagged as dead code) on macOS and Linux.
+- **The core stays UI-free:** `lib/core` and the connectors never depend on
+  iced. Connector UI is data (`Capabilities`, `Status`), rendered by
+  `apps/server-remote/src/ui/contributed.rs`. Extend the Dummy connector when
+  adding a new kind of contribution, so it can be exercised without a server.
+- **Tooling:** Python helpers are `uv run --script` files with pinned PyPI
+  dependencies. Don't download and run third-party binaries (linters and so
+  on). Look up the latest version of any crate or GitHub Action before adding
+  it.
 
 ## UI guides
 
