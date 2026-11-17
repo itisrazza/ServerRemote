@@ -6,7 +6,8 @@
 
 use iced::keyboard::key::Named;
 use iced::widget::{Column, Row, Space, button, container, text};
-use iced::{Element, Length};
+use iced::{Background, Border, Element, Length, Theme};
+use server_remote_icons::{self as icons, Icon};
 
 use super::connection::{KeyboardSize, character_keysym, named_keysym};
 
@@ -135,15 +136,21 @@ enum Key {
 struct KeyDef {
     key: Key,
     label: &'static str,
+    /// Shown instead of `label` when set.
+    icon: Option<Icon>,
     /// Width in "units" — 1.0 is one standard letter key.
     width: f32,
+    /// Height in rows; the numpad's + and Enter span two.
+    rows: u8,
 }
 
 const fn c(label: &'static str, width: f32) -> KeyDef {
     KeyDef {
         key: Key::Char,
         label,
+        icon: None,
         width,
+        rows: 1,
     }
 }
 
@@ -151,7 +158,9 @@ const fn n(label: &'static str, named: Named, width: f32) -> KeyDef {
     KeyDef {
         key: Key::Named(named),
         label,
+        icon: None,
         width,
+        rows: 1,
     }
 }
 
@@ -159,7 +168,9 @@ const fn ks(label: &'static str, keysym: u32, width: f32) -> KeyDef {
     KeyDef {
         key: Key::Keysym(keysym),
         label,
+        icon: None,
         width,
+        rows: 1,
     }
 }
 
@@ -167,7 +178,9 @@ const fn m(label: &'static str, modifier: ModifierKey, width: f32) -> KeyDef {
     KeyDef {
         key: Key::Modifier(modifier),
         label,
+        icon: None,
         width,
+        rows: 1,
     }
 }
 
@@ -175,8 +188,23 @@ const fn sp(width: f32) -> KeyDef {
     KeyDef {
         key: Key::Spacer,
         label: "",
+        icon: None,
         width,
+        rows: 1,
     }
+}
+
+/// A named key drawn with an icon rather than a text label.
+const fn ni(icon: Icon, named: Named, width: f32) -> KeyDef {
+    KeyDef {
+        icon: Some(icon),
+        ..n("", named, width)
+    }
+}
+
+/// A key that spans two rows.
+const fn tall(def: KeyDef) -> KeyDef {
+    KeyDef { rows: 2, ..def }
 }
 
 // X11 numpad keysyms — no `iced::keyboard::key::Named` variant exists for
@@ -238,7 +266,7 @@ static SYSTEM_ROW: [KeyDef; 4] = [
 // beside the bottom/space rows, and the numpad spans the same six rows.
 static FUNCTION_ROW: [KeyDef; 16] = [
     n("Esc", Named::Escape, 1.0),
-    sp(0.5),
+    sp(1.0),
     n("F1", Named::F1, 1.0),
     n("F2", Named::F2, 1.0),
     n("F3", Named::F3, 1.0),
@@ -317,78 +345,68 @@ static BOTTOM_ROW: [KeyDef; 12] = [
     c(",", 1.0),
     c(".", 1.0),
     c("/", 1.0),
-    m("Shift", ModifierKey::Shift, 1.75),
+    m("Shift", ModifierKey::Shift, 2.75),
 ];
 
-static SPACE_ROW: [KeyDef; 7] = [
-    m("Ctrl", ModifierKey::Control, 1.5),
-    m("Super", ModifierKey::Super, 1.5),
-    m("Alt", ModifierKey::Alt, 1.5),
-    n("Space", Named::Space, 6.0),
-    m("AltGr", ModifierKey::AltGraph, 1.5),
-    n("Menu", Named::ContextMenu, 1.5),
-    m("Ctrl", ModifierKey::Control, 1.5),
+static SPACE_ROW: [KeyDef; 8] = [
+    m("Control", ModifierKey::Control, 1.5),
+    m("Super", ModifierKey::Super, 1.25),
+    m("Alt", ModifierKey::Alt, 1.25),
+    n("", Named::Space, 6.0),
+    m("AltGr", ModifierKey::AltGraph, 1.25),
+    m("Super", ModifierKey::Super, 1.25),
+    ni(icons::DIAMOND_OUTLINE, Named::ContextMenu, 1.0),
+    m("Control", ModifierKey::Control, 1.5),
 ];
 
-static NUMPAD_ROW_1: [KeyDef; 4] = [
-    n("NumLk", Named::NumLock, 1.0),
+static NUMPAD_ROW_1: [KeyDef; 3] = [sp(1.0), sp(1.0), sp(1.0)];
+static NUMPAD_ROW_2: [KeyDef; 3] = [
+    n("Num", Named::NumLock, 1.0),
     ks("/", KP_DIVIDE, 1.0),
     ks("*", KP_MULTIPLY, 1.0),
-    ks("-", KP_SUBTRACT, 1.0),
 ];
+static NUMPAD_ROW_3: [KeyDef; 3] = [ks("7", KP_7, 1.0), ks("8", KP_8, 1.0), ks("9", KP_9, 1.0)];
+static NUMPAD_ROW_4: [KeyDef; 3] = [ks("4", KP_4, 1.0), ks("5", KP_5, 1.0), ks("6", KP_6, 1.0)];
+static NUMPAD_ROW_5: [KeyDef; 3] = [ks("1", KP_1, 1.0), ks("2", KP_2, 1.0), ks("3", KP_3, 1.0)];
+static NUMPAD_ROW_6: [KeyDef; 2] = [ks("0", KP_0, 2.0), ks(".", KP_DECIMAL, 1.0)];
 
-static NUMPAD_ROW_2: [KeyDef; 4] = [
-    ks("7", KP_7, 1.0),
-    ks("8", KP_8, 1.0),
-    ks("9", KP_9, 1.0),
-    ks("+", KP_ADD, 1.0),
-];
-
-static NUMPAD_ROW_3: [KeyDef; 4] = [
-    ks("4", KP_4, 1.0),
-    ks("5", KP_5, 1.0),
-    ks("6", KP_6, 1.0),
+/// The numpad's rightmost column, laid out top to bottom so + and Enter can
+/// span two rows each.
+static NUMPAD_SIDE_COLUMN: [KeyDef; 4] = [
     sp(1.0),
+    ks("-", KP_SUBTRACT, 1.0),
+    tall(ks("+", KP_ADD, 1.0)),
+    tall(ks("Enter", KP_ENTER, 1.0)),
 ];
-
-static NUMPAD_ROW_4: [KeyDef; 4] = [
-    ks("1", KP_1, 1.0),
-    ks("2", KP_2, 1.0),
-    ks("3", KP_3, 1.0),
-    ks("Enter", KP_ENTER, 1.0),
-];
-
-static NUMPAD_ROW_5: [KeyDef; 3] = [ks("0", KP_0, 2.0), ks(".", KP_DECIMAL, 1.0), sp(1.0)];
-static NUMPAD_ROW_6: [KeyDef; 4] = [sp(1.0), sp(1.0), sp(1.0), sp(1.0)];
 
 // The nav/arrow cluster block, to the right of the main block — six rows so
 // it lines up with `MAIN_ROWS` and `NUMPAD_ROWS` below.
 static SIDE_SYSTEM_ROW: [KeyDef; 3] = [
-    n("PrtSc", Named::PrintScreen, 1.0),
+    n("Print", Named::PrintScreen, 1.0),
     n("ScrLk", Named::ScrollLock, 1.0),
     n("Pause", Named::Pause, 1.0),
 ];
 
 static NAV_UPPER_ROW: [KeyDef; 3] = [
-    n("Ins", Named::Insert, 1.0),
+    n("Insert", Named::Insert, 1.0),
     n("Home", Named::Home, 1.0),
-    n("PgUp", Named::PageUp, 1.0),
+    n("Pg Up", Named::PageUp, 1.0),
 ];
 
 static NAV_LOWER_ROW: [KeyDef; 3] = [
-    n("Del", Named::Delete, 1.0),
+    n("Delete", Named::Delete, 1.0),
     n("End", Named::End, 1.0),
-    n("PgDn", Named::PageDown, 1.0),
+    n("Pg Dn", Named::PageDown, 1.0),
 ];
 
 static BLANK_ROW_3: [KeyDef; 3] = [sp(1.0), sp(1.0), sp(1.0)];
 
-static ARROW_UPPER_ROW: [KeyDef; 3] = [sp(1.0), n("↑", Named::ArrowUp, 1.0), sp(1.0)];
+static ARROW_UPPER_ROW: [KeyDef; 3] = [sp(1.0), ni(icons::ARROW_UP, Named::ArrowUp, 1.0), sp(1.0)];
 
 static ARROW_LOWER_ROW: [KeyDef; 3] = [
-    n("←", Named::ArrowLeft, 1.0),
-    n("↓", Named::ArrowDown, 1.0),
-    n("→", Named::ArrowRight, 1.0),
+    ni(icons::ARROW_LEFT, Named::ArrowLeft, 1.0),
+    ni(icons::ARROW_DOWN, Named::ArrowDown, 1.0),
+    ni(icons::ARROW_RIGHT, Named::ArrowRight, 1.0),
 ];
 
 static SMALL_ROWS: [&[KeyDef]; 3] = [&MODIFIER_ROW, &NAVIGATION_ROW, &SYSTEM_ROW];
@@ -411,7 +429,7 @@ static SIDE_ROWS: [&[KeyDef]; 6] = [
     &ARROW_LOWER_ROW,
 ];
 
-static NUMPAD_ROWS: [&[KeyDef]; 6] = [
+static NUMPAD_GRID_ROWS: [&[KeyDef]; 6] = [
     &NUMPAD_ROW_1,
     &NUMPAD_ROW_2,
     &NUMPAD_ROW_3,
@@ -420,16 +438,18 @@ static NUMPAD_ROWS: [&[KeyDef]; 6] = [
     &NUMPAD_ROW_6,
 ];
 
-/// Pixels per width "unit" — the main block is 14 units wide, the side
+/// Pixels per width "unit" — the main block is 15 units wide, the side
 /// (nav/arrow) block 3, and the numpad block 4, matching a physical
 /// keyboard's proportions.
 const UNIT_PX: f32 = 45.0;
-const MAIN_BLOCK_WIDTH: f32 = UNIT_PX * 14.0;
+const MAIN_BLOCK_WIDTH: f32 = UNIT_PX * 15.0;
 const SIDE_BLOCK_WIDTH: f32 = UNIT_PX * 3.0;
 const NUMPAD_BLOCK_WIDTH: f32 = UNIT_PX * 4.0;
 /// Every key button (and blank spacer) is this tall, so rows across
 /// different blocks line up with each other.
 const KEY_HEIGHT: f32 = 34.0;
+const KEY_SPACING: f32 = 2.0;
+const ICON_SIZE: f32 = 16.0;
 
 pub fn view(size: KeyboardSize, state: &State) -> Element<'_, Message> {
     match size {
@@ -440,11 +460,11 @@ pub fn view(size: KeyboardSize, state: &State) -> Element<'_, Message> {
 }
 
 fn small_view(state: &State) -> Element<'_, Message> {
-    let mut column = Column::new().spacing(2).padding(4);
+    let mut column = Column::new().spacing(KEY_SPACING).padding(4);
     for &row in &SMALL_ROWS {
         column = column.push(key_row(row, state));
     }
-    container(column).style(container::bordered_box).into()
+    container(column).style(keyboard_container).into()
 }
 
 /// A full keyboard shape: the main alphanumeric block, a nav/arrow cluster
@@ -456,16 +476,28 @@ fn full_view(state: &State, with_numpad: bool) -> Element<'_, Message> {
         .push(block(MAIN_BLOCK_WIDTH, &MAIN_ROWS, state))
         .push(block(SIDE_BLOCK_WIDTH, &SIDE_ROWS, state));
     if with_numpad {
-        row = row.push(block(NUMPAD_BLOCK_WIDTH, &NUMPAD_ROWS, state));
+        row = row.push(numpad(state));
     }
-    container(row)
-        .style(container::bordered_box)
-        .padding(4)
+    container(row).style(keyboard_container).padding(4).into()
+}
+
+fn numpad<'a>(state: &State) -> Element<'a, Message> {
+    let side = Column::with_children(NUMPAD_SIDE_COLUMN.iter().map(|def| key_button(def, state)))
+        .spacing(KEY_SPACING)
+        .width(Length::FillPortion(1));
+    let grid = block(UNIT_PX * 3.0, &NUMPAD_GRID_ROWS, state);
+    Row::new()
+        .spacing(KEY_SPACING)
+        .width(NUMPAD_BLOCK_WIDTH)
+        .push(container(grid).width(Length::FillPortion(3)))
+        .push(side)
         .into()
 }
 
 fn block<'a>(width: f32, rows: &[&[KeyDef]], state: &State) -> Element<'a, Message> {
-    let mut column = Column::new().spacing(2).width(Length::Fixed(width));
+    let mut column = Column::new()
+        .spacing(KEY_SPACING)
+        .width(Length::Fixed(width));
     for &row in rows {
         column = column.push(key_row(row, state));
     }
@@ -473,7 +505,7 @@ fn block<'a>(width: f32, rows: &[&[KeyDef]], state: &State) -> Element<'a, Messa
 }
 
 fn key_row<'a>(defs: &[KeyDef], state: &State) -> Element<'a, Message> {
-    let mut row = Row::new().spacing(2).width(Length::Fill);
+    let mut row = Row::new().spacing(KEY_SPACING).width(Length::Fill);
     for def in defs {
         row = row.push(key_button(def, state));
     }
@@ -482,56 +514,136 @@ fn key_row<'a>(defs: &[KeyDef], state: &State) -> Element<'a, Message> {
 
 fn key_button<'a>(def: &KeyDef, state: &State) -> Element<'a, Message> {
     let units = (def.width * 4.0).round() as u16;
-    let height = Length::Fixed(KEY_HEIGHT);
-    match def.key {
-        Key::Spacer => Space::new()
-            .width(Length::FillPortion(units))
-            .height(height)
-            .into(),
-        Key::Modifier(modifier) => {
-            let style = match latch(state, modifier) {
-                LatchState::Off => button::subtle,
-                LatchState::Latched => button::primary,
-                LatchState::Locked => button::success,
-            };
-            button(text(def.label))
-                .width(Length::FillPortion(units))
-                .height(height)
-                .style(style)
-                .on_press(Message::Modifier(modifier))
-                .into()
-        }
+    let width = Length::FillPortion(units);
+    let rows = f32::from(def.rows);
+    let height = Length::Fixed(KEY_HEIGHT * rows + KEY_SPACING * (rows - 1.0));
+
+    let (on_press, latch) = match def.key {
+        Key::Spacer => return Space::new().width(width).height(height).into(),
+        Key::Modifier(modifier) => (Some(Message::Modifier(modifier)), latch(state, modifier)),
         Key::Char => {
             let character = def
                 .label
                 .chars()
                 .next()
                 .expect("Key::Char label is a single character");
-            button(text(def.label))
-                .width(Length::FillPortion(units))
-                .height(height)
-                .style(button::subtle)
-                .on_press(Message::Tap(character_keysym(character)))
-                .into()
+            (
+                Some(Message::Tap(character_keysym(character))),
+                LatchState::Off,
+            )
         }
-        Key::Named(named) => button(text(def.label))
-            .width(Length::FillPortion(units))
-            .height(height)
-            .style(button::subtle)
-            .on_press_maybe(named_keysym(named).map(Message::Tap))
+        Key::Named(named) => (named_keysym(named).map(Message::Tap), LatchState::Off),
+        Key::Keysym(keysym) => (Some(Message::Tap(keysym)), LatchState::Off),
+    };
+
+    button(container(key_label(def)).center(Length::Fill))
+        .width(width)
+        .height(height)
+        .padding(0)
+        .style(move |theme, status| key_style(theme, status, latch))
+        .on_press_maybe(on_press)
+        .into()
+}
+
+fn key_label<'a>(def: &KeyDef) -> Element<'a, Message> {
+    match def.icon {
+        Some(icon) => super::themed_icon(icon.element(), |palette| palette.background.base.text)
+            .width(ICON_SIZE)
+            .height(ICON_SIZE)
             .into(),
-        Key::Keysym(keysym) => button(text(def.label))
-            .width(Length::FillPortion(units))
-            .height(height)
-            .style(button::subtle)
-            .on_press(Message::Tap(keysym))
-            .into(),
+        None => text(keycap_legend(def)).into(),
+    }
+}
+
+/// Letter keys send their lowercase keysym but read as keycaps do.
+fn keycap_legend(def: &KeyDef) -> String {
+    match def.key {
+        Key::Char => def.label.to_uppercase(),
+        _ => def.label.to_owned(),
+    }
+}
+
+fn key_style(theme: &Theme, status: button::Status, latch: LatchState) -> button::Style {
+    let palette = theme.extended_palette();
+    let (background, text_color) = match latch {
+        LatchState::Latched => (palette.primary.base.color, palette.primary.base.text),
+        LatchState::Locked => (palette.success.base.color, palette.success.base.text),
+        LatchState::Off => match status {
+            button::Status::Hovered => (
+                palette.background.weaker.color,
+                palette.background.base.text,
+            ),
+            button::Status::Pressed => {
+                (palette.background.weak.color, palette.background.base.text)
+            }
+            button::Status::Active | button::Status::Disabled => {
+                (palette.background.base.color, palette.background.base.text)
+            }
+        },
+    };
+    button::Style {
+        background: Some(Background::Color(background)),
+        text_color,
+        border: Border {
+            color: palette.background.strong.color,
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        ..button::Style::default()
+    }
+}
+
+fn keyboard_container(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(Background::Color(palette.background.base.color)),
+        border: Border {
+            color: palette.background.strong.color,
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..container::Style::default()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keycap_legends() {
+        let cases = [
+            ("letter is capitalised", c("q", 1.0), "Q"),
+            ("symbol is unchanged", c(";", 1.0), ";"),
+            (
+                "named key keeps its case",
+                n("Pg Up", Named::PageUp, 1.0),
+                "Pg Up",
+            ),
+            (
+                "modifier keeps its case",
+                m("Shift", ModifierKey::Shift, 1.0),
+                "Shift",
+            ),
+        ];
+        for (name, def, expected) in cases {
+            assert_eq!(keycap_legend(&def), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn rows_in_each_block_span_the_same_width() {
+        let width = |row: &[KeyDef]| row.iter().map(|def| def.width).sum::<f32>();
+        for (name, rows, expected) in [
+            ("main", &MAIN_ROWS[..], 15.0),
+            ("side", &SIDE_ROWS[..], 3.0),
+            ("numpad grid", &NUMPAD_GRID_ROWS[..], 3.0),
+        ] {
+            for row in rows {
+                assert_eq!(width(row), expected, "{name}");
+            }
+        }
+    }
 
     #[test]
     fn ordinary_tap_sends_down_then_up() {
