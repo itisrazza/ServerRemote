@@ -10,11 +10,14 @@ repository.workspace = true
 
 [dependencies]
 directories = "6.0.0"
+i18n-embed = { version = "0.16.0", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10.1"
 iced = { version = "0.14.0", features = ["advanced", "tokio", "image"] }
 iced_wgpu = "0.14.0"
 open = "5.4.5"
 resvg = "0.45.1"
 rfd = "0.18.0"
+rust-embed = "8.14.0"
 semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 server-remote-core = { path = "../../lib/core" }

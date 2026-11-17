@@ -4,6 +4,7 @@
 //! [`crate::persistence::sessions::Sessions`] — it's a straight projection of
 //! that list, indexed by position for deletion.
 
+use crate::i18n::fl;
 use iced::{
     Alignment, Element, Length,
     widget::{Column, Row, Scrollable, button, text},
@@ -23,7 +24,7 @@ pub enum Message {
 
 pub fn view(sessions: &[SavedSession]) -> Element<'_, Message> {
     if sessions.is_empty() {
-        return text("No saved sessions yet — save one from the Connect tab.").into();
+        return text(fl!("manager-empty")).into();
     }
 
     let rows = sessions.iter().enumerate().map(|(index, session)| {
@@ -34,7 +35,7 @@ pub fn view(sessions: &[SavedSession]) -> Element<'_, Message> {
             .push(text(session.protocol.to_string()))
             .push(text(session.hostname.clone()))
             .push(
-                button(text("Connect"))
+                button(text(fl!("connect-connect")))
                     .style(button::primary)
                     .on_press(Message::Connect(Request {
                         protocol: session.protocol,
@@ -44,7 +45,7 @@ pub fn view(sessions: &[SavedSession]) -> Element<'_, Message> {
                     })),
             )
             .push(
-                button(text("Delete"))
+                button(text(fl!("manager-delete")))
                     .style(button::danger)
                     .on_press(Message::Delete(index)),
             )

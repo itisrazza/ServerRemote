@@ -1,8 +1,9 @@
 use iced::{
     Element, Length, Task,
-    widget::{Column, Row, button, checkbox, container, pick_list, text_input},
+    widget::{Column, Row, button, checkbox, container, pick_list, text, text_input},
 };
 
+use crate::i18n::fl;
 use crate::ui::connection::Protocol;
 
 pub struct State {
@@ -91,30 +92,34 @@ impl State {
                     Column::new()
                         .spacing(4)
                         .push(
-                            text_input("Name (used when saving)", &self.name)
+                            text_input(&fl!("connect-name"), &self.name)
                                 .on_input(|value| Message::Internal(IMessage::Name(value))),
                         )
                         .push(
-                            text_input("Hostname", &self.hostname)
+                            text_input(&fl!("connect-hostname"), &self.hostname)
                                 .on_input(|value| Message::Internal(IMessage::Hostname(value))),
                         )
                         .push(
-                            text_input("Password", &self.password)
+                            text_input(&fl!("connect-password"), &self.password)
                                 .secure(true)
                                 .on_input(|value| Message::Internal(IMessage::Password(value))),
                         )
-                        .push(Row::new().push(checkbox(false)).push("Read-only")),
+                        .push(
+                            Row::new()
+                                .push(checkbox(false))
+                                .push(text(fl!("connect-read-only"))),
+                        ),
                 )
                 .push(
                     Row::new()
                         .push(
-                            button("Save")
+                            button(text(fl!("connect-save")))
                                 .style(button::subtle)
                                 .width(Length::Fill)
                                 .on_press(Message::Save(self.request())),
                         )
                         .push(
-                            button("Connect")
+                            button(text(fl!("connect-connect")))
                                 .style(button::primary)
                                 .width(Length::Fill)
                                 .on_press(Message::Connect(self.request())),

@@ -15,13 +15,14 @@ use iced::{Alignment, Element, Length, Theme};
 use server_remote_icons::{self as icons, Icon};
 
 use crate::persistence::settings::{
-    Appearance, DisplayScale, GraphicsBackend, KeyboardLayout, RecordingFormat, RecordingQuality,
-    Scaling, Settings,
+    Appearance, DisplayScale, GraphicsBackend, KeyboardLayout, Language, RecordingFormat,
+    RecordingQuality, Scaling, Settings,
 };
 
 use super::connection::KeyboardSize;
 use super::menu::{self, Item};
 use super::{style, themed_icon};
+use crate::i18n::fl;
 use crate::{contributors, update};
 
 const SIDEBAR_WIDTH: f32 = 200.0;
@@ -61,13 +62,13 @@ impl Section {
         Section::About,
     ];
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Section::General => "General",
-            Section::Display => "Display",
-            Section::Input => "Input",
-            Section::Recording => "Recording",
-            Section::About => "About",
+            Section::General => fl!("section-general"),
+            Section::Display => fl!("section-display"),
+            Section::Input => fl!("section-input"),
+            Section::Recording => fl!("section-recording"),
+            Section::About => fl!("section-about"),
         }
     }
 }
@@ -76,6 +77,7 @@ impl Section {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Select {
     Appearance,
+    Language,
     GraphicsBackend,
     Scaling,
     DisplayScale,
@@ -91,6 +93,7 @@ pub enum Select {
 pub enum Change {
     ConfirmQuit(bool),
     Appearance(Appearance),
+    Language(Language),
     GraphicsBackend(GraphicsBackend),
     Scaling(Scaling),
     KeepAspectRatio(bool),
@@ -111,6 +114,7 @@ pub fn apply(settings: &mut Settings, change: Change) {
     match change {
         Change::ConfirmQuit(on) => settings.general.confirm_quit = on,
         Change::Appearance(appearance) => settings.general.appearance = appearance,
+        Change::Language(language) => settings.general.language = language,
         Change::GraphicsBackend(backend) => settings.general.graphics_backend = backend,
         Change::Scaling(scaling) => settings.display.scaling = scaling,
         Change::KeepAspectRatio(on) => settings.display.keep_aspect_ratio = on,
@@ -252,13 +256,13 @@ fn section_view<'a>(
 
 fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     let confirm_quit = setting(
-        "Confirm before quitting",
-        "Ask before closing the window while connections are open.",
+        fl!("setting-confirm-quit"),
+        fl!("setting-confirm-quit-description"),
         switch(settings.general.confirm_quit, Change::ConfirmQuit),
     );
     let appearance = setting(
-        "Appearance",
-        "Light or dark colours.",
+        fl!("setting-appearance"),
+        fl!("setting-appearance-description"),
         select(
             state,
             Select::Appearance,
@@ -271,12 +275,26 @@ fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         ),
     );
+    let language = setting(
+        fl!("setting-language"),
+        "",
+        select(
+            state,
+            Select::Language,
+            settings.general.language.label(),
+            menu::choices(
+                &Language::ALL,
+                settings.general.language,
+                Language::label,
+                |language| Message::Change(Change::Language(language)),
+            ),
+        ),
+    );
     // Only Windows offers a choice of graphics API worth making.
     let backend = cfg!(windows).then(|| {
         setting(
-            "Graphics backend",
-            "DirectX 12 keeps up with window resizing better; try Vulkan if \
-             drawing misbehaves. Takes effect when the app is next opened.",
+            fl!("setting-graphics-backend"),
+            fl!("setting-graphics-backend-description"),
             select(
                 state,
                 Select::GraphicsBackend,
@@ -290,17 +308,22 @@ fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         )
     });
-    [Some(confirm_quit), Some(appearance), backend]
-        .into_iter()
-        .flatten()
-        .collect()
+    [
+        Some(confirm_quit),
+        Some(appearance),
+        Some(language),
+        backend,
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     vec![
         setting(
-            "Scaling",
-            "How the remote display fits the window.",
+            fl!("setting-scaling"),
+            fl!("setting-scaling-description"),
             select(
                 state,
                 Select::Scaling,
@@ -314,13 +337,13 @@ fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         ),
         setting(
-            "Keep aspect ratio",
-            "Letterbox the remote display rather than stretch it.",
+            fl!("setting-keep-aspect-ratio"),
+            fl!("setting-keep-aspect-ratio-description"),
             switch(settings.display.keep_aspect_ratio, Change::KeepAspectRatio),
         ),
         setting(
-            "Display scale",
-            "How remote pixels map to this screen's.",
+            fl!("setting-display-scale"),
+            fl!("setting-display-scale-description"),
             select(
                 state,
                 Select::DisplayScale,
@@ -336,8 +359,8 @@ fn display<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
 fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
     vec![
         setting(
-            "Keyboard style",
-            "The virtual keyboard's layout when a connection opens.",
+            fl!("setting-keyboard-style"),
+            fl!("setting-keyboard-style-description"),
             select(
                 state,
                 Select::KeyboardStyle,
@@ -351,16 +374,16 @@ fn input<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         ),
         setting(
-            "Show virtual keyboard on connect",
-            "Open the virtual keyboard as soon as a connection opens.",
+            fl!("setting-keyboard-on-connect"),
+            fl!("setting-keyboard-on-connect-description"),
             switch(
                 settings.input.open_keyboard_on_connect,
                 Change::OpenKeyboardOnConnect,
             ),
         ),
         setting(
-            "Keyboard layout",
-            "The remote machine's keyboard layout.",
+            fl!("setting-keyboard-layout"),
+            fl!("setting-keyboard-layout-description"),
             select(
                 state,
                 Select::KeyboardLayout,
@@ -381,8 +404,8 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
         .map_or_else(default_recording_folder_label, folder_label);
     vec![
         setting(
-            "Save to",
-            "Where new recordings are saved.",
+            fl!("setting-recording-folder"),
+            fl!("setting-recording-folder-description"),
             select(
                 state,
                 Select::RecordingFolder,
@@ -391,8 +414,8 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         ),
         setting(
-            "Format",
-            "ServerRemote recordings also keep keyboard and mouse input.",
+            fl!("setting-recording-format"),
+            fl!("setting-recording-format-description"),
             select(
                 state,
                 Select::RecordingFormat,
@@ -403,8 +426,8 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         ),
         setting(
-            "Quality",
-            "Higher quality makes larger files.",
+            fl!("setting-recording-quality"),
+            fl!("setting-recording-quality-description"),
             select(
                 state,
                 Select::RecordingQuality,
@@ -423,7 +446,7 @@ fn about<'a>(
     side_by_side: bool,
 ) -> Element<'a, Message> {
     let check_on_launch = setting(
-        "Check for updates at launch",
+        fl!("setting-check-on-launch"),
         "",
         switch(
             settings.updates.check_on_launch,
@@ -456,10 +479,14 @@ fn about_header<'a>() -> Element<'a, Message> {
         .push(version);
     let links = Row::new()
         .spacing(style::SPACING)
-        .push(icon_link_button(icons::LAUNCH, "Website", WEBSITE_URL))
+        .push(icon_link_button(
+            icons::LAUNCH,
+            fl!("about-website"),
+            WEBSITE_URL,
+        ))
         .push(icon_link_button(
             icons::LOGO_GITHUB,
-            "GitHub",
+            "GitHub".to_owned(),
             update::PROJECT_URL,
         ));
 
@@ -485,7 +512,7 @@ fn made_by<'a>() -> Element<'a, Message> {
     Row::new()
         .spacing(8)
         .align_y(Alignment::Center)
-        .push(text("Made by:").font(style::BOLD))
+        .push(text(fl!("about-made-by")).font(style::BOLD))
         .push(people)
         .into()
 }
@@ -514,26 +541,24 @@ fn contributor_chip(contributor: &contributors::Contributor) -> Element<'_, Mess
 fn licence<'a>() -> Element<'a, Message> {
     let links = Row::new()
         .spacing(style::SPACING)
-        .push(link_button("MIT License", MIT_LICENSE_URL))
-        .push(link_button("Apache 2.0 License", APACHE_LICENSE_URL))
+        .push(link_button(fl!("about-mit-license"), MIT_LICENSE_URL))
+        .push(link_button(fl!("about-apache-license"), APACHE_LICENSE_URL))
         .push(action_button(
-            "Third-party licences",
+            fl!("about-third-party-licences"),
             Some(Message::ShowThirdPartyLicences),
             false,
         ))
         .wrap();
     Column::new()
         .spacing(4)
-        .push(text("Licence").size(14).font(style::BOLD))
-        .push(text(
-            "ServerRemote is licenced under the MIT or Apache 2.0 License, at your option.",
-        ))
+        .push(text(fl!("about-licence")).size(14).font(style::BOLD))
+        .push(text(fl!("about-licence-description")))
         .push(links)
         .into()
 }
 
 /// A filled button with an icon before its label, opening `url`.
-fn icon_link_button<'a>(icon: Icon, label: &'a str, url: &str) -> Element<'a, Message> {
+fn icon_link_button<'a>(icon: Icon, label: String, url: &str) -> Element<'a, Message> {
     let content = Row::new()
         .spacing(4)
         .align_y(Alignment::Center)
@@ -554,39 +579,41 @@ fn icon_link_button<'a>(icon: Icon, label: &'a str, url: &str) -> Element<'a, Me
 fn update_setting(status: &update::Status) -> Setting<'_> {
     let check = |label| action_button(label, Some(Message::CheckForUpdates), false);
     let (description, control): (String, Element<'_, Message>) = match status {
-        update::Status::NotChecked => ("Not checked yet.".to_owned(), check("Check now")),
+        update::Status::NotChecked => (fl!("update-not-checked"), check(fl!("update-check-now"))),
         update::Status::Checking => (
-            "Checking…".to_owned(),
-            action_button("Check now", None, false),
+            fl!("update-checking"),
+            action_button(fl!("update-check-now"), None, false),
         ),
-        update::Status::Checked(Ok(update::Outcome::UpToDate)) => (
-            "You're on the latest version.".to_owned(),
-            check("Check again"),
-        ),
-        update::Status::Checked(Ok(update::Outcome::NoReleases)) => (
-            "No releases have been published yet.".to_owned(),
-            check("Check again"),
-        ),
+        update::Status::Checked(Ok(update::Outcome::UpToDate)) => {
+            (fl!("update-up-to-date"), check(fl!("update-check-again")))
+        }
+        update::Status::Checked(Ok(update::Outcome::NoReleases)) => {
+            (fl!("update-no-releases"), check(fl!("update-check-again")))
+        }
         update::Status::Checked(Ok(update::Outcome::Available { version, url })) => (
-            format!("Version {version} is available."),
-            action_button("Download", Some(Message::OpenUrl(url.clone())), true),
+            fl!("update-available", version = version.to_string()),
+            action_button(
+                fl!("update-download"),
+                Some(Message::OpenUrl(url.clone())),
+                true,
+            ),
         ),
         update::Status::Checked(Err(error)) => (
-            format!("Couldn't check for updates: {error}"),
-            check("Try again"),
+            fl!("update-failed", error = error.to_string()),
+            check(fl!("update-try-again")),
         ),
     };
 
-    setting("Updates", description, control)
+    setting(fl!("setting-updates"), description, control)
 }
 
-fn link_button<'a>(label: &'a str, url: &str) -> Element<'a, Message> {
+fn link_button<'a>(label: String, url: &str) -> Element<'a, Message> {
     action_button(label, Some(Message::OpenUrl(url.to_owned())), false)
 }
 
 /// A bordered button, or a filled one when `primary`; `None` disables it.
 fn action_button<'a>(
-    label: &'a str,
+    label: String,
     on_press: Option<Message>,
     primary: bool,
 ) -> Element<'a, Message> {
@@ -676,7 +703,8 @@ pub fn recording_folders<Message>(
         .chain(recent)
         .chain([
             Item::Separator,
-            Item::entry("Other…", Some(on_other)).icon(server_remote_icons::FOLDER),
+            Item::entry(fl!("recording-folder-other"), Some(on_other))
+                .icon(server_remote_icons::FOLDER),
         ])
         .collect()
 }
@@ -684,7 +712,7 @@ pub fn recording_folders<Message>(
 fn default_recording_folder_label() -> String {
     directories::UserDirs::new()
         .and_then(|dirs| dirs.video_dir().map(folder_label))
-        .unwrap_or_else(|| "Videos".to_owned())
+        .unwrap_or_else(|| fl!("recording-folder-videos"))
 }
 
 /// `folder` with the home directory shortened to `~`.
@@ -703,7 +731,7 @@ fn abbreviate_home(folder: &Path, home: Option<&Path>) -> String {
 
 /// One setting: its name, an explanation, and the control that changes it.
 struct Setting<'a> {
-    label: &'a str,
+    label: String,
     description: Cow<'a, str>,
     control: Control<'a>,
 }
@@ -723,7 +751,7 @@ impl<'a> From<Element<'a, Message>> for Control<'a> {
 }
 
 fn setting<'a>(
-    label: &'a str,
+    label: String,
     description: impl Into<Cow<'a, str>>,
     control: impl Into<Control<'a>>,
 ) -> Setting<'a> {

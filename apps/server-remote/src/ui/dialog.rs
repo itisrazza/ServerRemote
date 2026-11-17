@@ -16,8 +16,8 @@ pub enum Kind {
     Destructive,
 }
 
-pub struct Button<'a, Message> {
-    pub label: &'a str,
+pub struct Button<Message> {
+    pub label: String,
     pub on_press: Message,
     pub kind: Kind,
 }
@@ -25,9 +25,9 @@ pub struct Button<'a, Message> {
 /// A dialog meant to be layered over the view it interrupts (e.g. with
 /// `stack!`). `buttons` are laid out left to right, right-aligned.
 pub fn view<'a, Message: Clone + 'a>(
-    title: &'a str,
-    message: &'a str,
-    buttons: Vec<Button<'a, Message>>,
+    title: String,
+    message: String,
+    buttons: Vec<Button<Message>>,
 ) -> Element<'a, Message> {
     let buttons = Row::with_children(buttons.into_iter().map(button_view)).spacing(8);
     let dialog = container(
@@ -52,7 +52,7 @@ pub fn view<'a, Message: Clone + 'a>(
     )
 }
 
-fn button_view<'a, Message: Clone + 'a>(spec: Button<'a, Message>) -> Element<'a, Message> {
+fn button_view<'a, Message: Clone + 'a>(spec: Button<Message>) -> Element<'a, Message> {
     let kind = spec.kind;
     button(container(text(spec.label)).center_y(Length::Fill))
         .height(style::CONTROL_HEIGHT)

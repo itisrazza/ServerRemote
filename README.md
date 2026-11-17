@@ -66,6 +66,17 @@ It's a Cargo workspace:
 See [docs/architecture.md](docs/architecture.md) for how connectors, sessions,
 and the capability-driven UI fit together.
 
+## Translations
+
+The app's text lives in [Fluent](https://projectfluent.org/) files under
+[`apps/server-remote/i18n/`](apps/server-remote/i18n/), one folder per
+language: English (the fallback) and Romanian. To add a language, copy
+`en/server-remote.ftl` into a new folder named after its language tag, add it
+to `Language` in `persistence/settings.rs` and to `TRANSLATIONS` in
+`i18n.rs`; the tests check that every translation has exactly the English
+messages. Text supplied by connectors (toolbar menus, status details) isn't
+translated yet.
+
 ## Credits
 
 Icons are from IBM's [Carbon Design System](https://carbondesignsystem.com/elements/icons/library/)

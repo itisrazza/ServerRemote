@@ -8,6 +8,7 @@
 //! framebuffer coordinates through the same path real absolute-pointer input
 //! already uses.
 
+use crate::i18n::fl;
 use iced::advanced::widget::Widget;
 use iced::advanced::widget::tree::{self, Tree};
 use iced::advanced::{self, Clipboard, Layout, Renderer as _, Shell, layout, renderer};
@@ -62,14 +63,14 @@ pub fn view() -> Element<'static, Message> {
         .push(
             Row::new()
                 .spacing(4)
-                .push(click_button("Left", PointerButton::Left))
-                .push(click_button("Middle", PointerButton::Middle))
-                .push(click_button("Right", PointerButton::Right)),
+                .push(click_button(fl!("trackpad-left"), PointerButton::Left))
+                .push(click_button(fl!("trackpad-middle"), PointerButton::Middle))
+                .push(click_button(fl!("trackpad-right"), PointerButton::Right)),
         )
         .into()
 }
 
-fn click_button<'a>(label: &'static str, button_kind: PointerButton) -> Element<'a, Message> {
+fn click_button<'a>(label: String, button_kind: PointerButton) -> Element<'a, Message> {
     button(text(label))
         .style(button::subtle)
         .width(Length::Fill)

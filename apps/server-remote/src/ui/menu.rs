@@ -178,7 +178,7 @@ pub fn select<'a, Message: Clone + 'a>(
 pub fn choices<T: Copy + PartialEq, Message>(
     all: &[T],
     current: T,
-    label: fn(T) -> &'static str,
+    label: fn(T) -> String,
     on_choose: impl Fn(T) -> Message,
 ) -> Vec<Item<Message>> {
     all.iter()

@@ -7,6 +7,7 @@
 //! session directly. `State` holds what the view needs — the latest frame, the
 //! status, the reported [`Capabilities`], and those senders.
 
+use crate::i18n::fl;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -124,18 +125,18 @@ impl KeyboardSize {
         KeyboardSize::Large,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            KeyboardSize::Small => "Compact",
-            KeyboardSize::Medium => "Tenkeyless",
-            KeyboardSize::Large => "Full size",
+            KeyboardSize::Small => fl!("keyboard-style-compact"),
+            KeyboardSize::Medium => fl!("keyboard-style-tenkeyless"),
+            KeyboardSize::Large => fl!("keyboard-style-full"),
         }
     }
 }
 
 impl std::fmt::Display for KeyboardSize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.label())
+        f.write_str(&self.label())
     }
 }
 
@@ -453,7 +454,7 @@ impl State {
             Message::OpenUrl(url) => {
                 if let Err(error) = open::that_detached(url.as_ref()) {
                     self.modal = Some(Modal::Error {
-                        title: "Couldn't open the link".to_owned(),
+                        title: fl!("error-open-link"),
                         message: format!("{url}: {error}"),
                     });
                 }
@@ -638,21 +639,21 @@ impl State {
 
     pub fn view<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
         let body: Element<'_, Message> = match (&self.phase, &self.frame) {
-            (Phase::Connecting, _) => text("Connecting…").into(),
+            (Phase::Connecting, _) => text(fl!("status-connecting-ellipsis")).into(),
             (Phase::Disconnected(reason), _) => {
-                let reason = reason.clone().unwrap_or_else(|| "Disconnected".to_owned());
+                let reason = reason.clone().unwrap_or_else(|| fl!("status-disconnected"));
                 Column::new()
                     .spacing(8)
                     .align_x(Alignment::Center)
                     .push(text(reason))
                     .push(
-                        button(text("Close tab"))
+                        button(text(fl!("close-tab")))
                             .style(button::subtle)
                             .on_press(Message::Close),
                     )
                     .into()
             }
-            (Phase::Connected, None) => text("Waiting for first frame…").into(),
+            (Phase::Connected, None) => text(fl!("waiting-for-frame")).into(),
             (Phase::Connected, Some(frame)) => kvm_display(
                 frame.clone(),
                 self.capabilities.pointer,
@@ -749,10 +750,10 @@ impl State {
     /// Technical details about the connection, for the info popout.
     fn info(&self) -> Element<'_, Message> {
         let status = match &self.phase {
-            Phase::Connecting => "Connecting".to_owned(),
-            Phase::Connected => "Connected".to_owned(),
+            Phase::Connecting => fl!("status-connecting"),
+            Phase::Connected => fl!("status-connected"),
             Phase::Disconnected(reason) => {
-                reason.clone().unwrap_or_else(|| "Disconnected".to_owned())
+                reason.clone().unwrap_or_else(|| fl!("status-disconnected"))
             }
         };
         let resolution = self.size.map_or_else(
@@ -760,33 +761,32 @@ impl State {
             |(width, height)| format!("{width}×{height}"),
         );
         let pointer = match self.capabilities.pointer {
-            PointerMode::Absolute => "Absolute",
-            PointerMode::Relative => "Relative",
+            PointerMode::Absolute => fl!("pointer-absolute"),
+            PointerMode::Relative => fl!("pointer-relative"),
         };
 
         let encryption = self
             .session_status
             .encryption
             .as_deref()
-            .unwrap_or("None")
-            .to_owned();
+            .map_or_else(|| fl!("encryption-none"), str::to_owned);
         let built_in = [
-            ("Protocol", self.protocol.name().to_owned()),
+            (fl!("info-protocol"), self.protocol.name().to_owned()),
             (
-                "Address",
+                fl!("info-address"),
                 format!("{}:{}", self.target.host, self.target.port),
             ),
-            ("Status", status),
-            ("Resolution", resolution),
-            ("Pointer", pointer.to_owned()),
-            ("Frames received", self.next_generation.to_string()),
-            ("Encryption", encryption),
+            (fl!("info-status"), status),
+            (fl!("info-resolution"), resolution),
+            (fl!("info-pointer"), pointer),
+            (fl!("info-frames"), self.next_generation.to_string()),
+            (fl!("info-encryption"), encryption),
         ];
         let details = self
             .session_status
             .details
             .iter()
-            .map(|detail| (detail.label.as_ref(), detail.value.to_string()));
+            .map(|detail| (detail.label.to_string(), detail.value.to_string()));
 
         Column::with_children(built_in.into_iter().chain(details).map(|(label, value)| {
             Row::new()
@@ -825,15 +825,21 @@ impl State {
         actions
             .chain(separator)
             .chain([
-                Item::entry("Virtual keyboard", Some(Message::ToggleVirtualKeyboard))
-                    .icon(icons::KEYBOARD)
-                    .checked(self.show_virtual_keyboard),
-                Item::entry("Virtual trackpad", Some(Message::ToggleVirtualTrackpad))
-                    .icon(icons::CURSOR_1)
-                    .checked(self.show_virtual_trackpad),
+                Item::entry(
+                    fl!("menu-virtual-keyboard"),
+                    Some(Message::ToggleVirtualKeyboard),
+                )
+                .icon(icons::KEYBOARD)
+                .checked(self.show_virtual_keyboard),
+                Item::entry(
+                    fl!("menu-virtual-trackpad"),
+                    Some(Message::ToggleVirtualTrackpad),
+                )
+                .icon(icons::CURSOR_1)
+                .checked(self.show_virtual_trackpad),
                 Item::Separator,
                 submenu(
-                    "Keyboard layout",
+                    fl!("setting-keyboard-layout"),
                     Submenu::KeyboardLayout,
                     settings_ui::keyboard_layouts(settings, |layout| {
                         Message::ChangeSetting(Change::KeyboardLayout(layout))
@@ -841,14 +847,14 @@ impl State {
                     submenu_open,
                 ),
                 submenu(
-                    "Keyboard style",
+                    fl!("setting-keyboard-style"),
                     Submenu::KeyboardStyle,
                     keyboard_styles,
                     submenu_open,
                 ),
                 Item::Separator,
                 Item::entry(
-                    "Input settings…",
+                    fl!("menu-input-settings"),
                     Some(Message::OpenSettings(Section::Input)),
                 )
                 .icon(icons::SETTINGS),
@@ -858,9 +864,9 @@ impl State {
 
     fn status_bar(&self) -> Element<'_, Message> {
         let (label, indicator) = match self.phase {
-            Phase::Connecting => ("Connecting…", style::Indicator::Warning),
-            Phase::Connected => ("Connected", style::Indicator::Ok),
-            Phase::Disconnected(_) => ("Disconnected", style::Indicator::Error),
+            Phase::Connecting => (fl!("status-connecting-ellipsis"), style::Indicator::Warning),
+            Phase::Connected => (fl!("status-connected"), style::Indicator::Ok),
+            Phase::Disconnected(_) => (fl!("status-disconnected"), style::Indicator::Error),
         };
         let phase = Row::new()
             .spacing(6)
@@ -950,7 +956,7 @@ impl State {
 
 /// A submenu that opens as `which`.
 fn submenu(
-    label: &str,
+    label: String,
     which: Submenu,
     items: Vec<Item<Message>>,
     submenu_open: &impl Fn(Submenu) -> bool,
@@ -973,14 +979,14 @@ fn display_menu(
     let scaling = |scaling: Scaling| Some(Message::ChangeSetting(Change::Scaling(scaling)));
     vec![
         Item::entry(
-            "Keep aspect ratio",
+            fl!("setting-keep-aspect-ratio"),
             Some(Message::ChangeSetting(Change::KeepAspectRatio(
                 !display.keep_aspect_ratio,
             ))),
         )
         .checked(display.keep_aspect_ratio),
         submenu(
-            "Display scale",
+            fl!("setting-display-scale"),
             Submenu::DisplayScale,
             settings_ui::display_scales(settings, |scale| {
                 Message::ChangeSetting(Change::DisplayScale(scale))
@@ -988,14 +994,15 @@ fn display_menu(
             submenu_open,
         ),
         Item::Separator,
-        Item::entry("Scale to fit", scaling(Scaling::Fit)).checked(display.scaling == Scaling::Fit),
+        Item::entry(fl!("scaling-fit"), scaling(Scaling::Fit))
+            .checked(display.scaling == Scaling::Fit),
         Item::Separator,
-        Item::entry("Zoom out", None),
+        Item::entry(fl!("menu-zoom-out"), None),
         Item::entry("100%", scaling(Scaling::Actual)).checked(display.scaling == Scaling::Actual),
-        Item::entry("Zoom in", None),
+        Item::entry(fl!("menu-zoom-in"), None),
         Item::Separator,
         Item::entry(
-            "Display settings…",
+            fl!("menu-display-settings"),
             Some(Message::OpenSettings(Section::Display)),
         )
         .icon(icons::SETTINGS),
@@ -1009,10 +1016,10 @@ fn recording_menu(
     submenu_open: &impl Fn(Submenu) -> bool,
 ) -> Vec<Item<Message>> {
     vec![
-        Item::entry("Start recording", None).icon(icons::CAMERA),
+        Item::entry(fl!("menu-start-recording"), None).icon(icons::CAMERA),
         Item::Separator,
         submenu(
-            "Save to",
+            fl!("setting-recording-folder"),
             Submenu::RecordingFolder,
             settings_ui::recording_folders(
                 settings,
@@ -1022,7 +1029,7 @@ fn recording_menu(
             submenu_open,
         ),
         submenu(
-            "Quality",
+            fl!("setting-recording-quality"),
             Submenu::RecordingQuality,
             settings_ui::recording_qualities(settings, |quality| {
                 Message::ChangeSetting(Change::RecordingQuality(quality))
@@ -1030,7 +1037,7 @@ fn recording_menu(
             submenu_open,
         ),
         submenu(
-            "Format",
+            fl!("setting-recording-format"),
             Submenu::RecordingFormat,
             settings_ui::recording_formats(settings, |format| {
                 Message::ChangeSetting(Change::RecordingFormat(format))
@@ -1039,7 +1046,7 @@ fn recording_menu(
         ),
         Item::Separator,
         Item::entry(
-            "Recording settings…",
+            fl!("menu-recording-settings"),
             Some(Message::OpenSettings(Section::Recording)),
         )
         .icon(icons::SETTINGS),
@@ -1103,7 +1110,7 @@ async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
     let dialog = if extensions.is_empty() {
         dialog
     } else {
-        dialog.add_filter("Supported files", &extensions)
+        dialog.add_filter(fl!("file-dialog-supported"), &extensions)
     };
     dialog
         .pick_file()
@@ -1124,16 +1131,16 @@ fn modal_view(modal: &Modal) -> Element<'_, Message> {
                 dialog::Kind::Primary
             };
             dialog::view(
-                &confirmation.title,
-                &confirmation.message,
+                confirmation.title.to_string(),
+                confirmation.message.to_string(),
                 vec![
                     dialog::Button {
-                        label: "Cancel",
+                        label: fl!("button-cancel"),
                         on_press: Message::CloseModal,
                         kind: dialog::Kind::Secondary,
                     },
                     dialog::Button {
-                        label: &confirmation.confirm_label,
+                        label: confirmation.confirm_label.to_string(),
                         on_press: Message::Confirm,
                         kind,
                     },
@@ -1141,10 +1148,10 @@ fn modal_view(modal: &Modal) -> Element<'_, Message> {
             )
         }
         Modal::Error { title, message } => dialog::view(
-            title,
-            message,
+            title.clone(),
+            message.clone(),
             vec![dialog::Button {
-                label: "OK",
+                label: fl!("button-ok"),
                 on_press: Message::CloseModal,
                 kind: dialog::Kind::Primary,
             }],
@@ -1249,7 +1256,7 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
                     SpiceConnector::new(password).connect(&target, &tls).await
                 }
                 other => {
-                    let reason = format!("{other} is not implemented yet");
+                    let reason = fl!("protocol-not-implemented", protocol = other.to_string());
                     let _ = output
                         .send(Message::Session(SessionEvent::Disconnected {
                             reason: Some(reason),

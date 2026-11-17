@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::ui::connection::KeyboardSize;
 
 use super::store;
+use crate::i18n::fl;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -28,6 +29,7 @@ pub struct General {
     /// Ask before closing the window while connections are open.
     pub confirm_quit: bool,
     pub appearance: Appearance,
+    pub language: Language,
     /// The GPU API to draw with, on Windows. Takes effect on next launch.
     pub graphics_backend: GraphicsBackend,
 }
@@ -37,6 +39,7 @@ impl Default for General {
         General {
             confirm_quit: true,
             appearance: Appearance::default(),
+            language: Language::default(),
             graphics_backend: GraphicsBackend::default(),
         }
     }
@@ -56,11 +59,36 @@ pub enum Appearance {
 impl Appearance {
     pub const ALL: [Appearance; 3] = [Appearance::System, Appearance::Light, Appearance::Dark];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Appearance::System => "Match system",
-            Appearance::Light => "Light",
-            Appearance::Dark => "Dark",
+            Appearance::System => fl!("appearance-system"),
+            Appearance::Light => fl!("appearance-light"),
+            Appearance::Dark => fl!("appearance-dark"),
+        }
+    }
+}
+
+/// The language the UI is shown in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Language {
+    /// The operating system's preferred language, if translated.
+    #[default]
+    System,
+    English,
+    Romanian,
+}
+
+impl Language {
+    pub const ALL: [Language; 3] = [Language::System, Language::English, Language::Romanian];
+
+    /// Each language is named in itself, so it can be found whatever the
+    /// current language.
+    pub fn label(self) -> String {
+        match self {
+            Language::System => fl!("language-system"),
+            Language::English => "English".to_owned(),
+            Language::Romanian => "Română".to_owned(),
         }
     }
 }
@@ -78,10 +106,10 @@ pub enum GraphicsBackend {
 impl GraphicsBackend {
     pub const ALL: [GraphicsBackend; 2] = [GraphicsBackend::DirectX12, GraphicsBackend::Vulkan];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            GraphicsBackend::DirectX12 => "DirectX 12",
-            GraphicsBackend::Vulkan => "Vulkan",
+            GraphicsBackend::DirectX12 => "DirectX 12".to_owned(),
+            GraphicsBackend::Vulkan => "Vulkan".to_owned(),
         }
     }
 
@@ -140,10 +168,10 @@ pub enum Scaling {
 impl Scaling {
     pub const ALL: [Scaling; 2] = [Scaling::Fit, Scaling::Actual];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Scaling::Fit => "Scale to fit",
-            Scaling::Actual => "Actual size",
+            Scaling::Fit => fl!("scaling-fit"),
+            Scaling::Actual => fl!("scaling-actual"),
         }
     }
 }
@@ -177,14 +205,14 @@ impl DisplayScale {
         DisplayScale::Percent200,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            DisplayScale::Automatic => "Automatic",
-            DisplayScale::Percent100 => "100%",
-            DisplayScale::Percent125 => "125%",
-            DisplayScale::Percent150 => "150%",
-            DisplayScale::Percent175 => "175%",
-            DisplayScale::Percent200 => "200%",
+            DisplayScale::Automatic => fl!("display-scale-automatic"),
+            DisplayScale::Percent100 => "100%".to_owned(),
+            DisplayScale::Percent125 => "125%".to_owned(),
+            DisplayScale::Percent150 => "150%".to_owned(),
+            DisplayScale::Percent175 => "175%".to_owned(),
+            DisplayScale::Percent200 => "200%".to_owned(),
         }
     }
 }
@@ -217,12 +245,12 @@ impl KeyboardLayout {
         KeyboardLayout::FrenchAzerty,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            KeyboardLayout::UsQwerty => "US",
-            KeyboardLayout::UkQwerty => "UK",
-            KeyboardLayout::GermanQwertz => "German",
-            KeyboardLayout::FrenchAzerty => "French",
+            KeyboardLayout::UsQwerty => fl!("keyboard-layout-us"),
+            KeyboardLayout::UkQwerty => fl!("keyboard-layout-uk"),
+            KeyboardLayout::GermanQwertz => fl!("keyboard-layout-german"),
+            KeyboardLayout::FrenchAzerty => fl!("keyboard-layout-french"),
         }
     }
 }
@@ -270,12 +298,12 @@ impl RecordingFormat {
         RecordingFormat::Mkv,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            RecordingFormat::ServerRemote => "ServerRemote",
-            RecordingFormat::QuickTime => "QuickTime",
-            RecordingFormat::WebP => "WebP",
-            RecordingFormat::Mkv => "MKV",
+            RecordingFormat::ServerRemote => "ServerRemote".to_owned(),
+            RecordingFormat::QuickTime => "QuickTime".to_owned(),
+            RecordingFormat::WebP => "WebP".to_owned(),
+            RecordingFormat::Mkv => "MKV".to_owned(),
         }
     }
 }
@@ -298,12 +326,12 @@ impl RecordingQuality {
         RecordingQuality::Lossless,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            RecordingQuality::Low => "Low",
-            RecordingQuality::Medium => "Medium",
-            RecordingQuality::High => "High",
-            RecordingQuality::Lossless => "Lossless",
+            RecordingQuality::Low => fl!("quality-low"),
+            RecordingQuality::Medium => fl!("quality-medium"),
+            RecordingQuality::High => fl!("quality-high"),
+            RecordingQuality::Lossless => fl!("quality-lossless"),
         }
     }
 }

@@ -9,11 +9,13 @@ use iced::{
 use server_remote_core::{Target, TlsPolicy};
 use server_remote_icons as icons;
 
+use crate::i18n::fl;
 use crate::persistence::settings::{Appearance, GraphicsBackend, Settings};
 use crate::tooltip_box::tooltip_box;
 
 mod app_icon;
 mod contributors;
+mod i18n;
 mod persistence;
 mod tooltip_box;
 mod ui;
@@ -460,6 +462,43 @@ mod tests {
             light(vec![Message::RequestClose(window::Id::unique())]),
         ));
 
+        // And in Romanian, whose longer words test the layouts.
+        let romanian = |messages: Vec<Message>| -> Vec<Message> {
+            std::iter::once(Message::Settings(ui::settings::Message::Change(
+                ui::settings::Change::Language(persistence::settings::Language::Romanian),
+            )))
+            .chain(messages)
+            .collect()
+        };
+        states.push((
+            "display-menu-ro",
+            false,
+            romanian(vec![conn(Conn::ToggleMenu(ToolbarMenu::Display))]),
+        ));
+        states.push(("connector-ro", true, romanian(vec![])));
+        states.push(("settings-about-ro", false, romanian(about.clone())));
+        states.push((
+            "settings-general-ro",
+            false,
+            romanian(settings_page(
+                ui::settings::Section::General,
+                ui::settings::Select::Language,
+            )),
+        ));
+        states.push((
+            "settings-recording-ro",
+            false,
+            romanian(settings_page(
+                ui::settings::Section::Recording,
+                ui::settings::Select::RecordingQuality,
+            )),
+        ));
+        states.push((
+            "quit-ro",
+            false,
+            romanian(vec![Message::RequestClose(window::Id::unique())]),
+        ));
+
         // Wide by default; these are also rendered at a narrow width.
         const NARROW: [&str; 1] = ["settings-display-narrow"];
         states.push((
@@ -566,16 +605,14 @@ fn apply_graphics_backend(backend: GraphicsBackend) {
 }
 
 fn third_party_licences<'a>() -> Element<'a, Message> {
-    let link = |label, url: &str| ui::dialog::Button {
-        label,
+    let link = |label: &str, url: &str| ui::dialog::Button {
+        label: label.to_owned(),
         on_press: Message::Settings(ui::settings::Message::OpenUrl(url.to_owned())),
         kind: ui::dialog::Kind::Secondary,
     };
     ui::dialog::view(
-        "Third-party licences",
-        "Icons: Carbon Design System by IBM, under the Apache License 2.0.\n\n\
-         Font: Nunito Sans by the Nunito Sans Project Authors, under the SIL \
-         Open Font License 1.1.",
+        fl!("licences-title"),
+        fl!("licences-message"),
         vec![
             link(
                 "Carbon",
@@ -583,7 +620,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
             ),
             link("Nunito Sans", "https://github.com/googlefonts/NunitoSans"),
             ui::dialog::Button {
-                label: "Close",
+                label: fl!("button-close"),
                 on_press: Message::CloseModal,
                 kind: ui::dialog::Kind::Primary,
             },
@@ -595,7 +632,7 @@ fn pick_recording_folder() -> Task<Message> {
     Task::perform(
         async {
             rfd::AsyncFileDialog::new()
-                .set_title("Save recordings to")
+                .set_title(fl!("recording-folder-dialog-title"))
                 .pick_folder()
                 .await
                 .map(|folder| folder.path().to_path_buf())
@@ -707,6 +744,7 @@ enum WindowAction {
 impl Application {
     fn new(config_dir: Option<PathBuf>, settings: Settings) -> (Self, Task<Message>) {
         let check_on_launch = settings.updates.check_on_launch;
+        i18n::select(settings.general.language);
         let mut app = Self {
             connections: Vec::new(),
             next_id: 0,
@@ -745,7 +783,7 @@ impl Application {
     fn open_url(&mut self, url: &str) {
         if let Err(error) = open::that_detached(url) {
             self.modal = Some(AppModal::Error {
-                title: "Couldn't open the link".to_owned(),
+                title: fl!("error-open-link"),
                 message: format!("{url}: {error}"),
             });
         }
@@ -877,6 +915,9 @@ impl Application {
     }
 
     fn change_setting(&mut self, change: ui::settings::Change) {
+        if let ui::settings::Change::Language(language) = change {
+            i18n::select(language);
+        }
         ui::settings::apply(&mut self.settings, change);
         self.settings.save(self.config_dir.as_deref());
     }
@@ -967,10 +1008,10 @@ impl Application {
             AppModal::ConfirmQuit(id) => *id,
             AppModal::Error { title, message } => {
                 return ui::dialog::view(
-                    title,
-                    message,
+                    title.clone(),
+                    message.clone(),
                     vec![ui::dialog::Button {
-                        label: "OK",
+                        label: fl!("button-ok"),
                         on_press: Message::CloseModal,
                         kind: ui::dialog::Kind::Primary,
                     }],
@@ -978,21 +1019,17 @@ impl Application {
             }
             AppModal::ThirdPartyLicences => return third_party_licences(),
         };
-        let message = match self.connections.len() {
-            1 => "The open connection will be closed.",
-            _ => "All open connections will be closed.",
-        };
         ui::dialog::view(
-            "Quit?",
-            message,
+            fl!("quit-title"),
+            fl!("quit-message", count = self.connections.len()),
             vec![
                 ui::dialog::Button {
-                    label: "Cancel",
+                    label: fl!("button-cancel"),
                     on_press: Message::CloseModal,
                     kind: ui::dialog::Kind::Secondary,
                 },
                 ui::dialog::Button {
-                    label: "Quit",
+                    label: fl!("quit-confirm"),
                     on_press: Message::Quit(id),
                     kind: ui::dialog::Kind::Destructive,
                 },
@@ -1011,7 +1048,7 @@ impl Application {
                         .view(&self.settings)
                         .map(move |message| Message::Connection(id, message))
                 }
-                None => text("Connection closed").into(),
+                None => text(fl!("connection-closed")).into(),
             },
             Tab::Settings => ui::settings::view(&self.settings_tab, &self.settings, &self.update)
                 .map(Message::Settings),
@@ -1068,14 +1105,14 @@ impl Application {
                 .iter()
                 .map(|connection| self.connection_tab(connection)),
         )
-        .push(self.icon_tab(Tab::Connect, icons::ADD_LARGE, "Connect to…"))
+        .push(self.icon_tab(Tab::Connect, icons::ADD_LARGE, fl!("tab-connect")))
         .spacing(ui::style::SPACING);
 
         // Empty space in the title bar moves the window, as a native one would.
         let drag_region = mouse_area(
             Row::new()
                 .push((!CUSTOM_DECORATIONS).then(|| Space::new().width(TRAFFIC_LIGHTS_WIDTH)))
-                .push(self.icon_tab(Tab::Manager, icons::VIRTUAL_DESKTOP, "Connection manager"))
+                .push(self.icon_tab(Tab::Manager, icons::VIRTUAL_DESKTOP, fl!("tab-manager")))
                 .push(Scrollable::new(tabs).horizontal().width(Length::Fill))
                 .spacing(ui::style::SPACING),
         )
@@ -1084,7 +1121,7 @@ impl Application {
 
         Row::new()
             .push(drag_region)
-            .push(self.icon_tab(Tab::Settings, icons::SETTINGS, "Settings"))
+            .push(self.icon_tab(Tab::Settings, icons::SETTINGS, fl!("tab-settings")))
             .push(CUSTOM_DECORATIONS.then(|| {
                 ui::window_controls::view(
                     self.maximized,
@@ -1109,7 +1146,7 @@ impl Application {
             .into()
     }
 
-    fn icon_tab(&self, tab: Tab, icon: icons::Icon, label: &str) -> Element<'_, Message> {
+    fn icon_tab(&self, tab: Tab, icon: icons::Icon, label: String) -> Element<'_, Message> {
         let active = self.tab == tab;
         tooltip(
             button(container(themed(icon)).center(Length::Fill))
@@ -1118,7 +1155,7 @@ impl Application {
                 .padding(0)
                 .style(move |theme, status| ui::style::bordered_button(theme, status, active))
                 .on_press(Message::SelectTab(tab)),
-            tooltip_box(text(label.to_owned())),
+            tooltip_box(text(label)),
             tooltip::Position::Bottom,
         )
         .into()
