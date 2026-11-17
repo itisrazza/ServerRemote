@@ -15,8 +15,8 @@ use iced::{Alignment, Element, Length, Theme};
 use server_remote_icons::{self as icons, Icon};
 
 use crate::persistence::settings::{
-    DisplayScale, GraphicsBackend, KeyboardLayout, RecordingFormat, RecordingQuality, Scaling,
-    Settings,
+    Appearance, DisplayScale, GraphicsBackend, KeyboardLayout, RecordingFormat, RecordingQuality,
+    Scaling, Settings,
 };
 
 use super::connection::KeyboardSize;
@@ -75,6 +75,7 @@ impl Section {
 /// The dropdowns on the page, so one can be open at a time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Select {
+    Appearance,
     GraphicsBackend,
     Scaling,
     DisplayScale,
@@ -89,6 +90,7 @@ pub enum Select {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Change {
     ConfirmQuit(bool),
+    Appearance(Appearance),
     GraphicsBackend(GraphicsBackend),
     Scaling(Scaling),
     KeepAspectRatio(bool),
@@ -108,6 +110,7 @@ pub enum Change {
 pub fn apply(settings: &mut Settings, change: Change) {
     match change {
         Change::ConfirmQuit(on) => settings.general.confirm_quit = on,
+        Change::Appearance(appearance) => settings.general.appearance = appearance,
         Change::GraphicsBackend(backend) => settings.general.graphics_backend = backend,
         Change::Scaling(scaling) => settings.display.scaling = scaling,
         Change::KeepAspectRatio(on) => settings.display.keep_aspect_ratio = on,
@@ -253,6 +256,21 @@ fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
         "Ask before closing the window while connections are open.",
         switch(settings.general.confirm_quit, Change::ConfirmQuit),
     );
+    let appearance = setting(
+        "Appearance",
+        "Light or dark colours.",
+        select(
+            state,
+            Select::Appearance,
+            settings.general.appearance.label(),
+            menu::choices(
+                &Appearance::ALL,
+                settings.general.appearance,
+                Appearance::label,
+                |appearance| Message::Change(Change::Appearance(appearance)),
+            ),
+        ),
+    );
     // Only Windows offers a choice of graphics API worth making.
     let backend = cfg!(windows).then(|| {
         setting(
@@ -272,7 +290,7 @@ fn general<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         )
     });
-    [Some(confirm_quit), backend]
+    [Some(confirm_quit), Some(appearance), backend]
         .into_iter()
         .flatten()
         .collect()
@@ -785,6 +803,9 @@ mod tests {
         let cases: Vec<(&str, Change, Check)> = vec![
             ("confirm quit", Change::ConfirmQuit(false), |s| {
                 !s.general.confirm_quit
+            }),
+            ("appearance", Change::Appearance(Appearance::Light), |s| {
+                s.general.appearance == Appearance::Light
             }),
             (
                 "graphics backend",

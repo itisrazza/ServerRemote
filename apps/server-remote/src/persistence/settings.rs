@@ -27,6 +27,7 @@ pub struct Settings {
 pub struct General {
     /// Ask before closing the window while connections are open.
     pub confirm_quit: bool,
+    pub appearance: Appearance,
     /// The GPU API to draw with, on Windows. Takes effect on next launch.
     pub graphics_backend: GraphicsBackend,
 }
@@ -35,7 +36,31 @@ impl Default for General {
     fn default() -> Self {
         General {
             confirm_quit: true,
+            appearance: Appearance::default(),
             graphics_backend: GraphicsBackend::default(),
+        }
+    }
+}
+
+/// Light or dark colours.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Appearance {
+    /// Whichever the operating system is set to.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    pub const ALL: [Appearance; 3] = [Appearance::System, Appearance::Light, Appearance::Dark];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Appearance::System => "Match system",
+            Appearance::Light => "Light",
+            Appearance::Dark => "Dark",
         }
     }
 }

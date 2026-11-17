@@ -9,7 +9,7 @@ use iced::{
 use server_remote_core::{Target, TlsPolicy};
 use server_remote_icons as icons;
 
-use crate::persistence::settings::{GraphicsBackend, Settings};
+use crate::persistence::settings::{Appearance, GraphicsBackend, Settings};
 use crate::tooltip_box::tooltip_box;
 
 mod app_icon;
@@ -289,7 +289,6 @@ mod tests {
         let dir =
             std::path::PathBuf::from(std::env::var("SNAPSHOT_DIR").expect("SNAPSHOT_DIR is set"));
         let settings = ui::style::settings();
-        let theme = ui::style::theme();
 
         use ui::connection::{Message as Conn, ToolbarMenu};
 
@@ -414,12 +413,51 @@ mod tests {
             "settings-about-update",
             false,
             about
-                .into_iter()
+                .iter()
+                .cloned()
                 .chain([Message::UpdateChecked(Ok(update::Outcome::Available {
                     version: semver::Version::new(0, 2, 0),
                     url: "https://example.invalid/release".to_owned(),
                 }))])
                 .collect(),
+        ));
+
+        // A few in the light theme too.
+        let light = |messages: Vec<Message>| -> Vec<Message> {
+            std::iter::once(Message::Settings(ui::settings::Message::Change(
+                ui::settings::Change::Appearance(Appearance::Light),
+            )))
+            .chain(messages)
+            .collect()
+        };
+        states.push(("connector-light", true, light(vec![])));
+        states.push((
+            "power-menu-light",
+            true,
+            light(vec![conn(Conn::ToggleMenu(ToolbarMenu::Contributed(
+                "power".into(),
+            )))]),
+        ));
+        states.push((
+            "keyboard-light",
+            false,
+            light(vec![conn(Conn::SetKeyboardSize(
+                ui::connection::KeyboardSize::Large,
+            ))]),
+        ));
+        states.push(("settings-about-light", false, light(about.clone())));
+        states.push((
+            "settings-general-light",
+            false,
+            light(settings_page(
+                ui::settings::Section::General,
+                ui::settings::Select::Appearance,
+            )),
+        ));
+        states.push((
+            "quit-light",
+            false,
+            light(vec![Message::RequestClose(window::Id::unique())]),
         ));
 
         // Wide by default; these are also rendered at a narrow width.
@@ -455,7 +493,7 @@ mod tests {
                 let _ = app.update(message);
             }
             let mut simulator = iced_test::Simulator::with_size(settings.clone(), size, app.view());
-            let snapshot = simulator.snapshot(&theme).expect("renders");
+            let snapshot = simulator.snapshot(&app.theme()).expect("renders");
             // `matches_image` only writes when no snapshot exists yet, and
             // names the file after the renderer too, so clear old ones first.
             let prefix = format!("{name}-");
@@ -511,7 +549,7 @@ fn main() -> iced::Result {
         })
         .settings(ui::style::settings())
         .subscription(Application::subscription)
-        .theme(ui::style::theme())
+        .theme(Application::theme)
         .run()
 }
 
@@ -609,6 +647,8 @@ struct Application {
     maximized: bool,
     /// Physical pixels per logical pixel, so the layout can snap to them.
     scale_factor: f32,
+    /// The operating system's light or dark preference.
+    system_theme: iced::theme::Mode,
     update: update::Status,
     /// A dialog over the whole window, if any.
     modal: Option<AppModal>,
@@ -648,6 +688,7 @@ enum Message {
     Resized(iced::window::Id),
     Maximized(bool),
     Rescaled(f32),
+    SystemThemeChanged(iced::theme::Mode),
     RequestClose(iced::window::Id),
     Quit(iced::window::Id),
     CloseModal,
@@ -677,6 +718,7 @@ impl Application {
             config_dir,
             maximized: false,
             scale_factor: 1.0,
+            system_theme: iced::theme::Mode::None,
             update: update::Status::NotChecked,
             modal: None,
         };
@@ -691,7 +733,8 @@ impl Application {
         let scale_factor = window::latest()
             .and_then(window::scale_factor)
             .map(Message::Rescaled);
-        (app, Task::batch([update_check, scale_factor]))
+        let system_theme = iced::system::theme().map(Message::SystemThemeChanged);
+        (app, Task::batch([update_check, scale_factor, system_theme]))
     }
 
     fn check_for_updates(&mut self) -> Task<Message> {
@@ -776,6 +819,10 @@ impl Application {
             Message::Resized(id) => window::is_maximized(id).map(Message::Maximized),
             Message::Maximized(maximized) => {
                 self.maximized = maximized;
+                Task::none()
+            }
+            Message::SystemThemeChanged(mode) => {
+                self.system_theme = mode;
                 Task::none()
             }
             Message::Rescaled(scale_factor) => {
@@ -971,6 +1018,19 @@ impl Application {
         }
     }
 
+    fn theme(&self) -> iced::Theme {
+        let light = match self.settings.general.appearance {
+            Appearance::System => self.system_theme == iced::theme::Mode::Light,
+            Appearance::Light => true,
+            Appearance::Dark => false,
+        };
+        if light {
+            ui::style::light_theme()
+        } else {
+            ui::style::dark_theme()
+        }
+    }
+
     fn title(&self) -> String {
         // TODO: show connection
         "Server Remote".into()
@@ -994,8 +1054,9 @@ impl Application {
             window::Event::Rescaled(scale_factor) => Some(Message::Rescaled(scale_factor)),
             _ => None,
         });
+        let system_theme = iced::system::theme_changes().map(Message::SystemThemeChanged);
         Subscription::batch(
-            [close_requests, resizes, rescales]
+            [close_requests, resizes, rescales, system_theme]
                 .into_iter()
                 .chain(connections),
         )

@@ -4,6 +4,7 @@
 //! Colours and sizes follow the Figma mockups.
 
 use std::borrow::Cow;
+use std::sync::LazyLock;
 
 use iced::font::{Family, Stretch, Weight};
 use iced::theme::{Palette, palette};
@@ -70,7 +71,7 @@ pub fn settings() -> Settings {
     }
 }
 
-const PALETTE: Palette = Palette {
+const DARK_PALETTE: Palette = Palette {
     background: Color::from_rgb8(0x12, 0x12, 0x12),
     text: Color::WHITE,
     primary: Color::from_rgb8(0x4c, 0x8d, 0xff),
@@ -79,33 +80,98 @@ const PALETTE: Palette = Palette {
     danger: Color::from_rgb8(0xc4, 0x2b, 0x1c),
 };
 
-pub fn theme() -> Theme {
-    Theme::custom_with_fn("Server Remote", PALETTE, extended_palette)
+const LIGHT_PALETTE: Palette = Palette {
+    background: Color::from_rgb8(0xf0, 0xf0, 0xf0),
+    text: Color::from_rgb8(0x1a, 0x1a, 0x1a),
+    primary: Color::from_rgb8(0x2f, 0x6f, 0xeb),
+    success: Color::from_rgb8(0x00, 0xa8, 0x43),
+    warning: Color::from_rgb8(0xf0, 0xb4, 0x00),
+    danger: Color::from_rgb8(0xc4, 0x2b, 0x1c),
+};
+
+// Themes are rebuilt from their palettes on every call otherwise.
+static DARK: LazyLock<Theme> =
+    LazyLock::new(|| Theme::custom_with_fn("Server Remote Dark", DARK_PALETTE, dark_extended));
+static LIGHT: LazyLock<Theme> =
+    LazyLock::new(|| Theme::custom_with_fn("Server Remote Light", LIGHT_PALETTE, light_extended));
+
+pub fn dark_theme() -> Theme {
+    DARK.clone()
+}
+
+pub fn light_theme() -> Theme {
+    LIGHT.clone()
+}
+
+/// The background shades, from the window's own background outwards.
+struct Greys {
+    base: u8,
+    weakest: u8,
+    weaker: u8,
+    weak: u8,
+    neutral: u8,
+    strong: u8,
+    stronger: u8,
+    strongest: u8,
 }
 
 /// iced derives background shades by mixing; the mockups use specific greys,
 /// so they're set explicitly:
 ///
-/// - `weak`: menu fill
+/// - `weak`: menu and panel fill
 /// - `neutral`: hover
 /// - `strong`: borders, dividers, active tab fill
 /// - `stronger`: menu border and separators
-/// - `strongest`: active tab border, disabled text
-fn extended_palette(palette: Palette) -> palette::Extended {
-    let pair = |r, g, b| palette::Pair::new(Color::from_rgb8(r, g, b), palette.text);
+/// - `strongest`: active tab border, disabled and secondary text
+fn extended_palette(palette: Palette, greys: Greys) -> palette::Extended {
+    let pair = |grey| palette::Pair::new(Color::from_rgb8(grey, grey, grey), palette.text);
     palette::Extended {
         background: palette::Background {
-            base: pair(0x12, 0x12, 0x12),
-            weakest: pair(0x17, 0x17, 0x17),
-            weaker: pair(0x1c, 0x1c, 0x1c),
-            weak: pair(0x21, 0x21, 0x21),
-            neutral: pair(0x2c, 0x2c, 0x2c),
-            strong: pair(0x41, 0x41, 0x41),
-            stronger: pair(0x4d, 0x4d, 0x4d),
-            strongest: pair(0x68, 0x68, 0x68),
+            base: pair(greys.base),
+            weakest: pair(greys.weakest),
+            weaker: pair(greys.weaker),
+            weak: pair(greys.weak),
+            neutral: pair(greys.neutral),
+            strong: pair(greys.strong),
+            stronger: pair(greys.stronger),
+            strongest: pair(greys.strongest),
         },
         ..palette::Extended::generate(palette)
     }
+}
+
+fn dark_extended(palette: Palette) -> palette::Extended {
+    extended_palette(
+        palette,
+        Greys {
+            base: 0x12,
+            weakest: 0x17,
+            weaker: 0x1c,
+            weak: 0x21,
+            neutral: 0x2c,
+            strong: 0x41,
+            stronger: 0x4d,
+            strongest: 0x68,
+        },
+    )
+}
+
+/// The dark greys' roles mirrored: panels and menus are the lightest
+/// surface, and `strongest` is dark enough to read as secondary text.
+fn light_extended(palette: Palette) -> palette::Extended {
+    extended_palette(
+        palette,
+        Greys {
+            base: 0xf0,
+            weakest: 0xf4,
+            weaker: 0xf8,
+            weak: 0xff,
+            neutral: 0xe6,
+            strong: 0xd2,
+            stronger: 0xc4,
+            strongest: 0x76,
+        },
+    )
 }
 
 /// A bordered, rounded button — tabs and toolbar buttons. `active` keeps it
