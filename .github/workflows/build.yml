@@ -1,0 +1,101 @@
+name: Build
+
+# Release builds for each desktop platform, uploaded as artifacts. Only for
+# the main line and release branches; other branches get CI checks only.
+on:
+  push:
+    branches:
+      - main
+      - 'release/v[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes an in-progress build.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows (x64)
+            os: windows-latest
+            platform: windows-x64
+            targets: [x86_64-pc-windows-msvc]
+          - name: macOS (universal)
+            os: macos-latest
+            platform: macos-universal
+            targets: [aarch64-apple-darwin, x86_64-apple-darwin]
+          - name: Linux (x64)
+            os: ubuntu-latest
+            platform: linux-x64
+            targets: [x86_64-unknown-linux-gnu]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ join(matrix.targets, ',') }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+
+      - name: Build
+        run: |
+          for target in ${{ join(matrix.targets, ' ') }}; do
+            cargo build --release --locked -p server-remote --target "$target"
+          done
+
+      - name: Stage artifact
+        id: stage
+        run: |
+          name="server-remote-${GITHUB_SHA::7}-${{ matrix.platform }}"
+          mkdir -p "dist/$name"
+
+          case "${{ matrix.platform }}" in
+            windows-*)
+              cp "target/${{ matrix.targets[0] }}/release/server-remote.exe" "dist/$name/"
+              ;;
+            macos-universal)
+              lipo -create \
+                target/aarch64-apple-darwin/release/server-remote \
+                target/x86_64-apple-darwin/release/server-remote \
+                -output "dist/$name/server-remote"
+              ;;
+            *)
+              cp "target/${{ matrix.targets[0] }}/release/server-remote" "dist/$name/"
+              ;;
+          esac
+
+          cp LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cp apps/server-remote/assets/fonts/OFL.txt "dist/$name/OFL-NunitoSans.txt"
+
+          # Artifact zips drop the executable bit, so Unix builds go in a
+          # tarball inside the artifact.
+          if [[ "${{ matrix.platform }}" == windows-* ]]; then
+            echo "path=dist/$name" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "dist/$name.tar.gz" -C dist "$name"
+            echo "path=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.stage.outputs.name }}
+          path: ${{ steps.stage.outputs.path }}
+          if-no-files-found: error
