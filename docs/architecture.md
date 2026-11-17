@@ -1,8 +1,8 @@
 # Architecture
 
-> Status: early but working. Dummy and VNC connect end to end (render, mouse,
-> keyboard); Spice and iLO are not started. Expect the shape to keep shifting as
-> those land.
+> Status: early but working. Dummy, VNC and Spice connect end to end (render,
+> mouse, keyboard); iLO is not started. Expect the shape to keep shifting as it
+> lands.
 
 ## Goal
 
@@ -39,7 +39,8 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`.
 | `server-remote` | iced GUI front end. |
 | `server-remote-core` | Protocol-agnostic traits and types, plus the Dummy implementation. Does **not** depend on iced. |
 | `server-remote-vnc` | VNC / RFB — implemented, on top of the `vnc-rs` crate. |
-| `server-remote-spice` | Spice — not started. |
+| `server-remote-spice` | Spice — connects and renders, on top of `spice-rs`. |
+| `spice-rs` (`lib/spice`) | Spice protocol client library: wire format, channels, framebuffer. |
 | `server-remote-ilo` | HPE iLO Remote Console — not started. |
 | `server-remote-icons` (`lib/icons`) | The app's icon set — [Carbon](https://github.com/carbon-design-system/carbon) icons (Apache-2.0) plus custom ones, exported from the Figma design into `assets/` and embedded with `include_bytes!`. Each icon is an `Icon` constant; the `iced` feature adds `Icon::element()`, which builds an `iced::widget::svg::Svg`. |
 
@@ -188,6 +189,6 @@ Next:
    updates instead of full-frame snapshots; nearest-neighbour image filtering.
 3. Pointer capture for `PointerMode::Relative`, and grow the `Control` vocabulary
    (e.g. `Toggle`/`Choose`) as protocols need it.
-4. Spice, then iLO — effectively from-scratch protocol work.
+4. iLO — effectively from-scratch protocol work.
 
 [`Target`]: ../lib/core/src/transport.rs
