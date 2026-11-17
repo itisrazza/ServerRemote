@@ -565,6 +565,8 @@ struct Application {
 
     /// Tracked so the title bar shows restore rather than maximise.
     maximized: bool,
+    /// Physical pixels per logical pixel, so the layout can snap to them.
+    scale_factor: f32,
     update: update::Status,
     /// A dialog over the whole window, if any.
     modal: Option<AppModal>,
@@ -602,6 +604,7 @@ enum Message {
     Window(WindowAction),
     Resized(iced::window::Id),
     Maximized(bool),
+    Rescaled(f32),
     RequestClose(iced::window::Id),
     Quit(iced::window::Id),
     CloseModal,
@@ -630,15 +633,22 @@ impl Application {
             settings_tab: ui::settings::State::default(),
             config_dir,
             maximized: false,
+            scale_factor: 1.0,
             update: update::Status::NotChecked,
             modal: None,
         };
-        let task = if check_on_launch {
+        let update_check = if check_on_launch {
             app.check_for_updates()
         } else {
             Task::none()
         };
-        (app, task)
+        // iced runs this once the window is open. Opening doesn't report a
+        // scale factor, so it's asked for here; later changes (moving to
+        // another display) arrive as `Rescaled` events.
+        let scale_factor = window::latest()
+            .and_then(window::scale_factor)
+            .map(Message::Rescaled);
+        (app, Task::batch([update_check, scale_factor]))
     }
 
     fn check_for_updates(&mut self) -> Task<Message> {
@@ -723,6 +733,10 @@ impl Application {
             Message::Resized(id) => window::is_maximized(id).map(Message::Maximized),
             Message::Maximized(maximized) => {
                 self.maximized = maximized;
+                Task::none()
+            }
+            Message::Rescaled(scale_factor) => {
+                self.scale_factor = scale_factor;
                 Task::none()
             }
             Message::Settings(message) => {
@@ -851,7 +865,7 @@ impl Application {
             Some(modal) => stack![window, self.modal_view(modal)].into(),
             None => window,
         };
-        ui::arrow_cursor(window)
+        ui::pixel_snap(ui::arrow_cursor(window), self.scale_factor)
     }
 
     fn modal_view<'a>(&'a self, modal: &'a AppModal) -> Element<'a, Message> {
@@ -928,7 +942,15 @@ impl Application {
         // Keyboard input is captured directly by the focused `kvm_display`
         // widget on the active connection tab, not routed here.
         let resizes = window::resize_events().map(|(id, _size)| Message::Resized(id));
-        Subscription::batch([close_requests, resizes].into_iter().chain(connections))
+        let rescales = window::events().filter_map(|(_id, event)| match event {
+            window::Event::Rescaled(scale_factor) => Some(Message::Rescaled(scale_factor)),
+            _ => None,
+        });
+        Subscription::batch(
+            [close_requests, resizes, rescales]
+                .into_iter()
+                .chain(connections),
+        )
     }
 
     fn header(&self) -> Element<'_, Message> {

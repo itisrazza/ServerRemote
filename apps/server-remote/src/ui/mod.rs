@@ -7,6 +7,7 @@ mod icon;
 mod kvm_display;
 pub mod manager;
 mod menu;
+mod pixel_snap;
 mod popover;
 pub mod settings;
 pub mod style;
@@ -15,6 +16,7 @@ mod virtual_trackpad;
 pub mod window_controls;
 
 pub use arrow_cursor::arrow_cursor;
+pub use pixel_snap::pixel_snap;
 
 /// Sizes an icon and tints it to match the given button's text color —
 /// `Svg` ignores the ambient text color buttons apply to their other
