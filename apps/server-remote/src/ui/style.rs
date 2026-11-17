@@ -148,6 +148,24 @@ pub fn tab_close_button(theme: &Theme, status: button::Status, tab_active: bool)
     }
 }
 
+/// An entry in the Settings tab's section list; `active` is the open one.
+pub fn sidebar_item(theme: &Theme, status: button::Status, active: bool) -> button::Style {
+    let palette = theme.extended_palette();
+    let background = match (active, status) {
+        (true, _) => Some(palette.background.strong.color),
+        (false, button::Status::Hovered | button::Status::Pressed) => {
+            Some(palette.background.neutral.color)
+        }
+        (false, button::Status::Active | button::Status::Disabled) => None,
+    };
+    button::Style {
+        background: background.map(Background::Color),
+        text_color: palette.background.base.text,
+        border: iced::border::rounded(RADIUS),
+        ..button::Style::default()
+    }
+}
+
 /// A borderless button that only shows a background when hovered.
 pub fn flat_button(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();

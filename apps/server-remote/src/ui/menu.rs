@@ -13,6 +13,8 @@ use super::popover::{Placement, popover};
 use super::style::{self, ICON_SIZE};
 
 const MENU_WIDTH: f32 = 200.0;
+/// A [`select`] is as wide as the menu it opens.
+pub const SELECT_WIDTH: f32 = MENU_WIDTH;
 /// The popup's 1pt border, which iced counts as padding.
 const MENU_BORDER: f32 = 1.0;
 const ITEM_HEIGHT: f32 = 25.0;
@@ -131,6 +133,59 @@ pub fn button_menu<'a, Message: Clone + 'a>(
         Some(on_dismiss),
     )
     .into()
+}
+
+/// A dropdown field showing `value`; the menu below it holds the choices,
+/// with the current one ticked.
+pub fn select<'a, Message: Clone + 'a>(
+    value: String,
+    items: Vec<Item<Message>>,
+    open: bool,
+    on_toggle: Message,
+    on_dismiss: Message,
+) -> Element<'a, Message> {
+    let content = Row::new()
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .push(
+            text(value)
+                .width(Length::Fill)
+                .wrapping(text::Wrapping::None),
+        )
+        .push(tinted(icons::CHEVRON_DOWN.into(), ICON_SIZE));
+    let anchor = button(container(content).center_y(Length::Fill))
+        .width(SELECT_WIDTH)
+        .height(style::CONTROL_HEIGHT)
+        .padding(Padding {
+            top: 0.0,
+            right: 5.0,
+            bottom: 0.0,
+            left: 8.0,
+        })
+        .style(move |theme, status| style::bordered_button(theme, status, open))
+        .on_press(on_toggle);
+
+    popover(
+        anchor,
+        open.then(|| view(items)),
+        Placement::Below,
+        Some(on_dismiss),
+    )
+    .into()
+}
+
+/// One entry per choice in `all`, ticking `current`.
+pub fn choices<T: Copy + PartialEq, Message>(
+    all: &[T],
+    current: T,
+    label: fn(T) -> &'static str,
+    on_choose: impl Fn(T) -> Message,
+) -> Vec<Item<Message>> {
+    all.iter()
+        .map(|&choice| {
+            Item::entry(label(choice), Some(on_choose(choice))).checked(choice == current)
+        })
+        .collect()
 }
 
 /// A square toolbar button showing `icon` that opens `content` below it.

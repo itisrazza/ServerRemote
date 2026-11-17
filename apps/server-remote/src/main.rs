@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced::{
@@ -8,6 +9,7 @@ use iced::{
 use server_remote_core::{Target, TlsPolicy};
 use server_remote_icons as icons;
 
+use crate::persistence::settings::{GraphicsBackend, Settings};
 use crate::tooltip_box::tooltip_box;
 
 mod persistence;
@@ -96,7 +98,7 @@ mod tests {
 
     #[test]
     fn open_connection_assigns_increasing_ids_and_switches_to_the_new_tab() {
-        let (mut app, _) = Application::boot();
+        let (mut app, _) = Application::new(None, Settings::default());
 
         let _ = app.open_connection(request("first"));
         let _ = app.open_connection(request("second"));
@@ -109,7 +111,7 @@ mod tests {
 
     #[test]
     fn open_connection_names_an_empty_hostname_after_the_protocol_and_id() {
-        let (mut app, _) = Application::boot();
+        let (mut app, _) = Application::new(None, Settings::default());
 
         let _ = app.open_connection(request(""));
 
@@ -118,7 +120,7 @@ mod tests {
 
     #[test]
     fn close_connection_removes_it_and_returns_to_the_connect_tab() {
-        let (mut app, _) = Application::boot();
+        let (mut app, _) = Application::new(None, Settings::default());
         let _ = app.open_connection(request("only"));
         assert_eq!(app.tab, Tab::Connection(0));
 
@@ -130,7 +132,7 @@ mod tests {
 
     #[test]
     fn close_connection_leaves_an_unrelated_active_tab_alone() {
-        let (mut app, _) = Application::boot();
+        let (mut app, _) = Application::new(None, Settings::default());
         let _ = app.open_connection(request("first"));
         let _ = app.open_connection(request("second"));
         app.tab = Tab::Manager;
@@ -306,42 +308,80 @@ mod tests {
             })
             .expect("the power menu has a power-off action");
 
+        let conn = |message| Message::Connection(0, message);
+        let settings_page = |section, select| {
+            vec![
+                Message::SelectTab(Tab::Settings),
+                Message::Settings(ui::settings::Message::Section(section)),
+                Message::Settings(ui::settings::Message::Toggle(select)),
+            ]
+        };
+
         // (name, whether a connector session is fed in first, messages)
-        let states: [(&str, bool, Vec<Conn>); 7] = [
+        let states: Vec<(&str, bool, Vec<Message>)> = vec![
             ("window", false, vec![]),
             ("connector", true, vec![]),
             (
                 "power-menu",
                 true,
-                vec![Conn::ToggleMenu(ToolbarMenu::Contributed("power".into()))],
+                vec![conn(Conn::ToggleMenu(ToolbarMenu::Contributed(
+                    "power".into(),
+                )))],
             ),
-            ("confirm", true, vec![Conn::Invoke(power_off)]),
+            ("confirm", true, vec![conn(Conn::Invoke(power_off))]),
             (
                 "display-menu",
                 false,
-                vec![ui::connection::Message::ToggleMenu(
-                    ui::connection::ToolbarMenu::Display,
-                )],
+                vec![conn(Conn::ToggleMenu(ToolbarMenu::Display))],
             ),
             (
                 "input-menu",
                 false,
                 vec![
-                    ui::connection::Message::ToggleMenu(ui::connection::ToolbarMenu::Input),
-                    ui::connection::Message::OpenSubmenu(ui::connection::Submenu::KeyboardStyle),
+                    conn(Conn::ToggleMenu(ToolbarMenu::Input)),
+                    conn(Conn::OpenSubmenu(ui::connection::Submenu::KeyboardStyle)),
                 ],
             ),
             (
                 "keyboard",
                 false,
-                vec![ui::connection::Message::SetKeyboardSize(
+                vec![conn(Conn::SetKeyboardSize(
                     ui::connection::KeyboardSize::Large,
-                )],
+                ))],
+            ),
+            (
+                "recording-menu",
+                false,
+                vec![
+                    conn(Conn::ToggleMenu(ToolbarMenu::Recording)),
+                    conn(Conn::OpenSubmenu(ui::connection::Submenu::RecordingFormat)),
+                ],
+            ),
+            (
+                "settings-input",
+                false,
+                settings_page(
+                    ui::settings::Section::Input,
+                    ui::settings::Select::KeyboardLayout,
+                ),
+            ),
+            (
+                "settings-recording",
+                false,
+                settings_page(
+                    ui::settings::Section::Recording,
+                    ui::settings::Select::RecordingFolder,
+                ),
+            ),
+            (
+                "quit",
+                false,
+                vec![Message::RequestClose(window::Id::unique())],
             ),
         ];
 
         for (name, with_session, messages) in states {
-            let (mut app, _) = Application::boot();
+            let (mut app, _) = Application::new(None, Settings::default());
             let _ = app.open_connection(request("Connection #1"));
             let _ = app.open_connection(request("Connection #2"));
             app.tab = Tab::Connection(0);
@@ -349,7 +389,7 @@ mod tests {
                 feed_ilo_like_session(&mut app);
             }
             for message in messages {
-                let _ = app.update(Message::Connection(0, message));
+                let _ = app.update(message);
             }
             let mut simulator =
                 iced_test::Simulator::with_size(settings.clone(), (1024.0, 768.0), app.view());
@@ -393,9 +433,12 @@ const TAB_WIDTH: f32 = 150.0;
 const TITLE_BAR_HEIGHT: f32 = ui::style::CONTROL_HEIGHT + 2.0 * ui::style::SPACING;
 
 fn main() -> iced::Result {
-    prefer_dx12();
+    let config_dir = persistence::settings::config_dir();
+    let settings = Settings::load(config_dir.as_deref());
+    apply_graphics_backend(settings.general.graphics_backend);
 
-    iced::application::application(Application::boot, Application::update, Application::view)
+    let boot = move || Application::new(config_dir.clone(), settings.clone());
+    iced::application::application(boot, Application::update, Application::view)
         .title(Application::title)
         .window(window::Settings {
             icon: None, // TODO: add window icon
@@ -410,19 +453,30 @@ fn main() -> iced::Result {
         .run()
 }
 
-/// Defaults wgpu to DX12 on Windows, whose swapchain keeps up with live
-/// resizing far better than Vulkan's. iced only takes the backend from the
-/// environment, so set `WGPU_BACKEND` unless the user already chose one.
-#[cfg(target_os = "windows")]
-fn prefer_dx12() {
-    if std::env::var_os("WGPU_BACKEND").is_none() {
-        // SAFETY: runs first thing in `main`, before any other thread exists.
-        unsafe { std::env::set_var("WGPU_BACKEND", "dx12") };
+/// Tells wgpu which API to draw with on Windows, as chosen in Settings
+/// (DX12 by default: its swapchain keeps up with live resizing far better
+/// than Vulkan's). iced only takes the backend from the environment, so set
+/// `WGPU_BACKEND` — unless the user already did, which wins.
+fn apply_graphics_backend(backend: GraphicsBackend) {
+    if !cfg!(windows) || std::env::var_os("WGPU_BACKEND").is_some() {
+        return;
     }
+    // SAFETY: runs at the start of `main`, before any other thread exists.
+    unsafe { std::env::set_var("WGPU_BACKEND", backend.wgpu_name()) };
 }
 
-#[cfg(not(target_os = "windows"))]
-fn prefer_dx12() {}
+fn pick_recording_folder() -> Task<Message> {
+    Task::perform(
+        async {
+            rfd::AsyncFileDialog::new()
+                .set_title("Save recordings to")
+                .pick_folder()
+                .await
+                .map(|folder| folder.path().to_path_buf())
+        },
+        Message::RecordingFolderPicked,
+    )
+}
 
 #[cfg(target_os = "macos")]
 fn platform_specific() -> window::settings::PlatformSpecific {
@@ -458,8 +512,15 @@ struct Application {
 
     sessions: persistence::sessions::Sessions,
 
+    settings: Settings,
+    settings_tab: ui::settings::State,
+    /// Where settings are saved; `None` keeps them in memory only.
+    config_dir: Option<PathBuf>,
+
     /// Tracked so the title bar shows restore rather than maximise.
     maximized: bool,
+    /// The window waiting on "Quit?" confirmation, if any.
+    quit_prompt: Option<window::Id>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -477,11 +538,15 @@ enum Message {
     ConnectTab(ui::connect::Message),
     Manager(ui::manager::Message),
     Connection(u64, ui::connection::Message),
+    Settings(ui::settings::Message),
+    RecordingFolderPicked(Option<PathBuf>),
 
     Window(WindowAction),
     Resized(iced::window::Id),
     Maximized(bool),
     RequestClose(iced::window::Id),
+    Quit(iced::window::Id),
+    CancelQuit,
 }
 
 /// Window management triggered from the custom title bar.
@@ -495,7 +560,7 @@ enum WindowAction {
 }
 
 impl Application {
-    fn boot() -> (Self, Task<Message>) {
+    fn new(config_dir: Option<PathBuf>, settings: Settings) -> (Self, Task<Message>) {
         (
             Self {
                 connections: Vec::new(),
@@ -503,7 +568,11 @@ impl Application {
                 tab: Tab::Connect,
                 connect_tab: ui::connect::State::new(),
                 sessions: persistence::sessions::Sessions::load(),
+                settings,
+                settings_tab: ui::settings::State::default(),
+                config_dir,
                 maximized: false,
+                quit_prompt: None,
             },
             Task::none(),
         )
@@ -536,9 +605,29 @@ impl Application {
                 }
             },
             Message::Connection(id, message) => {
-                if matches!(message, ui::connection::Message::Close) {
-                    self.close_connection(id);
-                    return Task::none();
+                use ui::connection::Message as Conn;
+                // Messages about app-wide state are the application's to handle.
+                match message {
+                    Conn::Close => {
+                        self.close_connection(id);
+                        return Task::none();
+                    }
+                    Conn::OpenSettings(section) => {
+                        self.close_menu(id);
+                        self.settings_tab.open_section(section);
+                        self.tab = Tab::Settings;
+                        return Task::none();
+                    }
+                    Conn::ChangeSetting(change) => {
+                        self.close_menu(id);
+                        self.change_setting(change);
+                        return Task::none();
+                    }
+                    Conn::ChooseRecordingFolder => {
+                        self.close_menu(id);
+                        return pick_recording_folder();
+                    }
+                    _ => {}
                 }
                 let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) else {
                     return Task::none();
@@ -559,10 +648,48 @@ impl Application {
                 self.maximized = maximized;
                 Task::none()
             }
+            Message::Settings(message) => {
+                self.settings_tab.update(&message);
+                match message {
+                    ui::settings::Message::Change(change) => {
+                        self.change_setting(change);
+                        Task::none()
+                    }
+                    ui::settings::Message::ChooseRecordingFolder => pick_recording_folder(),
+                    ui::settings::Message::Section(_)
+                    | ui::settings::Message::Toggle(_)
+                    | ui::settings::Message::Dismiss => Task::none(),
+                }
+            }
+            Message::RecordingFolderPicked(folder) => {
+                if let Some(folder) = folder {
+                    self.change_setting(ui::settings::Change::RecordingFolder(folder));
+                }
+                Task::none()
+            }
             Message::RequestClose(id) => {
-                // TODO: check if there are any active connections
+                if self.settings.general.confirm_quit && !self.connections.is_empty() {
+                    self.quit_prompt = Some(id);
+                    return Task::none();
+                }
                 window::close(id)
             }
+            Message::Quit(id) => window::close(id),
+            Message::CancelQuit => {
+                self.quit_prompt = None;
+                Task::none()
+            }
+        }
+    }
+
+    fn change_setting(&mut self, change: ui::settings::Change) {
+        ui::settings::apply(&mut self.settings, change);
+        self.settings.save(self.config_dir.as_deref());
+    }
+
+    fn close_menu(&mut self, id: u64) {
+        if let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) {
+            let _ = connection.update(ui::connection::Message::CloseMenu);
         }
     }
 
@@ -594,6 +721,7 @@ impl Application {
             target,
             TlsPolicy::default(),
             request.password,
+            &self.settings.input,
         ));
         self.tab = Tab::Connection(id);
         Task::none()
@@ -624,7 +752,34 @@ impl Application {
         } else {
             content.into()
         };
+        let window = match self.quit_prompt {
+            Some(id) => stack![window, self.quit_dialog(id)].into(),
+            None => window,
+        };
         ui::arrow_cursor(window)
+    }
+
+    fn quit_dialog(&self, id: window::Id) -> Element<'_, Message> {
+        let message = match self.connections.len() {
+            1 => "The open connection will be closed.",
+            _ => "All open connections will be closed.",
+        };
+        ui::dialog::view(
+            "Quit?",
+            message,
+            vec![
+                ui::dialog::Button {
+                    label: "Cancel",
+                    on_press: Message::CancelQuit,
+                    kind: ui::dialog::Kind::Secondary,
+                },
+                ui::dialog::Button {
+                    label: "Quit",
+                    on_press: Message::Quit(id),
+                    kind: ui::dialog::Kind::Destructive,
+                },
+            ],
+        )
     }
 
     fn body(&self) -> Element<'_, Message> {
@@ -635,12 +790,14 @@ impl Application {
                 Some(connection) => {
                     let id = *id;
                     connection
-                        .view()
+                        .view(&self.settings)
                         .map(move |message| Message::Connection(id, message))
                 }
                 None => text("Connection closed").into(),
             },
-            Tab::Settings => text("Settings").into(),
+            Tab::Settings => {
+                ui::settings::view(&self.settings_tab, &self.settings).map(Message::Settings)
+            }
         }
     }
 

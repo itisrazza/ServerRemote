@@ -53,7 +53,8 @@ pub fn toolbar_menus<'a>(
                     open.filter(|open| open.menu == menu)
                         .map(|open| match &open.submenu {
                             Some(Submenu::Contributed(path)) => path.as_slice(),
-                            Some(Submenu::KeyboardStyle) | None => &[],
+                            // The built-in menus' submenus.
+                            Some(_) | None => &[],
                         });
                 Some(menu::button_menu(
                     cache.handle(icon),

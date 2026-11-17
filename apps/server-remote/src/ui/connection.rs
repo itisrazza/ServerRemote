@@ -17,7 +17,7 @@ use iced::{
     Alignment, Element, Length, Point, Subscription, Task, Theme,
     futures::{SinkExt, Stream, channel::mpsc as futures_mpsc},
     keyboard,
-    widget::{Column, Id, Row, Space, button, center, container, opaque, operation, stack, text},
+    widget::{Column, Id, Row, Space, button, center, operation, stack, text},
 };
 use server_remote_core::{
     Action, ActionValue, Capabilities, Connector, Control, DummyConnector, InputEvent,
@@ -30,12 +30,15 @@ use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
 use super::contributed;
+use super::dialog;
 use super::icon;
 use super::kvm_display::{DisplayFrame, kvm_display};
 use super::menu::{self, Item};
+use super::settings::{self as settings_ui, Change, Section};
 use super::style;
 use super::virtual_keyboard;
 use super::virtual_trackpad;
+use crate::persistence::settings::{self as settings, Scaling, Settings};
 
 /// The protocol a connection speaks. Only [`Protocol::Dummy`] is implemented so
 /// far; the others report "not implemented yet" when connected.
@@ -101,11 +104,16 @@ impl std::fmt::Display for Protocol {
 }
 
 /// The layout of the virtual on-screen keyboard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum KeyboardSize {
+    #[serde(rename = "compact")]
     Small,
     #[default]
+    #[serde(rename = "tenkeyless")]
     Medium,
+    #[serde(rename = "full-size")]
     Large,
 }
 
@@ -116,7 +124,7 @@ impl KeyboardSize {
         KeyboardSize::Large,
     ];
 
-    fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             KeyboardSize::Small => "Compact",
             KeyboardSize::Medium => "Tenkeyless",
@@ -148,6 +156,11 @@ pub enum ToolbarMenu {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Submenu {
     KeyboardStyle,
+    KeyboardLayout,
+    DisplayScale,
+    RecordingFolder,
+    RecordingQuality,
+    RecordingFormat,
     /// A submenu of a contributed menu, by its index path through the tree.
     Contributed(Vec<usize>),
 }
@@ -317,6 +330,12 @@ pub enum Message {
     OpenSubmenu(Submenu),
     /// Close whichever menu is open.
     CloseMenu,
+    /// Show this section of the Settings tab. Handled by the application.
+    OpenSettings(Section),
+    /// Change an app-wide setting. Handled by the application.
+    ChangeSetting(Change),
+    /// Pick a new folder for recordings. Handled by the application.
+    ChooseRecordingFolder,
 }
 
 impl Message {
@@ -344,6 +363,7 @@ impl State {
         target: Target,
         tls: TlsPolicy,
         password: String,
+        input: &settings::Input,
     ) -> Self {
         Self {
             display_id: Id::unique(),
@@ -359,8 +379,8 @@ impl State {
             next_generation: 0,
             size: None,
             controls: None,
-            show_virtual_keyboard: false,
-            keyboard_size: KeyboardSize::default(),
+            show_virtual_keyboard: input.open_keyboard_on_connect,
+            keyboard_size: input.keyboard_style,
             virtual_keyboard: virtual_keyboard::State::default(),
             show_virtual_trackpad: false,
             virtual_trackpad: virtual_trackpad::State::default(),
@@ -438,9 +458,12 @@ impl State {
                     });
                 }
             }
-            // The application owns the tab list, so it intercepts `Close`; this
-            // arm only satisfies exhaustiveness.
-            Message::Close => {}
+            // The application owns the tab list and the settings, so it
+            // intercepts these; this arm only satisfies exhaustiveness.
+            Message::Close
+            | Message::OpenSettings(_)
+            | Message::ChangeSetting(_)
+            | Message::ChooseRecordingFolder => {}
             Message::ToggleVirtualKeyboard => {
                 self.show_virtual_keyboard = !self.show_virtual_keyboard;
             }
@@ -613,7 +636,7 @@ impl State {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
         let body: Element<'_, Message> = match (&self.phase, &self.frame) {
             (Phase::Connecting, _) => text("Connecting…").into(),
             (Phase::Disconnected(reason), _) => {
@@ -653,7 +676,7 @@ impl State {
 
         let content = Column::new()
             .spacing(4)
-            .push((!matches!(self.phase, Phase::Disconnected(_))).then(|| self.toolbar()))
+            .push((!matches!(self.phase, Phase::Disconnected(_))).then(|| self.toolbar(settings)))
             .push(center(body))
             .push(panel)
             .push(self.status_bar());
@@ -664,7 +687,7 @@ impl State {
         }
     }
 
-    fn toolbar(&self) -> Element<'_, Message> {
+    fn toolbar<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
         let is_open =
             |menu: &ToolbarMenu| self.menu.as_ref().is_some_and(|open| open.menu == *menu);
         let button_menu = |menu: ToolbarMenu, icon: icons::Icon, items| {
@@ -692,17 +715,17 @@ impl State {
             .push(button_menu(
                 ToolbarMenu::Display,
                 icons::SCREEN,
-                display_menu(),
+                display_menu(settings, &submenu_open),
             ))
             .push(button_menu(
                 ToolbarMenu::Input,
                 icons::KEYBOARD,
-                self.input_menu(submenu_open(Submenu::KeyboardStyle)),
+                self.input_menu(settings, &submenu_open),
             ))
             .push(button_menu(
                 ToolbarMenu::Recording,
                 icons::CAMERA,
-                recording_menu(),
+                recording_menu(settings, &submenu_open),
             ))
             .push(style::vertical_divider(20.0))
             .push(
@@ -779,7 +802,11 @@ impl State {
         .into()
     }
 
-    fn input_menu(&self, keyboard_style_open: bool) -> Vec<Item<Message>> {
+    fn input_menu(
+        &self,
+        settings: &Settings,
+        submenu_open: &impl Fn(Submenu) -> bool,
+    ) -> Vec<Item<Message>> {
         let actions = self
             .capabilities
             .input_actions
@@ -805,15 +832,26 @@ impl State {
                     .icon(icons::CURSOR_1)
                     .checked(self.show_virtual_trackpad),
                 Item::Separator,
-                Item::submenu("Keyboard layout", Vec::new(), false, None),
-                Item::submenu(
+                submenu(
+                    "Keyboard layout",
+                    Submenu::KeyboardLayout,
+                    settings_ui::keyboard_layouts(settings, |layout| {
+                        Message::ChangeSetting(Change::KeyboardLayout(layout))
+                    }),
+                    submenu_open,
+                ),
+                submenu(
                     "Keyboard style",
+                    Submenu::KeyboardStyle,
                     keyboard_styles,
-                    keyboard_style_open,
-                    Some(Message::OpenSubmenu(Submenu::KeyboardStyle)),
+                    submenu_open,
                 ),
                 Item::Separator,
-                Item::entry("Input settings…", None).icon(icons::SETTINGS),
+                Item::entry(
+                    "Input settings…",
+                    Some(Message::OpenSettings(Section::Input)),
+                )
+                .icon(icons::SETTINGS),
             ])
             .collect()
     }
@@ -910,33 +948,101 @@ impl State {
     }
 }
 
-/// Display options. Scaling is fixed to fit-with-aspect-ratio for now, so
-/// these only reflect that and are otherwise disabled.
-fn display_menu() -> Vec<Item<Message>> {
+/// A submenu that opens as `which`.
+fn submenu(
+    label: &str,
+    which: Submenu,
+    items: Vec<Item<Message>>,
+    submenu_open: &impl Fn(Submenu) -> bool,
+) -> Item<Message> {
+    Item::submenu(
+        label,
+        items,
+        submenu_open(which.clone()),
+        Some(Message::OpenSubmenu(which)),
+    )
+}
+
+/// Display options, backed by the app-wide display settings. Zooming isn't
+/// built yet, so those entries stay disabled.
+fn display_menu(
+    settings: &Settings,
+    submenu_open: &impl Fn(Submenu) -> bool,
+) -> Vec<Item<Message>> {
+    let display = &settings.display;
+    let scaling = |scaling: Scaling| Some(Message::ChangeSetting(Change::Scaling(scaling)));
     vec![
-        Item::entry("Keep aspect ratio", None).checked(true),
-        Item::submenu("Display scale", Vec::new(), false, None),
+        Item::entry(
+            "Keep aspect ratio",
+            Some(Message::ChangeSetting(Change::KeepAspectRatio(
+                !display.keep_aspect_ratio,
+            ))),
+        )
+        .checked(display.keep_aspect_ratio),
+        submenu(
+            "Display scale",
+            Submenu::DisplayScale,
+            settings_ui::display_scales(settings, |scale| {
+                Message::ChangeSetting(Change::DisplayScale(scale))
+            }),
+            submenu_open,
+        ),
         Item::Separator,
-        Item::entry("Scale to fit", None).checked(true),
+        Item::entry("Scale to fit", scaling(Scaling::Fit)).checked(display.scaling == Scaling::Fit),
         Item::Separator,
         Item::entry("Zoom out", None),
-        Item::entry("100%", None),
+        Item::entry("100%", scaling(Scaling::Actual)).checked(display.scaling == Scaling::Actual),
         Item::entry("Zoom in", None),
         Item::Separator,
-        Item::entry("Display settings…", None).icon(icons::SETTINGS),
+        Item::entry(
+            "Display settings…",
+            Some(Message::OpenSettings(Section::Display)),
+        )
+        .icon(icons::SETTINGS),
     ]
 }
 
-/// Recording isn't implemented yet; the menu is laid out but disabled.
-fn recording_menu() -> Vec<Item<Message>> {
+/// Recording options, backed by the app-wide recording settings. Recording
+/// itself isn't built yet, so starting one stays disabled.
+fn recording_menu(
+    settings: &Settings,
+    submenu_open: &impl Fn(Submenu) -> bool,
+) -> Vec<Item<Message>> {
     vec![
         Item::entry("Start recording", None).icon(icons::CAMERA),
         Item::Separator,
-        Item::submenu("Save to", Vec::new(), false, None),
-        Item::submenu("Quality", Vec::new(), false, None),
-        Item::submenu("Format", Vec::new(), false, None),
+        submenu(
+            "Save to",
+            Submenu::RecordingFolder,
+            settings_ui::recording_folders(
+                settings,
+                Message::ChangeSetting,
+                Message::ChooseRecordingFolder,
+            ),
+            submenu_open,
+        ),
+        submenu(
+            "Quality",
+            Submenu::RecordingQuality,
+            settings_ui::recording_qualities(settings, |quality| {
+                Message::ChangeSetting(Change::RecordingQuality(quality))
+            }),
+            submenu_open,
+        ),
+        submenu(
+            "Format",
+            Submenu::RecordingFormat,
+            settings_ui::recording_formats(settings, |format| {
+                Message::ChangeSetting(Change::RecordingFormat(format))
+            }),
+            submenu_open,
+        ),
         Item::Separator,
-        Item::entry("Recording settings…", None).icon(icons::SETTINGS),
+        Item::entry(
+            "Recording settings…",
+            Some(Message::OpenSettings(Section::Recording)),
+        )
+        .icon(icons::SETTINGS),
     ]
 }
 
@@ -1006,69 +1112,44 @@ async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
 }
 
 fn modal_view(modal: &Modal) -> Element<'_, Message> {
-    let (title, message, confirm) = match modal {
+    match modal {
         Modal::Confirm(action) => {
             let confirmation = action
                 .confirm
                 .as_ref()
                 .expect("only actions with a confirmation are confirmed");
-            (
-                confirmation.title.as_ref(),
-                confirmation.message.as_ref(),
-                Some((
-                    confirmation.confirm_label.as_ref(),
-                    confirmation.destructive,
-                )),
+            let kind = if confirmation.destructive {
+                dialog::Kind::Destructive
+            } else {
+                dialog::Kind::Primary
+            };
+            dialog::view(
+                &confirmation.title,
+                &confirmation.message,
+                vec![
+                    dialog::Button {
+                        label: "Cancel",
+                        on_press: Message::CloseModal,
+                        kind: dialog::Kind::Secondary,
+                    },
+                    dialog::Button {
+                        label: &confirmation.confirm_label,
+                        on_press: Message::Confirm,
+                        kind,
+                    },
+                ],
             )
         }
-        Modal::Error { title, message } => (title.as_str(), message.as_str(), None),
-    };
-
-    let buttons = match confirm {
-        Some((label, destructive)) => Row::new()
-            .push(dialog_button("Cancel", Message::CloseModal, None))
-            .push(dialog_button(label, Message::Confirm, Some(destructive))),
-        None => Row::new().push(dialog_button("OK", Message::CloseModal, Some(false))),
-    };
-
-    let dialog = container(
-        Column::new()
-            .spacing(12)
-            .push(text(title).size(14).font(style::BOLD))
-            .push(text(message))
-            .push(
-                Row::new()
-                    .push(Space::new().width(Length::Fill))
-                    .push(buttons.spacing(8)),
-            ),
-    )
-    .width(320)
-    .padding(16)
-    .style(style::dialog);
-
-    opaque(
-        container(dialog)
-            .center(Length::Fill)
-            .style(style::backdrop),
-    )
-}
-
-/// `primary` is `None` for a secondary (bordered) button, or whether the
-/// primary button is destructive.
-fn dialog_button<'a>(
-    label: &'a str,
-    on_press: Message,
-    primary: Option<bool>,
-) -> Element<'a, Message> {
-    button(container(text(label)).center_y(Length::Fill))
-        .height(style::CONTROL_HEIGHT)
-        .padding([0, 12])
-        .style(move |theme, status| match primary {
-            Some(destructive) => style::dialog_button(theme, status, destructive),
-            None => style::bordered_button(theme, status, false),
-        })
-        .on_press(on_press)
-        .into()
+        Modal::Error { title, message } => dialog::view(
+            title,
+            message,
+            vec![dialog::Button {
+                label: "OK",
+                on_press: Message::CloseModal,
+                kind: dialog::Kind::Primary,
+            }],
+        ),
+    }
 }
 
 /// Translate an iced key into an X11 keysym, which is what RFB/Spice expect.
@@ -1227,7 +1308,43 @@ mod tests {
             Target::new("localhost", 0),
             TlsPolicy::default(),
             String::new(),
+            &settings::Input::default(),
         )
+    }
+
+    #[test]
+    fn new_connections_take_the_keyboard_defaults() {
+        let cases = [
+            (
+                "defaults",
+                settings::Input::default(),
+                false,
+                KeyboardSize::Medium,
+            ),
+            (
+                "full size, shown on connect",
+                settings::Input {
+                    keyboard_style: KeyboardSize::Large,
+                    open_keyboard_on_connect: true,
+                    ..settings::Input::default()
+                },
+                true,
+                KeyboardSize::Large,
+            ),
+        ];
+        for (name, input, shown, size) in cases {
+            let state = State::new(
+                0,
+                Arc::from("test"),
+                Protocol::Dummy,
+                Target::new("localhost", 0),
+                TlsPolicy::default(),
+                String::new(),
+                &input,
+            );
+            assert_eq!(state.show_virtual_keyboard, shown, "{name}");
+            assert_eq!(state.keyboard_size, size, "{name}");
+        }
     }
 
     fn wired_controls() -> (

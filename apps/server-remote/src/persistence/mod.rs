@@ -1,10 +1,8 @@
-//! Local persistence: [`sessions`] (saved connection profiles), stored as
-//! TOML files in the platform config directory.
-//!
-//! There are no application-wide settings yet to justify their own module —
-//! `store` is generic, so adding one later is a matter of a `Settings` struct
-//! plus a `settings.rs` mirroring `sessions.rs`, not new plumbing.
+//! Local persistence: [`sessions`] (saved connection profiles) and
+//! [`settings`] (app-wide preferences), stored as TOML files in the platform
+//! config directory.
 
 mod store;
 
 pub mod sessions;
+pub mod settings;
