@@ -1,0 +1,188 @@
+name: Release
+
+# Publishes a validated release candidate. Pushing a tag vX.Y.Z on a commit
+# of release/vX.Y takes the candidate build.yml made for that commit, signs
+# and notarises the macOS build, and drafts a GitHub release with every
+# platform attached. Nothing is rebuilt: what was tested is what ships.
+#
+# Windows and Linux builds ship unsigned for now; SHA256SUMS covers them.
+# See docs/releasing.md for the process and the secrets this needs.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  resolve:
+    name: Find the release candidate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.find.outputs.version }}
+      label: ${{ steps.find.outputs.label }}
+      run-id: ${{ steps.find.outputs.run-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag and find its candidate build
+        id: find
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          branch="release/v${version%.*}"
+          sha="$GITHUB_SHA"
+
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [[ "$cargo_version" != "$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match Cargo.toml version $cargo_version"
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$sha" "origin/$branch"; then
+            echo "::error::$GITHUB_REF_NAME isn't on $branch; tag a release candidate from that branch"
+            exit 1
+          fi
+
+          run_id=$(gh run list --workflow build.yml --branch "$branch" --commit "$sha" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful build of ${sha::7} on $branch; push it there and validate the candidate first"
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "label=$version-rc.${sha::7}"
+            echo "run-id=$run_id"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $version from candidate run $run_id" >> "$GITHUB_STEP_SUMMARY"
+
+  macos:
+    name: Sign and notarise macOS
+    needs: resolve
+    runs-on: macos-latest
+    # Signing secrets live in this environment, so only release runs see them.
+    environment: release
+    env:
+      CANDIDATE: server-remote-${{ needs.resolve.outputs.label }}-macos-universal
+      RELEASE: server-remote-${{ needs.resolve.outputs.version }}-macos-universal
+    steps:
+      - name: Download the candidate
+        run: |
+          gh run download "${{ needs.resolve.outputs.run-id }}" -n "$CANDIDATE" -D candidate
+          mkdir dist
+          tar -xzf "candidate/$CANDIDATE.tar.gz" -C dist
+          mv "dist/$CANDIDATE" "dist/$RELEASE"
+
+      - name: Import the signing certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 24)
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" \
+            -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Sign
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          codesign --force --options runtime --timestamp \
+            --sign "$MACOS_SIGNING_IDENTITY" "dist/$RELEASE/server-remote"
+          codesign --verify --strict --verbose=2 "dist/$RELEASE/server-remote"
+
+      # A bare executable can't have its ticket stapled; Gatekeeper fetches
+      # it online on first launch.
+      - name: Notarise
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          echo "$APPLE_API_KEY" | base64 --decode > "$RUNNER_TEMP/api-key.p8"
+          ditto -c -k --keepParent "dist/$RELEASE/server-remote" "$RUNNER_TEMP/notarise.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarise.zip" \
+            --key "$RUNNER_TEMP/api-key.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait
+          rm "$RUNNER_TEMP/api-key.p8"
+
+      - name: Package
+        run: tar -czf "$RELEASE.tar.gz" -C dist "$RELEASE"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.RELEASE }}
+          path: ${{ env.RELEASE }}.tar.gz
+          if-no-files-found: error
+
+      - name: Remove the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+  publish:
+    name: Draft the GitHub release
+    needs: [resolve, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      LABEL: ${{ needs.resolve.outputs.label }}
+    steps:
+      - name: Collect the builds
+        run: |
+          mkdir -p candidate assets
+
+          gh run download "${{ needs.resolve.outputs.run-id }}" \
+            -n "server-remote-$LABEL-windows-x64" -D "candidate/server-remote-$VERSION-windows-x64"
+          (cd candidate && zip -r "../assets/server-remote-$VERSION-windows-x64.zip" \
+            "server-remote-$VERSION-windows-x64")
+
+          gh run download "${{ needs.resolve.outputs.run-id }}" \
+            -n "server-remote-$LABEL-linux-x64" -D candidate
+          tar -xzf "candidate/server-remote-$LABEL-linux-x64.tar.gz" -C candidate
+          mv "candidate/server-remote-$LABEL-linux-x64" "candidate/server-remote-$VERSION-linux-x64"
+          tar -czf "assets/server-remote-$VERSION-linux-x64.tar.gz" \
+            -C candidate "server-remote-$VERSION-linux-x64"
+
+          gh run download "$GITHUB_RUN_ID" \
+            -n "server-remote-$VERSION-macos-universal" -D assets
+
+          (cd assets && sha256sum * > SHA256SUMS)
+          cat assets/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+
+      # A draft, so the notes can be edited before anyone sees it.
+      - name: Create the draft release
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --draft --verify-tag --generate-notes \
+            --title "ServerRemote $VERSION"
