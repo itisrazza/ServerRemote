@@ -66,6 +66,13 @@ It's a Cargo workspace:
 See [docs/architecture/](docs/architecture/README.md) for how connectors, sessions,
 and the capability-driven UI fit together.
 
+## Development and releases
+
+Work happens on branches merged into `main` by PR. Releases are cut as
+`release/vX.Y` branches, whose builds are release candidates; a validated
+candidate is tagged, and the macOS build is signed and notarised for the
+release. See [docs/releasing.md](docs/releasing.md).
+
 ## Translations
 
 The app's text lives in [Fluent](https://projectfluent.org/) files under

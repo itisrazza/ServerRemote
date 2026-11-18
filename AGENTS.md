@@ -9,7 +9,13 @@ what those don't.
 
 ## Before starting
 
-Other agent sessions commit to `main` too, sometimes while you work. Run
+Work on a branch off `main` (`feature/<name>`, `fix/<name>`) and merge it
+through a PR; nothing is committed to `main` directly. Fixes for a release
+branch land on `main` first and are cherry-picked; see
+[docs/releasing.md](docs/releasing.md) for branches, release candidates and
+tagging.
+
+Other agent sessions merge into `main` too, sometimes while you work. Run
 `git fetch` and read `git log --oneline origin/main -15` before trusting
 anything you remember about the code (including this file), rebase onto
 `origin/main` before building on it, and re-read a file before rewriting it

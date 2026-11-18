@@ -2,6 +2,11 @@ name: Build
 
 # Release builds for each desktop platform, uploaded as artifacts. Only for
 # the main line and release branches; other branches get CI checks only.
+#
+# - main: development builds, named after the commit.
+# - release/vX.Y: release candidates, named after the version and commit.
+#   A validated candidate is what release.yml signs and publishes, so it
+#   doesn't rebuild. See docs/releasing.md.
 on:
   push:
     branches:
@@ -24,8 +29,47 @@ defaults:
     shell: bash
 
 jobs:
+  label:
+    name: Label
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.label.outputs.label }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # On a release branch the workspace version must belong to that branch
+      # (release/v0.2 builds 0.2.x), so candidates can't carry a stale version.
+      - name: Work out the build label
+        id: label
+        run: |
+          sha="${GITHUB_SHA::7}"
+          if [[ "$GITHUB_REF_NAME" == release/v* ]]; then
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+            series="${GITHUB_REF_NAME#release/v}"
+            if [[ "$version" != "$series".* ]]; then
+              echo "::error::Cargo.toml has version $version, but $GITHUB_REF_NAME builds $series.x"
+              exit 1
+            fi
+            label="$version-rc.$sha"
+            {
+              echo "## Release candidate $version"
+              echo
+              echo "Commit \`$sha\`. Install the artifacts below to test it."
+              echo "Once validated, tag this commit to release it:"
+              echo
+              echo '```sh'
+              echo "git tag -a v$version $GITHUB_SHA -m 'ServerRemote $version'"
+              echo "git push origin v$version"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            label="$sha"
+          fi
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.name }}
+    needs: label
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -63,7 +107,7 @@ jobs:
       - name: Stage artifact
         id: stage
         run: |
-          name="server-remote-${GITHUB_SHA::7}-${{ matrix.platform }}"
+          name="server-remote-${{ needs.label.outputs.label }}-${{ matrix.platform }}"
           mkdir -p "dist/$name"
 
           case "${{ matrix.platform }}" in
