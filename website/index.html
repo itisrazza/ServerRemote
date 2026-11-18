@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Server Remote</title>
+  <meta name="description" content="One native client for remote desktops and server consoles: VNC, Spice and HPE iLO, on macOS, Windows and Linux.">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="./">
+      <img src="logo.svg" alt="" width="24" height="24">
+      <span>Server Remote</span>
+    </a>
+    <nav>
+      <a href="#protocols">Protocols</a>
+      <a href="#get-it">Get it</a>
+      <a href="https://github.com/itisrazza/ServerRemote">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <img class="hero-logo" src="logo.svg" alt="" width="72" height="72">
+      <h1>Server Remote</h1>
+      <p class="lede">
+        One native client for remote desktops and server consoles, built for
+        the protocols that never got a good client on the platform you use.
+      </p>
+      <p class="actions">
+        <a class="button primary" href="#get-it">Get it</a>
+        <a class="button" href="https://github.com/itisrazza/ServerRemote">View on GitHub</a>
+      </p>
+      <p class="note">Early and experimental. Free and open source under MIT or Apache 2.0.</p>
+    </section>
+
+    <figure class="shot">
+      <picture>
+        <source srcset="screenshot-light.png" media="(prefers-color-scheme: light)">
+        <img src="screenshot-dark.png" width="1024" height="768"
+             alt="Server Remote with two connection tabs open, a Power menu with shut down, restart, power off and cold boot, and a status bar showing link speed, resolution, encryption and server power and health.">
+      </picture>
+      <figcaption>A preview of the iLO console: the Power menu and the status bar come from the connector.</figcaption>
+    </figure>
+
+    <section class="why">
+      <h2>Why another remote client?</h2>
+      <p>
+        Most protocols already have a decent client somewhere. Server Remote
+        goes after the gaps:
+      </p>
+      <div class="cards">
+        <article>
+          <h3>Spice on macOS</h3>
+          <p>There's no good native Spice client for the Mac. Server Remote speaks Spice itself, through its own Rust client library.</p>
+        </article>
+        <article>
+          <h3>iLO without Windows</h3>
+          <p>HPE's Remote Console is Windows-only, and older iLO hardware predates the HTML5 console. Server Remote is implementing the console protocol from scratch.</p>
+        </article>
+        <article>
+          <h3>One app, every console</h3>
+          <p>VNC, Spice and iLO in tabs side by side, with the same toolbar, on-screen keyboard and trackpad for each.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="protocols">
+      <h2>Protocols</h2>
+      <table>
+        <thead><tr><th>Protocol</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>VNC / RFB</td><td><span class="pill wip">Works</span> Display, mouse and keyboard end to end; richer encodings and TLS to come</td></tr>
+          <tr><td>Spice</td><td><span class="pill wip">In progress</span> Connects, renders, and takes mouse and keyboard input</td></tr>
+          <tr><td>HPE iLO Remote Console</td><td><span class="pill next">Starting soon</span> Video, keyboard, mouse and power control, written from scratch</td></tr>
+          <tr><td>Dummy test pattern</td><td><span class="pill done">Works</span> Try the app without a server</td></tr>
+        </tbody>
+      </table>
+      <p class="small">The <a href="https://github.com/itisrazza/ServerRemote/blob/main/docs/architecture/roadmap.md">roadmap</a> has the details.</p>
+    </section>
+
+    <section class="features">
+      <h2>Built for consoles</h2>
+      <ul class="grid">
+        <li><strong>Native and fast.</strong> Written in Rust with the <a href="https://iced.rs">iced</a> toolkit. One small binary per platform.</li>
+        <li><strong>Careful with TLS.</strong> Self-signed certificates, common on iLO, are trusted by their fingerprint after you approve them, never by switching checks off.</li>
+        <li><strong>Controls from the server.</strong> Each protocol adds its own menus, power actions and status to the toolbar, so iLO gets a Power menu and VNC doesn't.</li>
+        <li><strong>On-screen keyboard and trackpad.</strong> For keys your own OS would catch before the remote sees them.</li>
+        <li><strong>Light and dark.</strong> Follows your system theme.</li>
+        <li><strong>Translated.</strong> English and Romanian so far; adding a language is one Fluent file.</li>
+      </ul>
+    </section>
+
+    <section id="get-it">
+      <h2>Get it</h2>
+      <p>
+        There's no release yet. Builds for Windows, macOS (universal) and Linux
+        come out of every push to <code>main</code>: open the latest
+        <a href="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml?query=branch%3Amain">Build run</a>
+        and download its artifact (you need to be signed in to GitHub).
+      </p>
+      <p>Or build it yourself with Rust 1.85 or newer:</p>
+      <pre><code>git clone https://github.com/itisrazza/ServerRemote
+cd ServerRemote
+cargo run -p server-remote</code></pre>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Server Remote is dual-licensed under
+      <a href="https://github.com/itisrazza/ServerRemote/blob/main/LICENSE-MIT">MIT</a> or
+      <a href="https://github.com/itisrazza/ServerRemote/blob/main/LICENSE-APACHE">Apache 2.0</a>.
+      Icons from IBM's <a href="https://carbondesignsystem.com/">Carbon Design System</a>;
+      type set in <a href="https://github.com/googlefonts/NunitoSans">Nunito Sans</a>.
+    </p>
+  </footer>
+</body>
+</html>

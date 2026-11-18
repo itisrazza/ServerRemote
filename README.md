@@ -63,6 +63,9 @@ It's a Cargo workspace:
   - `icons` (`server-remote-icons`) — the app's icon set, embedded at build
     time, with optional `iced` integration.
 
+`website/` is the landing page, published to GitHub Pages (see its
+[README](website/README.md)).
+
 See [docs/architecture/](docs/architecture/README.md) for how connectors, sessions,
 and the capability-driven UI fit together.
 
