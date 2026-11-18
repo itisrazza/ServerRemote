@@ -37,7 +37,8 @@ CopyRect encodings. Richer encodings, TLS, and damage updates are on the roadmap
 
 iLO 4 logs in over HTTPS with an iLO user name and password. iLOs usually have
 self-signed certificates, so the first connection shows the certificate's
-fingerprint and asks whether to trust it. The protocol is documented in
+fingerprint and asks whether to trust it once, always, or never. How strict
+this is can be changed in Settings › Security. The protocol is documented in
 [`docs/protocols/ilo4.md`](docs/protocols/ilo4.md).
 
 Server setup and known limitations for each protocol are in the

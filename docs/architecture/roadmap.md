@@ -17,6 +17,9 @@ Done:
 - ~~Real TLS transport~~ — `rustls` / `tokio-rustls` in
   `server-remote-core::tls`, with the trust-on-first-use flow driven from a
   prompt in the connection tab (see [TLS trust](tls.md)).
+- ~~Certificate checking settings~~ — Strict, Ask or Off in Settings ›
+  Security, with saved trusted and blocked certificates per host and port.
+  Approved certificates may use legacy 1024-bit RSA keys, as older iLOs do.
 
 In progress:
 
@@ -33,8 +36,6 @@ In progress:
   - Virtual media.
   - Seize or share a console another user holds (today that fails with an
     error).
-  - Remember a trusted certificate in saved sessions, so it isn't asked for
-    on every connection.
 
 Next:
 

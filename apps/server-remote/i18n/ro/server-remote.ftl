@@ -57,7 +57,11 @@ certificate-message =
     { $host } a prezentat un certificat care nu poate fi verificat. Poate fi autosemnat sau expirat. Continuă doar dacă amprenta se potrivește cu cea la care te aștepți:
 
     { $fingerprint }
-certificate-trust = Acceptă și conectează
+certificate-block = Blochează
+certificate-connect-once = Acceptă o dată
+certificate-always-trust = Acceptă mereu
+certificate-blocked = Ai blocat certificatul acestui server. Deblochează-l din Setări › Securitate ca să te conectezi.
+certificate-refused-strict = Certificatul serverului nu e emis de o autoritate recunoscută, iar verificarea certificatelor e setată pe Strictă.
 certificate-not-trusted = Certificatul serverului nu a fost acceptat.
 info-protocol = Protocol
 info-address = Adresă
@@ -87,6 +91,7 @@ section-general = General
 section-display = Afișare
 section-input = Intrare
 section-recording = Înregistrare
+section-security = Securitate
 section-about = Despre
 
 setting-confirm-quit = Confirmă înainte de ieșire
@@ -116,6 +121,20 @@ setting-recording-quality = Calitate
 setting-recording-quality-description = O calitate mai mare produce fișiere mai mari.
 setting-check-on-launch = Caută actualizări la pornire
 setting-updates = Actualizări
+setting-certificate-checking = Verificarea certificatelor
+certificate-checking-strict = Strictă
+certificate-checking-ask = Întreabă
+certificate-checking-off = Dezactivată
+certificate-checking-strict-description = Conectează-te doar la servere cu certificate emise de o autoritate recunoscută.
+certificate-checking-ask-description = Întreabă înainte de a te conecta la un server cu un certificat necunoscut. Îl poți accepta o dată sau îl poți reține.
+certificate-checking-off-description = Acceptă orice certificat fără să întrebe. Oricine din rețea se poate da drept server și îți poate vedea parolele.
+trusted-certificates = Certificate de încredere
+trusted-certificates-description = Aceste servere se conectează fără întrebări, cât timp prezintă același certificat.
+blocked-certificates = Certificate blocate
+blocked-certificates-description = Aceste certificate sunt refuzate întotdeauna.
+certificates-none = Niciunul încă.
+certificate-forget = Uită
+certificate-unblock = Deblochează
 
 appearance-system = Ca sistemul
 appearance-light = Luminos

@@ -294,10 +294,18 @@ pub enum Message {
     Ready(Controls),
     /// An event from the running session.
     Session(SessionEvent),
-    /// The target's TLS certificate failed verification; ask the user.
+    /// The target's TLS certificate failed verification; ask the user. The
+    /// application refuses it instead if settings say so.
     UntrustedCertificate(CertFingerprint),
-    /// Trust the certificate the dialog showed, and connect again.
-    TrustCertificate,
+    /// Trust the certificate the dialog showed, and connect again. The
+    /// application also saves it when `remember` is set.
+    TrustCertificate {
+        fingerprint: CertFingerprint,
+        remember: bool,
+    },
+    /// Refuse the certificate the dialog showed. The application adds it to
+    /// the blocked list.
+    BlockCertificate(CertFingerprint),
     /// The pointer moved over the framebuffer (in framebuffer coordinates).
     Pointer(Point),
     /// A mouse button was pressed or released over the framebuffer.
@@ -418,6 +426,10 @@ impl State {
         self.protocol
     }
 
+    pub fn target(&self) -> &Target {
+        &self.target
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         if message.closes_menu() {
             self.menu = None;
@@ -442,15 +454,18 @@ impl State {
                 self.phase = Phase::Disconnected(Some(fl!("certificate-not-trusted")));
                 self.modal = Some(Modal::TrustCertificate(fingerprint));
             }
-            Message::TrustCertificate => {
-                if let Some(Modal::TrustCertificate(fingerprint)) = self.modal.take() {
-                    // A new policy changes the subscription's identity, so
-                    // this starts a fresh connection attempt.
-                    self.tls = TlsPolicy::AllowInsecure {
-                        accepted: Some(fingerprint),
-                    };
-                    self.phase = Phase::Connecting;
-                }
+            Message::TrustCertificate { fingerprint, .. } => {
+                self.modal = None;
+                // A new policy changes the subscription's identity, so this
+                // starts a fresh connection attempt.
+                self.tls = TlsPolicy::AllowInsecure {
+                    accepted: Some(fingerprint),
+                };
+                self.phase = Phase::Connecting;
+            }
+            Message::BlockCertificate(_) => {
+                self.modal = None;
+                self.phase = Phase::Disconnected(Some(fl!("certificate-blocked")));
             }
             Message::Pointer(point) => self.send_pointer(point),
             Message::Button { button, pressed } => {
@@ -1174,26 +1189,43 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                 ],
             )
         }
-        Modal::TrustCertificate(fingerprint) => dialog::view(
-            fl!("certificate-title"),
-            fl!(
-                "certificate-message",
-                host = target.host.clone(),
-                fingerprint = fingerprint_lines(&fingerprint.to_string())
-            ),
-            vec![
-                dialog::Button {
-                    label: fl!("button-cancel"),
-                    on_press: Message::CloseModal,
+        Modal::TrustCertificate(fingerprint) => {
+            let trust = |remember| Message::TrustCertificate {
+                fingerprint: *fingerprint,
+                remember,
+            };
+            dialog::view_with(
+                fl!("certificate-title"),
+                fl!(
+                    "certificate-message",
+                    host = target.host.clone(),
+                    fingerprint = fingerprint_lines(&fingerprint.to_string())
+                ),
+                vec![dialog::Button {
+                    label: fl!("certificate-block"),
+                    on_press: Message::BlockCertificate(*fingerprint),
                     kind: dialog::Kind::Secondary,
-                },
-                dialog::Button {
-                    label: fl!("certificate-trust"),
-                    on_press: Message::TrustCertificate,
-                    kind: dialog::Kind::Primary,
-                },
-            ],
-        ),
+                }],
+                vec![
+                    dialog::Button {
+                        label: fl!("button-cancel"),
+                        on_press: Message::CloseModal,
+                        kind: dialog::Kind::Secondary,
+                    },
+                    dialog::Button {
+                        label: fl!("certificate-connect-once"),
+                        on_press: trust(false),
+                        kind: dialog::Kind::Secondary,
+                    },
+                    dialog::Button {
+                        label: fl!("certificate-always-trust"),
+                        on_press: trust(true),
+                        kind: dialog::Kind::Primary,
+                    },
+                ],
+                dialog::WIDE,
+            )
+        }
         Modal::Error { title, message } => dialog::view(
             title.clone(),
             message.clone(),
@@ -1647,7 +1679,10 @@ mod tests {
         assert!(matches!(state.phase, Phase::Disconnected(Some(_))));
         assert!(matches!(state.modal, Some(Modal::TrustCertificate(f)) if f == fingerprint));
 
-        let _ = state.update(Message::TrustCertificate);
+        let _ = state.update(Message::TrustCertificate {
+            fingerprint,
+            remember: false,
+        });
         assert!(state.modal.is_none());
         assert_eq!(state.phase, Phase::Connecting);
         assert_eq!(
@@ -1673,6 +1708,20 @@ mod tests {
         let _ = state.update(Message::CloseModal);
         assert!(state.modal.is_none());
         assert!(matches!(state.phase, Phase::Disconnected(_)));
+        assert_eq!(state.tls, TlsPolicy::default());
+    }
+
+    #[test]
+    fn blocking_a_certificate_stays_disconnected_and_says_why() {
+        let mut state = state();
+        let fingerprint = CertFingerprint([1; 32]);
+        let _ = state.update(Message::UntrustedCertificate(fingerprint));
+        let _ = state.update(Message::BlockCertificate(fingerprint));
+        assert!(state.modal.is_none());
+        assert_eq!(
+            state.phase,
+            Phase::Disconnected(Some(fl!("certificate-blocked")))
+        );
         assert_eq!(state.tls, TlsPolicy::default());
     }
 

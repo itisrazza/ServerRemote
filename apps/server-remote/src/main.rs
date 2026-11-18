@@ -6,11 +6,11 @@ use iced::{
     widget::{Column, Row, Scrollable, Space, button, container, mouse_area, stack, text, tooltip},
     window,
 };
-use server_remote_core::{Target, TlsPolicy};
+use server_remote_core::{SessionEvent, Target};
 use server_remote_icons as icons;
 
 use crate::i18n::fl;
-use crate::persistence::settings::{Appearance, GraphicsBackend, Settings};
+use crate::persistence::settings::{Appearance, GraphicsBackend, KnownCertificate, Settings};
 use crate::tooltip_box::tooltip_box;
 
 mod app_icon;
@@ -546,8 +546,40 @@ mod tests {
         states.push(("trust-certificate-light", false, light(trust.clone())));
         states.push(("trust-certificate-ro", false, romanian(trust)));
 
+        // The Security section with an entry in each list.
+        let known = |byte: u8| {
+            KnownCertificate::new(
+                &Target::new("ilo.example", 443),
+                server_remote_core::CertFingerprint(core::array::from_fn(|i| i as u8 ^ byte)),
+            )
+        };
+        let security = vec![
+            Message::SelectTab(Tab::Settings),
+            Message::Settings(ui::settings::Message::Section(
+                ui::settings::Section::Security,
+            )),
+            Message::Settings(ui::settings::Message::Change(
+                ui::settings::Change::TrustCertificate(known(0x5A)),
+            )),
+            Message::Settings(ui::settings::Message::Change(
+                ui::settings::Change::BlockCertificate(known(0xC3)),
+            )),
+        ];
+        let security_menu = security
+            .iter()
+            .cloned()
+            .chain([Message::Settings(ui::settings::Message::Toggle(
+                ui::settings::Select::CertificateChecking,
+            ))])
+            .collect::<Vec<_>>();
+        states.push(("settings-security", false, security.clone()));
+        states.push(("settings-security-menu", false, security_menu));
+        states.push(("settings-security-light", false, light(security.clone())));
+        states.push(("settings-security-ro", false, romanian(security.clone())));
+        states.push(("settings-security-narrow", false, security));
+
         // Wide by default; these are also rendered at a narrow width.
-        const NARROW: [&str; 1] = ["settings-display-narrow"];
+        const NARROW: [&str; 2] = ["settings-display-narrow", "settings-security-narrow"];
         states.push((
             "settings-display-narrow",
             false,
@@ -603,6 +635,62 @@ mod tests {
                     .expect("writes png")
             );
         }
+    }
+
+    #[test]
+    fn certificate_choices_follow_and_update_the_security_settings() {
+        use crate::persistence::settings::{CertificateChecking, Refusal};
+        use server_remote_core::CertFingerprint;
+        use ui::connection::Message as Conn;
+
+        let (mut app, _) = Application::new(None, Settings::default());
+        let _ = app.open_connection(request("ilo:443"));
+        let target = app.connections[0].target().clone();
+        let trusted = CertFingerprint([1; 32]);
+        let blocked = CertFingerprint([2; 32]);
+
+        let _ = app.settle_certificate(
+            0,
+            Conn::TrustCertificate {
+                fingerprint: trusted,
+                remember: false,
+            },
+        );
+        assert!(app.settings.security.trusted.is_empty(), "connect once");
+        let _ = app.settle_certificate(
+            0,
+            Conn::TrustCertificate {
+                fingerprint: trusted,
+                remember: true,
+            },
+        );
+        assert_eq!(
+            app.settings.security.trusted,
+            vec![KnownCertificate::new(&target, trusted)]
+        );
+
+        let _ = app.settle_certificate(0, Conn::BlockCertificate(blocked));
+        assert_eq!(
+            app.settings.security.blocked,
+            vec![KnownCertificate::new(&target, blocked)]
+        );
+
+        let refused_with = |message: Conn| match message {
+            Conn::Session(SessionEvent::Disconnected { reason }) => reason,
+            _ => None,
+        };
+        let asked = app.settle_certificate(0, Conn::UntrustedCertificate(CertFingerprint([3; 32])));
+        assert!(
+            matches!(asked, Conn::UntrustedCertificate(_)),
+            "ask: prompts"
+        );
+        let refused = app.settle_certificate(0, Conn::UntrustedCertificate(blocked));
+        assert_eq!(refused_with(refused), Some(Refusal::Blocked.reason()));
+
+        app.settings.security.certificate_checking = CertificateChecking::Strict;
+        let refused =
+            app.settle_certificate(0, Conn::UntrustedCertificate(CertFingerprint([3; 32])));
+        assert_eq!(refused_with(refused), Some(Refusal::Strict.reason()));
     }
 
     #[test]
@@ -892,6 +980,7 @@ impl Application {
                     }
                     _ => {}
                 }
+                let message = self.settle_certificate(id, message);
                 let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) else {
                     return Task::none();
                 };
@@ -974,6 +1063,54 @@ impl Application {
         self.settings.save(self.config_dir.as_deref());
     }
 
+    /// Applies the security settings to a connection's certificate messages:
+    /// refuses a certificate they rule out, and saves the user's choice in
+    /// the prompt. Returns what the connection itself should handle.
+    fn settle_certificate(
+        &mut self,
+        id: u64,
+        message: ui::connection::Message,
+    ) -> ui::connection::Message {
+        use ui::connection::Message as Conn;
+        use ui::settings::Change;
+        let Some(target) = self
+            .connections
+            .iter()
+            .find(|connection| connection.id() == id)
+            .map(|connection| connection.target().clone())
+        else {
+            return message;
+        };
+        match &message {
+            Conn::UntrustedCertificate(fingerprint) => {
+                match self.settings.security.refusal(&target, *fingerprint) {
+                    Some(refusal) => Conn::Session(SessionEvent::Disconnected {
+                        reason: Some(refusal.reason()),
+                    }),
+                    None => message,
+                }
+            }
+            Conn::TrustCertificate {
+                fingerprint,
+                remember: true,
+            } => {
+                self.change_setting(Change::TrustCertificate(KnownCertificate::new(
+                    &target,
+                    *fingerprint,
+                )));
+                message
+            }
+            Conn::BlockCertificate(fingerprint) => {
+                self.change_setting(Change::BlockCertificate(KnownCertificate::new(
+                    &target,
+                    *fingerprint,
+                )));
+                message
+            }
+            _ => message,
+        }
+    }
+
     fn close_menu(&mut self, id: u64) {
         if let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) {
             let _ = connection.update(ui::connection::Message::CloseMenu);
@@ -1000,13 +1137,14 @@ impl Application {
             Arc::from(request.hostname.as_str())
         };
         let target = parse_target(&request.hostname, request.protocol);
+        let tls = self.settings.security.policy_for(&target);
 
         self.connections.push(ui::connection::State::new(
             id,
             name,
             request.protocol,
             target,
-            TlsPolicy::default(),
+            tls,
             ui::connection::Credentials {
                 username: request.username,
                 password: request.password,

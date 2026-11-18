@@ -57,7 +57,8 @@ end.
 - [Capabilities and status](capabilities.md) — how a session describes what it
   offers and what's going on, and the UI connectors contribute through that.
 - [TLS trust](tls.md) — connecting to targets with self-signed or expired
-  certificates without switching verification off.
+  certificates: trust-on-first-use, saved trusted and blocked certificates,
+  and the certificate checking setting.
 - [Roadmap](roadmap.md) — what's done and what's next.
 
 ## Protocol references

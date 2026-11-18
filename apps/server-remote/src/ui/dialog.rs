@@ -22,6 +22,10 @@ pub struct Button<Message> {
     pub kind: Kind,
 }
 
+const WIDTH: f32 = 320.0;
+/// For dialogs with more choices than fit the usual width.
+pub const WIDE: f32 = 460.0;
+
 /// A dialog meant to be layered over the view it interrupts (e.g. with
 /// `stack!`). `buttons` are laid out left to right, right-aligned.
 pub fn view<'a, Message: Clone + 'a>(
@@ -29,6 +33,18 @@ pub fn view<'a, Message: Clone + 'a>(
     message: String,
     buttons: Vec<Button<Message>>,
 ) -> Element<'a, Message> {
+    view_with(title, message, Vec::new(), buttons, WIDTH)
+}
+
+/// Like [`view`], with `leading` buttons set apart at the left, `width` wide.
+pub fn view_with<'a, Message: Clone + 'a>(
+    title: String,
+    message: String,
+    leading: Vec<Button<Message>>,
+    buttons: Vec<Button<Message>>,
+    width: f32,
+) -> Element<'a, Message> {
+    let leading = Row::with_children(leading.into_iter().map(button_view)).spacing(8);
     let buttons = Row::with_children(buttons.into_iter().map(button_view)).spacing(8);
     let dialog = container(
         Column::new()
@@ -37,11 +53,13 @@ pub fn view<'a, Message: Clone + 'a>(
             .push(text(message))
             .push(
                 Row::new()
+                    .spacing(8)
+                    .push(leading)
                     .push(Space::new().width(Length::Fill))
                     .push(buttons),
             ),
     )
-    .width(320)
+    .width(width)
     .padding(16)
     .style(style::dialog);
 

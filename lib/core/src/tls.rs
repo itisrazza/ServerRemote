@@ -1,16 +1,17 @@
 //! TLS trust policy and the TLS transport.
 //!
 //! Some targets — iLO especially — ship self-signed or expired certificates, so
-//! connecting insecurely has to be possible. It must never be a blanket "skip
-//! verification" toggle though: the user accepts a *specific* certificate
-//! (trust-on-first-use), and only that certificate is then trusted.
+//! connecting insecurely has to be possible. Normally the user accepts a
+//! *specific* certificate (trust-on-first-use), and only that certificate is
+//! then trusted; accepting any certificate is a separate, explicit policy.
 //!
 //! [`connect`] opens a TLS stream under a [`TlsPolicy`]. A certificate that
 //! fails normal verification is rejected with
 //! [`ConnectError::UntrustedCertificate`], carrying its fingerprint, unless the
-//! policy names that exact fingerprint as accepted.
+//! policy accepts it.
 //!
-//! An accepted certificate may also use a legacy RSA key (1024 bits and up,
+//! An accepted certificate (or any, under [`TlsPolicy::AcceptAny`]) may also
+//! use a legacy RSA key (1024 bits and up,
 //! with SHA-1 signatures), as older iLO firmware does. The peer still has to
 //! prove it holds that key; strict verification is unchanged.
 
@@ -88,15 +89,29 @@ pub enum TlsPolicy {
     /// [`ConnectError::UntrustedCertificate`](crate::ConnectError::UntrustedCertificate)
     /// so the UI can prompt, rather than connecting blindly.
     AllowInsecure { accepted: Option<CertFingerprint> },
+    /// Accept any certificate without asking. The connection is still
+    /// encrypted to the key the peer presents, but nothing checks whose key
+    /// that is, so anyone on the network path can impersonate the peer.
+    AcceptAny,
 }
 
 impl TlsPolicy {
-    /// The fingerprint this policy trusts beyond the normal checks, if any.
-    pub fn accepted(&self) -> Option<CertFingerprint> {
+    /// Whether this policy trusts `cert` without the normal checks.
+    fn accepts(&self, cert: &CertificateDer<'_>) -> bool {
         match self {
-            TlsPolicy::Secure => None,
-            TlsPolicy::AllowInsecure { accepted } => *accepted,
+            TlsPolicy::Secure => false,
+            TlsPolicy::AllowInsecure { accepted } => *accepted == Some(CertFingerprint::of(cert)),
+            TlsPolicy::AcceptAny => true,
         }
+    }
+
+    /// Whether this policy can trust some certificate the normal checks
+    /// reject.
+    fn trusts_beyond_roots(&self) -> bool {
+        matches!(
+            self,
+            TlsPolicy::AllowInsecure { accepted: Some(_) } | TlsPolicy::AcceptAny
+        )
     }
 }
 
@@ -105,8 +120,8 @@ impl TlsPolicy {
 ///
 /// Any certificate the system would reject — self-signed, expired, wrong
 /// name — fails with [`ConnectError::UntrustedCertificate`] unless `policy`
-/// accepts that exact fingerprint. The peer still has to prove it holds the
-/// certificate's key either way.
+/// accepts it. The peer still has to prove it holds the certificate's key
+/// either way.
 pub async fn connect(
     target: &Target,
     policy: &TlsPolicy,
@@ -116,7 +131,7 @@ pub async fn connect(
     let server_name = ServerName::try_from(target.host.clone())
         .map_err(|error| ConnectError::Tls(error.to_string()))?;
 
-    let verifier = Arc::new(TofuVerifier::new(policy.accepted())?);
+    let verifier = Arc::new(TofuVerifier::new(policy.clone())?);
     let config = ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
         .map_err(|error| ConnectError::Tls(error.to_string()))?
@@ -142,18 +157,17 @@ fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::aws_lc_rs::default_provider())
 }
 
-/// Verifies certificates normally, but accepts one specific certificate the
-/// user approved, and remembers the fingerprint of any it rejects so
-/// [`connect`] can report it.
+/// Verifies certificates normally, except those the policy accepts, and
+/// remembers the fingerprint of any it rejects so [`connect`] can report it.
 #[derive(Debug)]
 struct TofuVerifier {
     webpki: Arc<WebPkiServerVerifier>,
-    accepted: Option<CertFingerprint>,
+    policy: TlsPolicy,
     rejected: Mutex<Option<CertFingerprint>>,
 }
 
 impl TofuVerifier {
-    fn new(accepted: Option<CertFingerprint>) -> Result<Self, ConnectError> {
+    fn new(policy: TlsPolicy) -> Result<Self, ConnectError> {
         let roots = RootCertStore {
             roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
         };
@@ -162,17 +176,13 @@ impl TofuVerifier {
             .map_err(|error| ConnectError::Tls(error.to_string()))?;
         Ok(Self {
             webpki,
-            accepted,
+            policy,
             rejected: Mutex::new(None),
         })
     }
 
     fn rejected(&self) -> Option<CertFingerprint> {
         *self.rejected.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    fn is_accepted(&self, cert: &CertificateDer<'_>) -> bool {
-        self.accepted == Some(CertFingerprint::of(cert))
     }
 }
 
@@ -185,10 +195,10 @@ impl ServerCertVerifier for TofuVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
-        let fingerprint = CertFingerprint::of(end_entity);
-        if self.accepted == Some(fingerprint) {
+        if self.policy.accepts(end_entity) {
             return Ok(ServerCertVerified::assertion());
         }
+        let fingerprint = CertFingerprint::of(end_entity);
         let result = self.webpki.verify_server_cert(
             end_entity,
             intermediates,
@@ -215,7 +225,7 @@ impl ServerCertVerifier for TofuVerifier {
             .mapping
             .iter()
             .any(|(scheme, _)| *scheme == dss.scheme);
-        if is_legacy_scheme && self.is_accepted(cert) {
+        if is_legacy_scheme && self.policy.accepts(cert) {
             return rustls::crypto::verify_tls12_signature(message, cert, dss, &LEGACY_RSA);
         }
         self.webpki.verify_tls12_signature(message, cert, dss)
@@ -232,7 +242,7 @@ impl ServerCertVerifier for TofuVerifier {
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         let schemes = self.webpki.supported_verify_schemes();
-        if self.accepted.is_none() {
+        if !self.policy.trusts_beyond_roots() {
             return schemes;
         }
         let legacy_only: Vec<SignatureScheme> = LEGACY_RSA
@@ -377,19 +387,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accepted_fingerprint_connects() {
+    async fn accepting_policies_connect() {
         let (port, fingerprint) = self_signed_server().await;
-        let policy = TlsPolicy::AllowInsecure {
-            accepted: Some(fingerprint),
-        };
-
-        let mut stream = connect(&Target::new("localhost", port), &policy)
-            .await
-            .unwrap();
-        stream.write_all(b"x").await.unwrap();
-        let mut byte = [0];
-        stream.read_exact(&mut byte).await.unwrap();
-        assert_eq!(&byte, b"x");
+        for policy in [
+            TlsPolicy::AllowInsecure {
+                accepted: Some(fingerprint),
+            },
+            TlsPolicy::AcceptAny,
+        ] {
+            let mut stream = connect(&Target::new("localhost", port), &policy)
+                .await
+                .unwrap();
+            stream.write_all(b"x").await.unwrap();
+            let mut byte = [0];
+            stream.read_exact(&mut byte).await.unwrap();
+            assert_eq!(&byte, b"x", "{policy:?}");
+        }
     }
 
     /// rustls only builds these internally, so decode one from its wire form.
@@ -416,7 +429,7 @@ mod tests {
 
         struct Case<'a> {
             name: &'a str,
-            accepted: Option<CertFingerprint>,
+            policy: TlsPolicy,
             scheme: SignatureScheme,
             signature: &'a [u8],
             message: &'a [u8],
@@ -425,7 +438,9 @@ mod tests {
         let cases = [
             Case {
                 name: "accepted, SHA-512",
-                accepted: Some(fingerprint),
+                policy: TlsPolicy::AllowInsecure {
+                    accepted: Some(fingerprint),
+                },
                 scheme: SignatureScheme::RSA_PKCS1_SHA512,
                 signature: sha512,
                 message,
@@ -433,15 +448,33 @@ mod tests {
             },
             Case {
                 name: "accepted, SHA-1",
-                accepted: Some(fingerprint),
+                policy: TlsPolicy::AllowInsecure {
+                    accepted: Some(fingerprint),
+                },
                 scheme: SignatureScheme::RSA_PKCS1_SHA1,
                 signature: sha1,
                 message,
                 valid: true,
             },
             Case {
+                name: "any accepted",
+                policy: TlsPolicy::AcceptAny,
+                scheme: SignatureScheme::RSA_PKCS1_SHA512,
+                signature: sha512,
+                message,
+                valid: true,
+            },
+            Case {
+                name: "strict",
+                policy: TlsPolicy::Secure,
+                scheme: SignatureScheme::RSA_PKCS1_SHA512,
+                signature: sha512,
+                message,
+                valid: false,
+            },
+            Case {
                 name: "nothing accepted",
-                accepted: None,
+                policy: TlsPolicy::AllowInsecure { accepted: None },
                 scheme: SignatureScheme::RSA_PKCS1_SHA512,
                 signature: sha512,
                 message,
@@ -449,7 +482,9 @@ mod tests {
             },
             Case {
                 name: "another certificate accepted",
-                accepted: Some(CertFingerprint([0; 32])),
+                policy: TlsPolicy::AllowInsecure {
+                    accepted: Some(CertFingerprint([0; 32])),
+                },
                 scheme: SignatureScheme::RSA_PKCS1_SHA512,
                 signature: sha512,
                 message,
@@ -457,7 +492,9 @@ mod tests {
             },
             Case {
                 name: "tampered message",
-                accepted: Some(fingerprint),
+                policy: TlsPolicy::AllowInsecure {
+                    accepted: Some(fingerprint),
+                },
                 scheme: SignatureScheme::RSA_PKCS1_SHA512,
                 signature: sha512,
                 message: b"tampered",
@@ -465,7 +502,9 @@ mod tests {
             },
             Case {
                 name: "mismatched digest",
-                accepted: Some(fingerprint),
+                policy: TlsPolicy::AllowInsecure {
+                    accepted: Some(fingerprint),
+                },
                 scheme: SignatureScheme::RSA_PKCS1_SHA256,
                 signature: sha512,
                 message,
@@ -474,7 +513,7 @@ mod tests {
         ];
 
         for case in cases {
-            let verifier = TofuVerifier::new(case.accepted).unwrap();
+            let verifier = TofuVerifier::new(case.policy).unwrap();
             let dss = signed(case.scheme, case.signature);
             let result = verifier.verify_tls12_signature(case.message, &cert, &dss);
             assert_eq!(result.is_ok(), case.valid, "{}: {result:?}", case.name);
@@ -484,12 +523,17 @@ mod tests {
     #[test]
     fn sha1_is_advertised_only_with_an_accepted_certificate() {
         let advertises_sha1 = |accepted| {
-            TofuVerifier::new(accepted)
+            TofuVerifier::new(TlsPolicy::AllowInsecure { accepted })
                 .unwrap()
                 .supported_verify_schemes()
                 .contains(&SignatureScheme::RSA_PKCS1_SHA1)
         };
         assert!(!advertises_sha1(None));
         assert!(advertises_sha1(Some(CertFingerprint([0; 32]))));
+        let any = TofuVerifier::new(TlsPolicy::AcceptAny).unwrap();
+        assert!(
+            any.supported_verify_schemes()
+                .contains(&SignatureScheme::RSA_PKCS1_SHA1)
+        );
     }
 }
