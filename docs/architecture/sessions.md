@@ -45,7 +45,10 @@ sessions are the same concrete type) and keeps `core` free of any UI dependency.
 
 - **`SessionEvent`** — `Connected { size, capabilities }`, `Frame(Frame)`,
   `Resized { .. }`, `Capabilities(..)` (mid-session change), `Status(..)` (a
-  fresh status snapshot), `Disconnected { reason }`.
+  fresh status snapshot), `Disconnected { reason }`. A `Disconnected` (or
+  connect error) before the first `Connected` closes the tab and shows the
+  reason in a **Failed to connect** dialog on the page the connection was
+  started from; one after it stays in the tab.
 - **`InputEvent`** — `PointerMoved` (absolute), `PointerMotion` (relative
   deltas), `PointerButton`, `Key { keysym, .. }` (X11 keysyms, matching what RFB
   and Spice expect).

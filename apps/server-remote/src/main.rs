@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -6,11 +7,11 @@ use iced::{
     widget::{Column, Row, Scrollable, Space, button, container, mouse_area, stack, text, tooltip},
     window,
 };
-use server_remote_core::{Target, TlsPolicy};
+use server_remote_core::{SessionEvent, Target};
 use server_remote_icons as icons;
 
 use crate::i18n::fl;
-use crate::persistence::settings::{Appearance, GraphicsBackend, Settings};
+use crate::persistence::settings::{Appearance, GraphicsBackend, KnownCertificate, Settings};
 use crate::tooltip_box::tooltip_box;
 
 mod app_icon;
@@ -54,6 +55,7 @@ fn saved_session_from_request(
         name,
         protocol: request.protocol,
         hostname: request.hostname,
+        username: request.username,
         password: request.password,
     }
 }
@@ -97,6 +99,7 @@ mod tests {
             protocol: ui::connection::Protocol::Dummy,
             name: String::new(),
             hostname: hostname.to_owned(),
+            username: String::new(),
             password: String::new(),
         }
     }
@@ -527,8 +530,89 @@ mod tests {
             romanian(vec![Message::RequestClose(window::Id::unique())]),
         ));
 
+        // The iLO connect form, and the certificate prompt in each theme and
+        // language.
+        let ilo_form = vec![
+            Message::SelectTab(Tab::Connect),
+            Message::ConnectTab(ui::connect::Message::Internal(
+                ui::connect::IMessage::Protocol(ui::connection::Protocol::Ilo),
+            )),
+        ];
+        let trust = vec![conn(Conn::UntrustedCertificate(
+            server_remote_core::CertFingerprint(core::array::from_fn(|i| i as u8 * 7)),
+        ))];
+        states.push(("connect-ilo", false, ilo_form.clone()));
+        states.push(("connect-ilo-ro", false, romanian(ilo_form)));
+        states.push(("trust-certificate", false, trust.clone()));
+        states.push(("trust-certificate-light", false, light(trust.clone())));
+        states.push(("trust-certificate-ro", false, romanian(trust)));
+
+        // A connection that fails before connecting, back on the Connect page.
+        let failed = vec![conn(Conn::Session(SessionEvent::Disconnected {
+            reason: Some("There is another user using the remote console.".to_owned()),
+        }))];
+        states.push(("connection-failed", false, failed.clone()));
+        states.push(("connection-failed-light", false, light(failed.clone())));
+        states.push(("connection-failed-ro", false, romanian(failed)));
+
+        // Bands of the four VGA greys, to check the display shows each
+        // value unchanged (no stray gamma).
+        let greys = server_remote_core::Frame {
+            width: 256,
+            height: 64,
+            pixels: (0..256 * 64)
+                .flat_map(|index: usize| {
+                    let grey = [0, 85, 170, 255][index % 256 / 64];
+                    [grey, grey, grey, 255]
+                })
+                .collect(),
+        };
+        states.push((
+            "display-greys",
+            false,
+            vec![
+                conn(Conn::Session(SessionEvent::Connected {
+                    size: (256, 64),
+                    capabilities: server_remote_core::Capabilities::default(),
+                })),
+                conn(Conn::Session(SessionEvent::Frame(greys))),
+            ],
+        ));
+
+        // The Security section with an entry in each list.
+        let known = |byte: u8| {
+            KnownCertificate::new(
+                &Target::new("ilo.example", 443),
+                server_remote_core::CertFingerprint(core::array::from_fn(|i| i as u8 ^ byte)),
+            )
+        };
+        let security = vec![
+            Message::SelectTab(Tab::Settings),
+            Message::Settings(ui::settings::Message::Section(
+                ui::settings::Section::Security,
+            )),
+            Message::Settings(ui::settings::Message::Change(
+                ui::settings::Change::TrustCertificate(known(0x5A)),
+            )),
+            Message::Settings(ui::settings::Message::Change(
+                ui::settings::Change::BlockCertificate(known(0xC3)),
+            )),
+        ];
+        let security_menu = security
+            .iter()
+            .cloned()
+            .chain([Message::Settings(ui::settings::Message::Toggle(
+                ui::settings::Select::CertificateChecking,
+            ))])
+            .collect::<Vec<_>>();
+        states.push(("settings-security", false, security.clone()));
+        states.push(("settings-security-menu", false, security_menu));
+        states.push(("settings-security-light", false, light(security.clone())));
+        states.push(("settings-security-ro", false, romanian(security.clone())));
+        states.push(("settings-security-narrow", false, security));
+
         // Wide by default; these are also rendered at a narrow width.
-        const NARROW: [&str; 1] = ["settings-display-narrow"];
+        const NARROW: [&str; 2] = ["settings-display-narrow", "settings-security-narrow"];
         states.push((
             "settings-display-narrow",
             false,
@@ -587,6 +671,131 @@ mod tests {
     }
 
     #[test]
+    fn a_failure_before_connecting_is_reported_where_it_started() {
+        use ui::connection::Message as Conn;
+        for origin in [Tab::Connect, Tab::Manager] {
+            let (mut app, _) = Application::new(None, Settings::default());
+            app.tab = origin.clone();
+            let _ = app.open_connection(request("ilo:443"));
+            let _ = app.update(Message::Connection(
+                0,
+                Conn::Session(SessionEvent::Disconnected {
+                    reason: Some("busy".to_owned()),
+                }),
+            ));
+
+            assert!(app.connections.is_empty(), "{origin:?}");
+            assert_eq!(app.tab, origin);
+            match &app.modal {
+                Some(AppModal::ConnectionFailed { message, details }) => {
+                    assert_eq!(message, "busy");
+                    assert!(details.contains("Address: ilo:443"), "{details}");
+                    assert!(details.ends_with("Error: busy"), "{details}");
+                }
+                other => panic!("{origin:?}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_failure_after_connecting_stays_in_its_tab() {
+        use ui::connection::Message as Conn;
+        let (mut app, _) = Application::new(None, Settings::default());
+        let _ = app.open_connection(request("ilo:443"));
+        for event in [
+            SessionEvent::Connected {
+                size: (1, 1),
+                capabilities: server_remote_core::Capabilities::default(),
+            },
+            SessionEvent::Disconnected {
+                reason: Some("lost".to_owned()),
+            },
+        ] {
+            let _ = app.update(Message::Connection(0, Conn::Session(event)));
+        }
+
+        assert_eq!(app.connections.len(), 1);
+        assert_eq!(app.tab, Tab::Connection(0));
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn cancelling_or_blocking_a_certificate_closes_the_tab_quietly() {
+        use ui::connection::Message as Conn;
+        let fingerprint = server_remote_core::CertFingerprint([4; 32]);
+        for message in [Conn::Close, Conn::BlockCertificate(fingerprint)] {
+            let (mut app, _) = Application::new(None, Settings::default());
+            app.tab = Tab::Manager;
+            let _ = app.open_connection(request("ilo:443"));
+            let _ = app.update(Message::Connection(
+                0,
+                Conn::UntrustedCertificate(fingerprint),
+            ));
+            let _ = app.update(Message::Connection(0, message.clone()));
+
+            assert!(app.connections.is_empty(), "{message:?}");
+            assert_eq!(app.tab, Tab::Manager, "{message:?}");
+            assert!(app.modal.is_none(), "{message:?}");
+        }
+    }
+
+    #[test]
+    fn certificate_choices_follow_and_update_the_security_settings() {
+        use crate::persistence::settings::{CertificateChecking, Refusal};
+        use server_remote_core::CertFingerprint;
+        use ui::connection::Message as Conn;
+
+        let (mut app, _) = Application::new(None, Settings::default());
+        let _ = app.open_connection(request("ilo:443"));
+        let target = app.connections[0].target().clone();
+        let trusted = CertFingerprint([1; 32]);
+        let blocked = CertFingerprint([2; 32]);
+
+        let _ = app.settle_certificate(
+            0,
+            Conn::TrustCertificate {
+                fingerprint: trusted,
+                remember: false,
+            },
+        );
+        assert!(app.settings.security.trusted.is_empty(), "connect once");
+        let _ = app.settle_certificate(
+            0,
+            Conn::TrustCertificate {
+                fingerprint: trusted,
+                remember: true,
+            },
+        );
+        assert_eq!(
+            app.settings.security.trusted,
+            vec![KnownCertificate::new(&target, trusted)]
+        );
+
+        let _ = app.settle_certificate(0, Conn::BlockCertificate(blocked));
+        assert_eq!(
+            app.settings.security.blocked,
+            vec![KnownCertificate::new(&target, blocked)]
+        );
+
+        let refused_with = |message: Conn| match message {
+            Conn::Session(SessionEvent::Disconnected { reason }) => reason,
+            _ => None,
+        };
+        let asked = app.settle_certificate(0, Conn::UntrustedCertificate(CertFingerprint([3; 32])));
+        assert!(
+            matches!(asked, Conn::UntrustedCertificate(_)),
+            "ask: prompts"
+        );
+        let refused = app.settle_certificate(0, Conn::UntrustedCertificate(blocked));
+        assert_eq!(refused_with(refused), Some(Refusal::Blocked.reason()));
+
+        app.settings.security.certificate_checking = CertificateChecking::Strict;
+        let refused =
+            app.settle_certificate(0, Conn::UntrustedCertificate(CertFingerprint([3; 32])));
+        assert_eq!(refused_with(refused), Some(Refusal::Strict.reason()));
+    }
+
+    #[test]
     fn saved_session_falls_back_to_the_protocol_label_when_name_and_hostname_are_blank() {
         let saved = saved_session_from_request(request(""));
         assert_eq!(saved.name, "dummy");
@@ -637,11 +846,23 @@ fn apply_graphics_backend(backend: GraphicsBackend) {
     unsafe { std::env::set_var("WGPU_BACKEND", backend.wgpu_name()) };
 }
 
+/// What a failed connection's copy button puts on the clipboard. Kept in
+/// English whatever the UI language, as it's meant for bug reports.
+fn failure_details(protocol: ui::connection::Protocol, target: &Target, error: &str) -> String {
+    format!(
+        "ServerRemote {}\nProtocol: {protocol}\nAddress: {}:{}\nError: {error}",
+        env!("CARGO_PKG_VERSION"),
+        target.host,
+        target.port,
+    )
+}
+
 fn third_party_licences<'a>() -> Element<'a, Message> {
     let link = |label: &str, url: &str| ui::dialog::Button {
         label: label.to_owned(),
         on_press: Message::Settings(ui::settings::Message::OpenUrl(url.to_owned())),
         kind: ui::dialog::Kind::Secondary,
+        icon: None,
     };
     ui::dialog::view(
         fl!("licences-title"),
@@ -656,6 +877,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
                 label: fl!("button-close"),
                 on_press: Message::CloseModal,
                 kind: ui::dialog::Kind::Primary,
+                icon: None,
             },
         ],
     )
@@ -701,6 +923,8 @@ fn platform_specific() -> window::settings::PlatformSpecific {
 
 struct Application {
     connections: Vec<ui::connection::State>,
+    /// The page each connection was opened from, returned to when it closes.
+    origins: HashMap<u64, Tab>,
     next_id: u64,
     tab: Tab,
 
@@ -733,6 +957,12 @@ enum AppModal {
         message: String,
     },
     ThirdPartyLicences,
+    /// A connection failed before it ever connected. `details` is what the
+    /// copy button puts on the clipboard.
+    ConnectionFailed {
+        message: String,
+        details: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -762,6 +992,7 @@ enum Message {
     RequestClose(iced::window::Id),
     Quit(iced::window::Id),
     CloseModal,
+    CopyToClipboard(String),
 }
 
 /// Window management triggered from the custom title bar.
@@ -780,6 +1011,7 @@ impl Application {
         i18n::select(settings.general.language);
         let mut app = Self {
             connections: Vec::new(),
+            origins: HashMap::new(),
             next_id: 0,
             tab: Tab::Connect,
             connect_tab: ui::connect::State::new(),
@@ -873,6 +1105,20 @@ impl Application {
                     }
                     _ => {}
                 }
+                let message = self.settle_certificate(id, message);
+                match message {
+                    Conn::BlockCertificate(_) => {
+                        self.close_connection(id);
+                        return Task::none();
+                    }
+                    Conn::Session(SessionEvent::Disconnected { reason })
+                        if self.never_connected(id) =>
+                    {
+                        self.fail_connection(id, reason);
+                        return Task::none();
+                    }
+                    _ => {}
+                }
                 let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) else {
                     return Task::none();
                 };
@@ -940,6 +1186,7 @@ impl Application {
                 window::close(id)
             }
             Message::Quit(id) => window::close(id),
+            Message::CopyToClipboard(contents) => iced::clipboard::write(contents),
             Message::CloseModal => {
                 self.modal = None;
                 Task::none()
@@ -953,6 +1200,54 @@ impl Application {
         }
         ui::settings::apply(&mut self.settings, change);
         self.settings.save(self.config_dir.as_deref());
+    }
+
+    /// Applies the security settings to a connection's certificate messages:
+    /// refuses a certificate they rule out, and saves the user's choice in
+    /// the prompt. Returns what the connection itself should handle.
+    fn settle_certificate(
+        &mut self,
+        id: u64,
+        message: ui::connection::Message,
+    ) -> ui::connection::Message {
+        use ui::connection::Message as Conn;
+        use ui::settings::Change;
+        let Some(target) = self
+            .connections
+            .iter()
+            .find(|connection| connection.id() == id)
+            .map(|connection| connection.target().clone())
+        else {
+            return message;
+        };
+        match &message {
+            Conn::UntrustedCertificate(fingerprint) => {
+                match self.settings.security.refusal(&target, *fingerprint) {
+                    Some(refusal) => Conn::Session(SessionEvent::Disconnected {
+                        reason: Some(refusal.reason()),
+                    }),
+                    None => message,
+                }
+            }
+            Conn::TrustCertificate {
+                fingerprint,
+                remember: true,
+            } => {
+                self.change_setting(Change::TrustCertificate(KnownCertificate::new(
+                    &target,
+                    *fingerprint,
+                )));
+                message
+            }
+            Conn::BlockCertificate(fingerprint) => {
+                self.change_setting(Change::BlockCertificate(KnownCertificate::new(
+                    &target,
+                    *fingerprint,
+                )));
+                message
+            }
+            _ => message,
+        }
     }
 
     fn close_menu(&mut self, id: u64) {
@@ -981,24 +1276,53 @@ impl Application {
             Arc::from(request.hostname.as_str())
         };
         let target = parse_target(&request.hostname, request.protocol);
+        let tls = self.settings.security.policy_for(&target);
 
         self.connections.push(ui::connection::State::new(
             id,
             name,
             request.protocol,
             target,
-            TlsPolicy::default(),
-            request.password,
+            tls,
+            ui::connection::Credentials {
+                username: request.username,
+                password: request.password,
+            },
             &self.settings.input,
         ));
+        let origin = match self.tab {
+            Tab::Manager => Tab::Manager,
+            _ => Tab::Connect,
+        };
+        self.origins.insert(id, origin);
         self.tab = Tab::Connection(id);
         Task::none()
     }
 
+    fn never_connected(&self, id: u64) -> bool {
+        self.connections
+            .iter()
+            .find(|connection| connection.id() == id)
+            .is_some_and(|connection| !connection.connected_once())
+    }
+
+    /// Closes a connection that failed before connecting, reporting the
+    /// failure on the page it was opened from.
+    fn fail_connection(&mut self, id: u64, reason: Option<String>) {
+        let Some(connection) = self.connections.iter().find(|c| c.id() == id) else {
+            return;
+        };
+        let message = reason.unwrap_or_else(|| fl!("connection-failed-unknown"));
+        let details = failure_details(connection.protocol(), connection.target(), &message);
+        self.close_connection(id);
+        self.modal = Some(AppModal::ConnectionFailed { message, details });
+    }
+
     fn close_connection(&mut self, id: u64) {
         self.connections.retain(|connection| connection.id() != id);
+        let origin = self.origins.remove(&id).unwrap_or(Tab::Connect);
         if self.tab == Tab::Connection(id) {
-            self.tab = Tab::Connect;
+            self.tab = origin;
         }
     }
 
@@ -1047,10 +1371,31 @@ impl Application {
                         label: fl!("button-ok"),
                         on_press: Message::CloseModal,
                         kind: ui::dialog::Kind::Primary,
+                        icon: None,
                     }],
                 );
             }
             AppModal::ThirdPartyLicences => return third_party_licences(),
+            AppModal::ConnectionFailed { message, details } => {
+                return ui::dialog::view(
+                    fl!("connection-failed-title"),
+                    message.clone(),
+                    vec![
+                        ui::dialog::Button {
+                            label: fl!("copy-details"),
+                            on_press: Message::CopyToClipboard(details.clone()),
+                            kind: ui::dialog::Kind::Secondary,
+                            icon: Some(icons::COPY_TO_CLIPBOARD),
+                        },
+                        ui::dialog::Button {
+                            label: fl!("button-close"),
+                            on_press: Message::CloseModal,
+                            kind: ui::dialog::Kind::Secondary,
+                            icon: None,
+                        },
+                    ],
+                );
+            }
         };
         ui::dialog::view(
             fl!("quit-title"),
@@ -1060,11 +1405,13 @@ impl Application {
                     label: fl!("button-cancel"),
                     on_press: Message::CloseModal,
                     kind: ui::dialog::Kind::Secondary,
+                    icon: None,
                 },
                 ui::dialog::Button {
                     label: fl!("quit-confirm"),
                     on_press: Message::Quit(id),
                     kind: ui::dialog::Kind::Destructive,
+                    icon: None,
                 },
             ],
         )

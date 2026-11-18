@@ -1,6 +1,6 @@
 [package]
 name = "server-remote"
-description = "A universal remote desktop / console client (VNC today; Spice in progress; iLO next)."
+description = "A universal remote desktop / console client (VNC today; Spice and iLO 4 in progress)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,6 +22,7 @@ semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 server-remote-core = { path = "../../lib/core" }
 server-remote-icons = { path = "../../lib/icons", features = ["iced"] }
+server-remote-ilo = { path = "../../connectors/ilo" }
 server-remote-spice = { path = "../../connectors/spice" }
 server-remote-vnc = { path = "../../connectors/vnc" }
 tokio = { version = "1.52.3", features = ["rt", "sync"] }

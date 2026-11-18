@@ -50,6 +50,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// The frame's texture format, matching iced's window surface. With iced's
+/// default `web-colors` feature the surface isn't sRGB, so an sRGB texture
+/// would be decoded to linear on sampling and never re-encoded, darkening
+/// the mid-tones.
+fn texture_format() -> wgpu::TextureFormat {
+    if iced_wgpu::graphics::color::GAMMA_CORRECTION {
+        wgpu::TextureFormat::Rgba8UnormSrgb
+    } else {
+        wgpu::TextureFormat::Rgba8Unorm
+    }
+}
+
 // A full-bounds quad (triangle strip): top-left, top-right, bottom-left,
 // bottom-right. The render pass's viewport/scissor is already set to this
 // primitive's bounds (see `Primitive::draw`'s contract), so a fixed NDC quad
@@ -377,7 +389,7 @@ impl primitive::Primitive for KvmPrimitive {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: texture_format(),
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });

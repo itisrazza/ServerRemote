@@ -14,6 +14,9 @@ button-close = Close
 ## Dialogs
 
 error-open-link = Couldn't open the link
+connection-failed-title = Failed to connect
+connection-failed-unknown = The connection closed before it was established.
+copy-details = Copy details
 quit-title = Quit?
 quit-message =
     { $count ->
@@ -33,6 +36,7 @@ file-dialog-supported = Supported files
 
 connect-name = Name (used when saving)
 connect-hostname = Hostname
+connect-username = User name
 connect-password = Password
 connect-read-only = Read-only
 connect-save = Save
@@ -51,7 +55,17 @@ status-connected = Connected
 status-disconnected = Disconnected
 close-tab = Close tab
 waiting-for-frame = Waiting for first frame…
-protocol-not-implemented = { $protocol } is not implemented yet
+certificate-title = Untrusted certificate
+certificate-message =
+    { $host } presented a certificate that can't be verified. It may be self-signed or expired. Continue only if this fingerprint matches the one you expect:
+
+    { $fingerprint }
+certificate-block = Block
+certificate-connect-once = Connect once
+certificate-always-trust = Always trust
+certificate-blocked = You blocked this server's certificate. Unblock it in Settings › Security to connect.
+certificate-refused-strict = The server's certificate isn't from a recognised authority, and certificate checking is set to Strict.
+certificate-not-trusted = The server's certificate wasn't trusted.
 info-protocol = Protocol
 info-address = Address
 info-status = Status
@@ -80,6 +94,7 @@ section-general = General
 section-display = Display
 section-input = Input
 section-recording = Recording
+section-security = Security
 section-about = About
 
 setting-confirm-quit = Confirm before quitting
@@ -109,6 +124,20 @@ setting-recording-quality = Quality
 setting-recording-quality-description = Higher quality makes larger files.
 setting-check-on-launch = Check for updates at launch
 setting-updates = Updates
+setting-certificate-checking = Certificate checking
+certificate-checking-strict = Strict
+certificate-checking-ask = Ask
+certificate-checking-off = Off
+certificate-checking-strict-description = Only connect to servers whose certificate is issued by a recognised authority.
+certificate-checking-ask-description = Ask before connecting to a server with an unrecognised certificate. You can trust it once or remember it.
+certificate-checking-off-description = Accept any certificate without asking. Anyone on the network can pose as the server and see your passwords.
+trusted-certificates = Trusted certificates
+trusted-certificates-description = These servers connect without asking, as long as they present the same certificate.
+blocked-certificates = Blocked certificates
+blocked-certificates-description = These certificates are always refused.
+certificates-none = None yet.
+certificate-forget = Forget
+certificate-unblock = Unblock
 
 appearance-system = Match system
 appearance-light = Light

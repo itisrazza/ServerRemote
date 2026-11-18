@@ -9,6 +9,15 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aws-lc-rs = { version = "1.19.0", default-features = false, features = ["aws-lc-sys"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
 server-remote-icons = { path = "../icons" }
+sha2 = "0.11.1"
 thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["sync", "rt", "time", "macros"] }
+tokio = { version = "1.52.3", features = ["sync", "rt", "time", "macros", "net"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "logging", "tls12"] }
+webpki-roots = "1.0.12"
+
+[dev-dependencies]
+rcgen = "0.14.10"
+tokio = { version = "1.52.3", features = ["io-util", "rt-multi-thread"] }

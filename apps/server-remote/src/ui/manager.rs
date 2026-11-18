@@ -41,6 +41,7 @@ pub fn view(sessions: &[SavedSession]) -> Element<'_, Message> {
                         protocol: session.protocol,
                         name: session.name.clone(),
                         hostname: session.hostname.clone(),
+                        username: session.username.clone(),
                         password: session.password.clone(),
                     })),
             )
@@ -67,6 +68,7 @@ mod tests {
             name: name.to_owned(),
             protocol: Protocol::Vnc,
             hostname: "example.com".to_owned(),
+            username: String::new(),
             password: "hunter2".to_owned(),
         }
     }

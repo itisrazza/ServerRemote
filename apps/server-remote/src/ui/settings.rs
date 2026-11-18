@@ -16,8 +16,8 @@ use iced::{Alignment, Element, Length, Theme};
 use server_remote_icons::{self as icons, Icon};
 
 use crate::persistence::settings::{
-    Appearance, DisplayScale, GraphicsBackend, KeyboardLayout, Language, RecordingFormat,
-    RecordingQuality, Scaling, Settings,
+    Appearance, CertificateChecking, DisplayScale, GraphicsBackend, KeyboardLayout,
+    KnownCertificate, Language, RecordingFormat, RecordingQuality, Scaling, Settings,
 };
 
 use super::connection::KeyboardSize;
@@ -51,15 +51,17 @@ pub enum Section {
     Display,
     Input,
     Recording,
+    Security,
     About,
 }
 
 impl Section {
-    const ALL: [Section; 5] = [
+    const ALL: [Section; 6] = [
         Section::General,
         Section::Display,
         Section::Input,
         Section::Recording,
+        Section::Security,
         Section::About,
     ];
 
@@ -69,6 +71,7 @@ impl Section {
             Section::Display => fl!("section-display"),
             Section::Input => fl!("section-input"),
             Section::Recording => fl!("section-recording"),
+            Section::Security => fl!("section-security"),
             Section::About => fl!("section-about"),
         }
     }
@@ -87,6 +90,7 @@ pub enum Select {
     RecordingFolder,
     RecordingFormat,
     RecordingQuality,
+    CertificateChecking,
 }
 
 /// A change to one setting.
@@ -109,6 +113,13 @@ pub enum Change {
     RecordingFormat(RecordingFormat),
     RecordingQuality(RecordingQuality),
     CheckForUpdatesOnLaunch(bool),
+    CertificateChecking(CertificateChecking),
+    /// Trust this certificate from now on, in place of any other for its
+    /// server.
+    TrustCertificate(KnownCertificate),
+    BlockCertificate(KnownCertificate),
+    ForgetCertificate(KnownCertificate),
+    UnblockCertificate(KnownCertificate),
 }
 
 pub fn apply(settings: &mut Settings, change: Change) {
@@ -128,6 +139,13 @@ pub fn apply(settings: &mut Settings, change: Change) {
         Change::RecordingFormat(format) => settings.recording.format = format,
         Change::RecordingQuality(quality) => settings.recording.quality = quality,
         Change::CheckForUpdatesOnLaunch(on) => settings.updates.check_on_launch = on,
+        Change::CertificateChecking(checking) => {
+            settings.security.certificate_checking = checking;
+        }
+        Change::TrustCertificate(certificate) => settings.security.trust(certificate),
+        Change::BlockCertificate(certificate) => settings.security.block(certificate),
+        Change::ForgetCertificate(certificate) => settings.security.forget(&certificate),
+        Change::UnblockCertificate(certificate) => settings.security.unblock(&certificate),
     }
 }
 
@@ -234,12 +252,16 @@ fn section_view<'a>(
     settings: &'a Settings,
     side_by_side: bool,
 ) -> Element<'a, Message> {
-    let settings = match state.section {
-        Section::General => general(state, settings),
-        Section::Display => display(state, settings),
-        Section::Input => input(state, settings),
-        Section::Recording => recording(state, settings),
-        Section::About => Vec::new(),
+    let (settings, extra) = match state.section {
+        Section::General => (general(state, settings), None),
+        Section::Display => (display(state, settings), None),
+        Section::Input => (input(state, settings), None),
+        Section::Recording => (recording(state, settings), None),
+        Section::Security => (
+            vec![certificate_checking(state, settings)],
+            Some(known_certificates(settings)),
+        ),
+        Section::About => (Vec::new(), None),
     };
     Column::new()
         .spacing(16)
@@ -252,6 +274,7 @@ fn section_view<'a>(
             )
             .spacing(16),
         )
+        .push(extra)
         .into()
 }
 
@@ -439,6 +462,114 @@ fn recording<'a>(state: &'a State, settings: &'a Settings) -> Vec<Setting<'a>> {
             ),
         ),
     ]
+}
+
+fn certificate_checking<'a>(state: &'a State, settings: &'a Settings) -> Setting<'a> {
+    let checking = settings.security.certificate_checking;
+    setting(
+        fl!("setting-certificate-checking"),
+        checking.description(),
+        select(
+            state,
+            Select::CertificateChecking,
+            checking.label(),
+            menu::choices(
+                &CertificateChecking::ALL,
+                checking,
+                CertificateChecking::label,
+                |checking| Message::Change(Change::CertificateChecking(checking)),
+            ),
+        ),
+    )
+}
+
+/// The trusted and blocked certificate lists.
+fn known_certificates(settings: &Settings) -> Element<'_, Message> {
+    Column::new()
+        .spacing(16)
+        .push(certificate_list(
+            fl!("trusted-certificates"),
+            fl!("trusted-certificates-description"),
+            &settings.security.trusted,
+            fl!("certificate-forget"),
+            Change::ForgetCertificate,
+        ))
+        .push(certificate_list(
+            fl!("blocked-certificates"),
+            fl!("blocked-certificates-description"),
+            &settings.security.blocked,
+            fl!("certificate-unblock"),
+            Change::UnblockCertificate,
+        ))
+        .into()
+}
+
+fn certificate_list<'a>(
+    title: String,
+    description: String,
+    certificates: &'a [KnownCertificate],
+    remove_label: String,
+    remove: fn(KnownCertificate) -> Change,
+) -> Element<'a, Message> {
+    let rows: Vec<Element<'a, Message>> = if certificates.is_empty() {
+        vec![muted(fl!("certificates-none")).into()]
+    } else {
+        certificates
+            .iter()
+            .map(|certificate| {
+                certificate_row(
+                    certificate,
+                    remove_label.clone(),
+                    Message::Change(remove(certificate.clone())),
+                )
+            })
+            .collect()
+    };
+    Column::new()
+        .spacing(8)
+        .push(
+            Column::new()
+                .spacing(2)
+                .push(text(title).size(14).font(style::BOLD))
+                .push(muted(description)),
+        )
+        .push(Column::with_children(rows).spacing(8))
+        .into()
+}
+
+/// A server and its certificate's fingerprint, with a button to remove it.
+fn certificate_row(
+    certificate: &KnownCertificate,
+    remove_label: String,
+    remove: Message,
+) -> Element<'_, Message> {
+    let words = Column::new()
+        .spacing(2)
+        .width(Length::Fill)
+        .push(text(format!("{}:{}", certificate.host, certificate.port)))
+        .push(muted(fingerprint_halves(
+            &certificate.fingerprint.to_string(),
+        )));
+    Row::new()
+        .spacing(16)
+        .align_y(Alignment::Center)
+        .push(words)
+        .push(action_button(remove_label, Some(remove), false))
+        .into()
+}
+
+/// A fingerprint on two lines: it has no spaces, so it wouldn't wrap.
+fn fingerprint_halves(fingerprint: &str) -> String {
+    let bytes: Vec<&str> = fingerprint.split(':').collect();
+    let (first, second) = bytes.split_at(bytes.len() / 2);
+    format!("{}\n{}", first.join(":"), second.join(":"))
+}
+
+/// Secondary text, as in a setting's description.
+fn muted<'a>(content: impl text::IntoFragment<'a>) -> iced::widget::Text<'a> {
+    text(content).size(12).style(|theme: &Theme| text::Style {
+        color: Some(theme.extended_palette().background.strongest.color),
+    })
 }
 
 fn about<'a>(
@@ -783,13 +914,7 @@ impl<'a> Setting<'a> {
     /// block control underneath when `side_by_side` is false (space is
     /// tight). Switches always stay beside.
     fn view(self, side_by_side: bool) -> Element<'a, Message> {
-        let description = (!self.description.is_empty()).then(|| {
-            text(self.description)
-                .size(12)
-                .style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.strongest.color),
-                })
-        });
+        let description = (!self.description.is_empty()).then(|| muted(self.description));
         let words = Column::new()
             .spacing(2)
             .width(Length::Fill)
@@ -860,6 +985,10 @@ mod tests {
     #[test]
     fn changes_apply_to_their_setting() {
         let folder = PathBuf::from("/recordings");
+        let certificate = KnownCertificate::new(
+            &server_remote_core::Target::new("ilo", 443),
+            server_remote_core::CertFingerprint([1; 32]),
+        );
         type Check = fn(&Settings) -> bool;
         let cases: Vec<(&str, Change, Check)> = vec![
             ("confirm quit", Change::ConfirmQuit(false), |s| {
@@ -914,6 +1043,21 @@ mod tests {
                 Change::RecordingQuality(RecordingQuality::Lossless),
                 |s| s.recording.quality == RecordingQuality::Lossless,
             ),
+            (
+                "certificate checking",
+                Change::CertificateChecking(CertificateChecking::Strict),
+                |s| s.security.certificate_checking == CertificateChecking::Strict,
+            ),
+            (
+                "trust certificate",
+                Change::TrustCertificate(certificate.clone()),
+                |s| s.security.trusted.len() == 1,
+            ),
+            (
+                "block certificate",
+                Change::BlockCertificate(certificate.clone()),
+                |s| s.security.blocked.len() == 1,
+            ),
         ];
 
         for (name, change, check) in cases {
@@ -930,6 +1074,33 @@ mod tests {
         apply(&mut settings, Change::DefaultRecordingFolder);
         assert_eq!(settings.recording.folder, None);
         assert_eq!(settings.recording.recent_folders, vec![PathBuf::from("/a")]);
+    }
+
+    #[test]
+    fn removing_a_certificate_takes_it_off_its_list() {
+        let certificate = KnownCertificate::new(
+            &server_remote_core::Target::new("ilo", 443),
+            server_remote_core::CertFingerprint([1; 32]),
+        );
+        let mut settings = Settings::default();
+        apply(&mut settings, Change::TrustCertificate(certificate.clone()));
+        apply(
+            &mut settings,
+            Change::ForgetCertificate(certificate.clone()),
+        );
+        assert!(settings.security.trusted.is_empty());
+        apply(&mut settings, Change::BlockCertificate(certificate.clone()));
+        apply(&mut settings, Change::UnblockCertificate(certificate));
+        assert!(settings.security.blocked.is_empty());
+    }
+
+    #[test]
+    fn fingerprints_split_into_two_lines() {
+        let shown =
+            fingerprint_halves(&server_remote_core::CertFingerprint([0xAB; 32]).to_string());
+        let lines: Vec<&str> = shown.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|line| line.split(':').count() == 16));
     }
 
     #[test]

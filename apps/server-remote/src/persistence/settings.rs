@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use server_remote_core::{CertFingerprint, Target, TlsPolicy};
 
 use crate::ui::connection::KeyboardSize;
 
@@ -20,6 +21,7 @@ pub struct Settings {
     pub display: Display,
     pub input: Input,
     pub recording: Recording,
+    pub security: Security,
     pub updates: Updates,
 }
 
@@ -336,6 +338,166 @@ impl RecordingQuality {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Security {
+    pub certificate_checking: CertificateChecking,
+    /// Certificates the user chose to always trust, at most one per host and
+    /// port.
+    pub trusted: Vec<KnownCertificate>,
+    /// Certificates refused without asking.
+    pub blocked: Vec<KnownCertificate>,
+}
+
+/// Why a certificate that failed verification is refused without asking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    Strict,
+    Blocked,
+}
+
+impl Refusal {
+    /// Why the connection didn't go ahead, for the disconnected screen.
+    pub fn reason(self) -> String {
+        match self {
+            Refusal::Strict => fl!("certificate-refused-strict"),
+            Refusal::Blocked => fl!("certificate-blocked"),
+        }
+    }
+}
+
+impl Security {
+    /// The policy a new connection to `target` starts with.
+    pub fn policy_for(&self, target: &Target) -> TlsPolicy {
+        match self.certificate_checking {
+            CertificateChecking::Strict => TlsPolicy::Secure,
+            CertificateChecking::Ask => TlsPolicy::AllowInsecure {
+                accepted: self
+                    .trusted
+                    .iter()
+                    .find(|known| known.is_for(&target.host, target.port))
+                    .map(|known| known.fingerprint),
+            },
+            CertificateChecking::Off => TlsPolicy::AcceptAny,
+        }
+    }
+
+    /// Whether a certificate from `target` that failed verification is
+    /// refused outright, rather than offered to the user.
+    pub fn refusal(&self, target: &Target, fingerprint: CertFingerprint) -> Option<Refusal> {
+        let blocked = KnownCertificate::new(target, fingerprint);
+        if self.blocked.contains(&blocked) {
+            return Some(Refusal::Blocked);
+        }
+        (self.certificate_checking == CertificateChecking::Strict).then_some(Refusal::Strict)
+    }
+
+    /// Trusts `certificate` from now on, in place of any other for its host
+    /// and port.
+    pub fn trust(&mut self, certificate: KnownCertificate) {
+        self.blocked.retain(|known| *known != certificate);
+        self.trusted
+            .retain(|known| !known.is_for(&certificate.host, certificate.port));
+        self.trusted.push(certificate);
+    }
+
+    pub fn block(&mut self, certificate: KnownCertificate) {
+        self.trusted.retain(|known| *known != certificate);
+        if !self.blocked.contains(&certificate) {
+            self.blocked.push(certificate);
+        }
+    }
+
+    pub fn forget(&mut self, certificate: &KnownCertificate) {
+        self.trusted.retain(|known| known != certificate);
+    }
+
+    pub fn unblock(&mut self, certificate: &KnownCertificate) {
+        self.blocked.retain(|known| known != certificate);
+    }
+}
+
+/// How strictly servers' TLS certificates are checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CertificateChecking {
+    /// Only certificates issued by a recognised authority.
+    Strict,
+    /// Ask about any other certificate, unless it's trusted or blocked.
+    #[default]
+    Ask,
+    /// Accept any certificate.
+    Off,
+}
+
+impl CertificateChecking {
+    pub const ALL: [CertificateChecking; 3] = [
+        CertificateChecking::Strict,
+        CertificateChecking::Ask,
+        CertificateChecking::Off,
+    ];
+
+    pub fn label(self) -> String {
+        match self {
+            CertificateChecking::Strict => fl!("certificate-checking-strict"),
+            CertificateChecking::Ask => fl!("certificate-checking-ask"),
+            CertificateChecking::Off => fl!("certificate-checking-off"),
+        }
+    }
+
+    pub fn description(self) -> String {
+        match self {
+            CertificateChecking::Strict => fl!("certificate-checking-strict-description"),
+            CertificateChecking::Ask => fl!("certificate-checking-ask-description"),
+            CertificateChecking::Off => fl!("certificate-checking-off-description"),
+        }
+    }
+}
+
+/// A server's certificate, identified by its fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnownCertificate {
+    pub host: String,
+    pub port: u16,
+    #[serde(with = "fingerprint_text")]
+    pub fingerprint: CertFingerprint,
+}
+
+impl KnownCertificate {
+    pub fn new(target: &Target, fingerprint: CertFingerprint) -> Self {
+        KnownCertificate {
+            host: target.host.clone(),
+            port: target.port,
+            fingerprint,
+        }
+    }
+
+    fn is_for(&self, host: &str, port: u16) -> bool {
+        self.host == host && self.port == port
+    }
+}
+
+/// Stores fingerprints as the colon-separated hex users see.
+mod fingerprint_text {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    use server_remote_core::CertFingerprint;
+
+    pub fn serialize<S: Serializer>(
+        fingerprint: &CertFingerprint,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(fingerprint)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<CertFingerprint, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        CertFingerprint::parse(&text)
+            .ok_or_else(|| D::Error::custom(format!("not a SHA-256 fingerprint: {text}")))
+    }
+}
+
 /// The directory settings live in, or `None` if the platform has none.
 pub fn config_dir() -> Option<PathBuf> {
     store::config_dir()
@@ -429,6 +591,126 @@ mod tests {
                 ..Settings::default()
             }
         );
+    }
+
+    fn known(host: &str, byte: u8) -> KnownCertificate {
+        KnownCertificate::new(&Target::new(host, 443), CertFingerprint([byte; 32]))
+    }
+
+    #[test]
+    fn known_certificates_round_trip_with_readable_fingerprints() {
+        let mut settings = Settings::default();
+        settings.security.certificate_checking = CertificateChecking::Off;
+        settings.security.trust(known("ilo", 0xAB));
+        settings.security.block(known("evil", 1));
+
+        let text = toml::to_string_pretty(&settings).unwrap();
+        assert!(text.contains("AB:AB:AB"), "{text}");
+        let parsed: Settings = toml::from_str(&text).unwrap();
+
+        assert_eq!(parsed, settings);
+    }
+
+    #[test]
+    fn a_malformed_fingerprint_fails_to_load() {
+        let parsed = toml::from_str::<Settings>(
+            r#"
+            [[security.trusted]]
+            host = "ilo"
+            port = 443
+            fingerprint = "AB:CD"
+            "#,
+        );
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn each_checking_level_gives_its_policy() {
+        let target = Target::new("ilo", 443);
+        let mut security = Security::default();
+        security.trust(known("ilo", 7));
+        security.trust(known("other", 9));
+
+        let cases = [
+            (CertificateChecking::Strict, TlsPolicy::Secure),
+            (
+                CertificateChecking::Ask,
+                TlsPolicy::AllowInsecure {
+                    accepted: Some(CertFingerprint([7; 32])),
+                },
+            ),
+            (CertificateChecking::Off, TlsPolicy::AcceptAny),
+        ];
+        for (checking, expected) in cases {
+            security.certificate_checking = checking;
+            assert_eq!(security.policy_for(&target), expected, "{checking:?}");
+        }
+
+        security.certificate_checking = CertificateChecking::Ask;
+        assert_eq!(
+            security.policy_for(&Target::new("ilo", 8443)),
+            TlsPolicy::AllowInsecure { accepted: None },
+            "another port is another server"
+        );
+    }
+
+    #[test]
+    fn refusals() {
+        let target = Target::new("ilo", 443);
+        let mut security = Security::default();
+        security.block(known("ilo", 1));
+
+        let cases = [
+            (
+                "blocked",
+                CertificateChecking::Ask,
+                1,
+                Some(Refusal::Blocked),
+            ),
+            (
+                "blocked while strict",
+                CertificateChecking::Strict,
+                1,
+                Some(Refusal::Blocked),
+            ),
+            ("unknown, ask", CertificateChecking::Ask, 2, None),
+            (
+                "unknown, strict",
+                CertificateChecking::Strict,
+                2,
+                Some(Refusal::Strict),
+            ),
+        ];
+        for (name, checking, byte, expected) in cases {
+            security.certificate_checking = checking;
+            assert_eq!(
+                security.refusal(&target, CertFingerprint([byte; 32])),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn trusting_and_blocking_keep_the_lists_consistent() {
+        let mut security = Security::default();
+        security.trust(known("ilo", 1));
+        security.trust(known("ilo", 2));
+        assert_eq!(security.trusted, vec![known("ilo", 2)], "one per server");
+
+        security.block(known("ilo", 2));
+        assert!(security.trusted.is_empty(), "blocking untrusts");
+        security.block(known("ilo", 2));
+        assert_eq!(security.blocked, vec![known("ilo", 2)], "no duplicates");
+
+        security.trust(known("ilo", 2));
+        assert!(security.blocked.is_empty(), "trusting unblocks");
+
+        security.forget(&known("ilo", 2));
+        assert!(security.trusted.is_empty());
+        security.block(known("ilo", 3));
+        security.unblock(&known("ilo", 3));
+        assert!(security.blocked.is_empty());
     }
 
     #[test]

@@ -21,11 +21,12 @@ use iced::{
     widget::{Column, Id, Row, Space, button, center, operation, stack, text},
 };
 use server_remote_core::{
-    Action, ActionValue, Capabilities, Connector, Control, DummyConnector, InputEvent,
-    PointerButton, PointerMode, SessionCommand, SessionEvent, SessionHandle,
-    Status as SessionStatus, Target, TlsPolicy, Traffic,
+    Action, ActionValue, Capabilities, CertFingerprint, ConnectError, Connector, Control,
+    DummyConnector, InputEvent, PointerButton, PointerMode, SessionCommand, SessionEvent,
+    SessionHandle, Status as SessionStatus, Target, TlsPolicy, Traffic,
 };
 use server_remote_icons as icons;
+use server_remote_ilo::IloConnector;
 use server_remote_spice::SpiceConnector;
 use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
@@ -41,8 +42,7 @@ use super::virtual_keyboard;
 use super::virtual_trackpad;
 use crate::persistence::settings::{self as settings, Scaling, Settings};
 
-/// The protocol a connection speaks. Only [`Protocol::Dummy`] is implemented so
-/// far; the others report "not implemented yet" when connected.
+/// The protocol a connection speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
@@ -178,6 +178,8 @@ enum Modal {
     /// Asks before invoking an action that has a
     /// [`Confirmation`](server_remote_core::Confirmation).
     Confirm(Action),
+    /// Asks whether to trust a certificate that failed verification.
+    TrustCertificate(CertFingerprint),
     Error {
         title: String,
         message: String,
@@ -240,6 +242,13 @@ enum Phase {
     Disconnected(Option<String>),
 }
 
+/// What the user signs in with. Only iLO uses the user name.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+}
+
 /// The senders the UI uses to talk to a running session.
 #[derive(Debug, Clone)]
 pub struct Controls {
@@ -253,8 +262,11 @@ pub struct State {
     protocol: Protocol,
     target: Target,
     tls: TlsPolicy,
-    password: String,
+    credentials: Credentials,
     phase: Phase,
+    /// Whether the session has ever connected. A failure before then is
+    /// reported where the connection was started, not in this tab.
+    connected_once: bool,
     capabilities: Capabilities,
     frame: Option<DisplayFrame>,
     next_generation: u64,
@@ -285,6 +297,18 @@ pub enum Message {
     Ready(Controls),
     /// An event from the running session.
     Session(SessionEvent),
+    /// The target's TLS certificate failed verification; ask the user. The
+    /// application refuses it instead if settings say so.
+    UntrustedCertificate(CertFingerprint),
+    /// Trust the certificate the dialog showed, and connect again. The
+    /// application also saves it when `remember` is set.
+    TrustCertificate {
+        fingerprint: CertFingerprint,
+        remember: bool,
+    },
+    /// Refuse the certificate the dialog showed. Handled by the application,
+    /// which adds it to the blocked list and closes the tab.
+    BlockCertificate(CertFingerprint),
     /// The pointer moved over the framebuffer (in framebuffer coordinates).
     Pointer(Point),
     /// A mouse button was pressed or released over the framebuffer.
@@ -363,7 +387,7 @@ impl State {
         protocol: Protocol,
         target: Target,
         tls: TlsPolicy,
-        password: String,
+        credentials: Credentials,
         input: &settings::Input,
     ) -> Self {
         Self {
@@ -373,8 +397,9 @@ impl State {
             protocol,
             target,
             tls,
-            password,
+            credentials,
             phase: Phase::Connecting,
+            connected_once: false,
             capabilities: Capabilities::default(),
             frame: None,
             next_generation: 0,
@@ -405,6 +430,14 @@ impl State {
         self.protocol
     }
 
+    pub fn target(&self) -> &Target {
+        &self.target
+    }
+
+    pub fn connected_once(&self) -> bool {
+        self.connected_once
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         if message.closes_menu() {
             self.menu = None;
@@ -424,6 +457,19 @@ impl State {
                 if should_focus {
                     return operation::focus(self.display_id.clone());
                 }
+            }
+            Message::UntrustedCertificate(fingerprint) => {
+                self.phase = Phase::Disconnected(Some(fl!("certificate-not-trusted")));
+                self.modal = Some(Modal::TrustCertificate(fingerprint));
+            }
+            Message::TrustCertificate { fingerprint, .. } => {
+                self.modal = None;
+                // A new policy changes the subscription's identity, so this
+                // starts a fresh connection attempt.
+                self.tls = TlsPolicy::AllowInsecure {
+                    accepted: Some(fingerprint),
+                };
+                self.phase = Phase::Connecting;
             }
             Message::Pointer(point) => self.send_pointer(point),
             Message::Button { button, pressed } => {
@@ -462,6 +508,7 @@ impl State {
             // The application owns the tab list and the settings, so it
             // intercepts these; this arm only satisfies exhaustiveness.
             Message::Close
+            | Message::BlockCertificate(_)
             | Message::OpenSettings(_)
             | Message::ChangeSetting(_)
             | Message::ChooseRecordingFolder => {}
@@ -527,6 +574,7 @@ impl State {
     fn apply(&mut self, event: SessionEvent) {
         match event {
             SessionEvent::Connected { size, capabilities } => {
+                self.connected_once = true;
                 self.size = Some(size);
                 self.set_capabilities(capabilities);
                 self.phase = Phase::Connected;
@@ -683,7 +731,7 @@ impl State {
             .push(self.status_bar());
 
         match &self.modal {
-            Some(modal) => stack![content, modal_view(modal)].into(),
+            Some(modal) => stack![content, modal_view(modal, &self.target)].into(),
             None => content.into(),
         }
     }
@@ -947,7 +995,7 @@ impl State {
                 protocol: self.protocol,
                 target: self.target.clone(),
                 tls: self.tls.clone(),
-                password: self.password.clone(),
+                credentials: self.credentials.clone(),
             },
             worker,
         )
@@ -1118,7 +1166,7 @@ async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
         .map(|file| file.path().to_path_buf())
 }
 
-fn modal_view(modal: &Modal) -> Element<'_, Message> {
+fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> {
     match modal {
         Modal::Confirm(action) => {
             let confirmation = action
@@ -1138,13 +1186,56 @@ fn modal_view(modal: &Modal) -> Element<'_, Message> {
                         label: fl!("button-cancel"),
                         on_press: Message::CloseModal,
                         kind: dialog::Kind::Secondary,
+                        icon: None,
                     },
                     dialog::Button {
                         label: confirmation.confirm_label.to_string(),
                         on_press: Message::Confirm,
                         kind,
+                        icon: None,
                     },
                 ],
+            )
+        }
+        Modal::TrustCertificate(fingerprint) => {
+            let trust = |remember| Message::TrustCertificate {
+                fingerprint: *fingerprint,
+                remember,
+            };
+            dialog::view_with(
+                fl!("certificate-title"),
+                fl!(
+                    "certificate-message",
+                    host = target.host.clone(),
+                    fingerprint = fingerprint_lines(&fingerprint.to_string())
+                ),
+                vec![dialog::Button {
+                    label: fl!("certificate-block"),
+                    on_press: Message::BlockCertificate(*fingerprint),
+                    kind: dialog::Kind::Secondary,
+                    icon: None,
+                }],
+                vec![
+                    dialog::Button {
+                        label: fl!("button-cancel"),
+                        on_press: Message::Close,
+                        kind: dialog::Kind::Secondary,
+                        icon: None,
+                    },
+                    dialog::Button {
+                        label: fl!("certificate-connect-once"),
+                        on_press: trust(false),
+                        kind: dialog::Kind::Secondary,
+                        icon: None,
+                    },
+                    dialog::Button {
+                        label: fl!("certificate-always-trust"),
+                        on_press: trust(true),
+                        kind: dialog::Kind::Primary,
+                        icon: None,
+                    },
+                ],
+                dialog::WIDE,
             )
         }
         Modal::Error { title, message } => dialog::view(
@@ -1154,9 +1245,22 @@ fn modal_view(modal: &Modal) -> Element<'_, Message> {
                 label: fl!("button-ok"),
                 on_press: Message::CloseModal,
                 kind: dialog::Kind::Primary,
+                icon: None,
             }],
         ),
     }
+}
+
+/// Breaks a fingerprint ("AB:CD:…") onto a new line every 8 bytes: it has no
+/// spaces, so it wouldn't otherwise wrap inside the dialog.
+fn fingerprint_lines(fingerprint: &str) -> String {
+    fingerprint
+        .split(':')
+        .collect::<Vec<_>>()
+        .chunks(8)
+        .map(|bytes| bytes.join(":"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Translate an iced key into an X11 keysym, which is what RFB/Spice expect.
@@ -1231,7 +1335,7 @@ struct Params {
     protocol: Protocol,
     target: Target,
     tls: TlsPolicy,
-    password: String,
+    credentials: Credentials,
 }
 
 // `use<>` declares the returned stream captures nothing from `&Params`, so it
@@ -1240,7 +1344,7 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
     let protocol = params.protocol;
     let target = params.target.clone();
     let tls = params.tls.clone();
-    let password = params.password.clone();
+    let Credentials { username, password } = params.credentials.clone();
 
     iced::stream::channel(
         32,
@@ -1255,19 +1359,21 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
                     let password = (!password.is_empty()).then_some(password);
                     SpiceConnector::new(password).connect(&target, &tls).await
                 }
-                other => {
-                    let reason = fl!("protocol-not-implemented", protocol = other.to_string());
-                    let _ = output
-                        .send(Message::Session(SessionEvent::Disconnected {
-                            reason: Some(reason),
-                        }))
-                        .await;
-                    return;
+                Protocol::Ilo => {
+                    IloConnector::new(username, password)
+                        .connect(&target, &tls)
+                        .await
                 }
             };
 
             let handle = match result {
                 Ok(handle) => handle,
+                Err(ConnectError::UntrustedCertificate(fingerprint)) => {
+                    let _ = output
+                        .send(Message::UntrustedCertificate(fingerprint))
+                        .await;
+                    return;
+                }
                 Err(error) => {
                     let _ = output
                         .send(Message::Session(SessionEvent::Disconnected {
@@ -1314,7 +1420,7 @@ mod tests {
             Protocol::Dummy,
             Target::new("localhost", 0),
             TlsPolicy::default(),
-            String::new(),
+            Credentials::default(),
             &settings::Input::default(),
         )
     }
@@ -1346,7 +1452,7 @@ mod tests {
                 Protocol::Dummy,
                 Target::new("localhost", 0),
                 TlsPolicy::default(),
-                String::new(),
+                Credentials::default(),
                 &input,
             );
             assert_eq!(state.show_virtual_keyboard, shown, "{name}");
@@ -1576,6 +1682,36 @@ mod tests {
             }
             assert_eq!(sent(&mut command_rx), expected, "{name}");
         }
+    }
+
+    #[test]
+    fn an_untrusted_certificate_asks_and_trusting_it_reconnects() {
+        let mut state = state();
+        let fingerprint = CertFingerprint([7; 32]);
+        let _ = state.update(Message::UntrustedCertificate(fingerprint));
+        assert!(matches!(state.phase, Phase::Disconnected(Some(_))));
+        assert!(matches!(state.modal, Some(Modal::TrustCertificate(f)) if f == fingerprint));
+
+        let _ = state.update(Message::TrustCertificate {
+            fingerprint,
+            remember: false,
+        });
+        assert!(state.modal.is_none());
+        assert_eq!(state.phase, Phase::Connecting);
+        assert_eq!(
+            state.tls,
+            TlsPolicy::AllowInsecure {
+                accepted: Some(fingerprint)
+            }
+        );
+    }
+
+    #[test]
+    fn fingerprints_break_every_eight_bytes() {
+        let shown = fingerprint_lines(&CertFingerprint([0xAB; 32]).to_string());
+        let lines: Vec<&str> = shown.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert!(lines.iter().all(|line| *line == "AB:AB:AB:AB:AB:AB:AB:AB"));
     }
 
     #[test]

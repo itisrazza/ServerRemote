@@ -10,6 +10,7 @@ pub struct State {
     protocol: Protocol,
     name: String,
     hostname: String,
+    username: String,
     password: String,
 }
 
@@ -30,6 +31,8 @@ pub struct Request {
     pub protocol: Protocol,
     pub name: String,
     pub hostname: String,
+    /// Only iLO asks for one; other protocols ignore it.
+    pub username: String,
     pub password: String,
 }
 
@@ -38,6 +41,7 @@ pub enum IMessage {
     Protocol(Protocol),
     Name(String),
     Hostname(String),
+    Username(String),
     Password(String),
 }
 
@@ -47,6 +51,7 @@ impl State {
             protocol: Protocol::Dummy,
             name: String::new(),
             hostname: String::new(),
+            username: String::new(),
             password: String::new(),
         }
     }
@@ -65,6 +70,10 @@ impl State {
                 self.hostname = hostname;
                 Task::none()
             }
+            IMessage::Username(username) => {
+                self.username = username;
+                Task::none()
+            }
             IMessage::Password(password) => {
                 self.password = password;
                 Task::none()
@@ -77,6 +86,7 @@ impl State {
             protocol: self.protocol,
             name: self.name.clone(),
             hostname: self.hostname.clone(),
+            username: self.username.clone(),
             password: self.password.clone(),
         }
     }
@@ -99,6 +109,10 @@ impl State {
                             text_input(&fl!("connect-hostname"), &self.hostname)
                                 .on_input(|value| Message::Internal(IMessage::Hostname(value))),
                         )
+                        .push((self.protocol == Protocol::Ilo).then(|| {
+                            text_input(&fl!("connect-username"), &self.username)
+                                .on_input(|value| Message::Internal(IMessage::Username(value)))
+                        }))
                         .push(
                             text_input(&fl!("connect-password"), &self.password)
                                 .secure(true)
@@ -180,6 +194,7 @@ mod tests {
         let _ = state.update(IMessage::Protocol(Protocol::Vnc));
         let _ = state.update(IMessage::Name("Home NAS".to_owned()));
         let _ = state.update(IMessage::Hostname("example.com".to_owned()));
+        let _ = state.update(IMessage::Username("admin".to_owned()));
         let _ = state.update(IMessage::Password("hunter2".to_owned()));
 
         let request = state.request();
@@ -187,6 +202,7 @@ mod tests {
         assert_eq!(request.protocol, Protocol::Vnc);
         assert_eq!(request.name, "Home NAS");
         assert_eq!(request.hostname, "example.com");
+        assert_eq!(request.username, "admin");
         assert_eq!(request.password, "hunter2");
     }
 }

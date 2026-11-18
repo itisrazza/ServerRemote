@@ -16,6 +16,9 @@ pub struct SavedSession {
     pub name: String,
     pub protocol: Protocol,
     pub hostname: String,
+    /// Only iLO uses a user name.
+    #[serde(default)]
+    pub username: String,
     /// Stored in plaintext for now. TODO: move to OS keychain storage
     /// (`keyring` crate) once the saved-sessions flow is closer to
     /// production use — see the persistence-feature discussion.
@@ -66,6 +69,7 @@ mod tests {
         SavedSession {
             name: name.to_owned(),
             protocol: Protocol::Vnc,
+            username: String::new(),
             hostname: "example.com".to_owned(),
             password: String::new(),
         }

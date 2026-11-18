@@ -39,6 +39,7 @@ icons! {
     CHEVRON_UP = "carbon_chevron-up";
     CLOSE = "carbon_close";
     CLOSE_LARGE = "carbon_close-large";
+    COPY_TO_CLIPBOARD = "carbon_copy-to-clipboard";
     CURSOR_1 = "carbon_cursor-1";
     DIAMOND_OUTLINE = "carbon_diamond-outline";
     DOWN_TO_BOTTOM = "carbon_down-to-bottom";
