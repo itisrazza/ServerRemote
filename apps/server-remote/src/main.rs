@@ -54,6 +54,7 @@ fn saved_session_from_request(
         name,
         protocol: request.protocol,
         hostname: request.hostname,
+        username: request.username,
         password: request.password,
     }
 }
@@ -97,6 +98,7 @@ mod tests {
             protocol: ui::connection::Protocol::Dummy,
             name: String::new(),
             hostname: hostname.to_owned(),
+            username: String::new(),
             password: String::new(),
         }
     }
@@ -526,6 +528,23 @@ mod tests {
             false,
             romanian(vec![Message::RequestClose(window::Id::unique())]),
         ));
+
+        // The iLO connect form, and the certificate prompt in each theme and
+        // language.
+        let ilo_form = vec![
+            Message::SelectTab(Tab::Connect),
+            Message::ConnectTab(ui::connect::Message::Internal(
+                ui::connect::IMessage::Protocol(ui::connection::Protocol::Ilo),
+            )),
+        ];
+        let trust = vec![conn(Conn::UntrustedCertificate(
+            server_remote_core::CertFingerprint(core::array::from_fn(|i| i as u8 * 7)),
+        ))];
+        states.push(("connect-ilo", false, ilo_form.clone()));
+        states.push(("connect-ilo-ro", false, romanian(ilo_form)));
+        states.push(("trust-certificate", false, trust.clone()));
+        states.push(("trust-certificate-light", false, light(trust.clone())));
+        states.push(("trust-certificate-ro", false, romanian(trust)));
 
         // Wide by default; these are also rendered at a narrow width.
         const NARROW: [&str; 1] = ["settings-display-narrow"];
@@ -988,7 +1007,10 @@ impl Application {
             request.protocol,
             target,
             TlsPolicy::default(),
-            request.password,
+            ui::connection::Credentials {
+                username: request.username,
+                password: request.password,
+            },
             &self.settings.input,
         ));
         self.tab = Tab::Connection(id);

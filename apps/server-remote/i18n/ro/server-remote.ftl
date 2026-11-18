@@ -33,6 +33,7 @@ file-dialog-supported = Fișiere acceptate
 
 connect-name = Nume (folosit la salvare)
 connect-hostname = Nume gazdă
+connect-username = Nume de utilizator
 connect-password = Parolă
 connect-read-only = Doar citire
 connect-save = Salvează
@@ -51,7 +52,13 @@ status-connected = Conectat
 status-disconnected = Deconectat
 close-tab = Închide fila
 waiting-for-frame = Se așteaptă primul cadru…
-protocol-not-implemented = { $protocol } nu este implementat încă
+certificate-title = Certificat neverificat
+certificate-message =
+    { $host } a prezentat un certificat care nu poate fi verificat. Poate fi autosemnat sau expirat. Continuă doar dacă amprenta se potrivește cu cea la care te aștepți:
+
+    { $fingerprint }
+certificate-trust = Acceptă și conectează
+certificate-not-trusted = Certificatul serverului nu a fost acceptat.
 info-protocol = Protocol
 info-address = Adresă
 info-status = Stare

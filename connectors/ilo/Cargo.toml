@@ -1,6 +1,6 @@
 [package]
 name = "server-remote-ilo"
-description = "HPE iLO Remote Console connector for ServerRemote (not yet implemented)."
+description = "HPE iLO 4 Integrated Remote Console connector for ServerRemote."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +9,14 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aes = "0.9.4"
+serde_json = "1.0.154"
+server-remote-core = { path = "../../lib/core" }
+server-remote-icons = { path = "../../lib/icons" }
+tokio = { version = "1.52.3", features = ["rt", "sync", "macros", "net", "io-util", "time"] }
+
+[dev-dependencies]
+rcgen = "0.14.10"
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "logging", "tls12"] }

@@ -799,9 +799,23 @@ or mouse input.
 
 ## Testing during implementation
 
-The plan is to capture a real iLO 4's behaviour and build a **mock iLO
-server** from it. The connector can then be developed and tested in CI
-without hardware.
+The connector (`connectors/ilo`, `server-remote-ilo`) implements the v1 path
+of this page. It is tested in two ways:
+
+- **In CI**, against a mock iLO in `connectors/ilo/src/tests.rs`: an HTTPS
+  server with a self-signed certificate for the web API, and a console port
+  that checks the negotiation, sends the 7-byte session header that firmware
+  2.82 sent, and then a small synthetic screen encrypted with fixed test
+  keys. It also sends power and health over an AES command channel, and
+  checks the keyboard, mouse and closing messages the client sends back.
+- **Locally**, an ignored test decodes a real capture:
+  `ILO_CAPTURE=<capture>.json cargo test -p server-remote-ilo -- --ignored`
+  (add `ILO_CAPTURE_PPM=<file>` to save the screen). The captures stay
+  outside the repo, as described below. On `kvm_refresh.json` it decodes a
+  correct 1600×900 screen.
+
+The plan was to capture a real iLO 4's behaviour and build the mock from
+it, so the connector can be developed and tested in CI without hardware.
 
 - **Capture.** Record each scenario from a real iLO 4: the HTTPS
   request/response pairs, then the raw bytes of each TCP connection in both

@@ -10,7 +10,7 @@ desktop and console protocols as possible, focused on the ones that lack a good
 client on the platforms I actually use (macOS in particular).
 
 > **Status: early, experimental.** VNC works end to end but isn't complete;
-> Spice is in progress; iLO is starting soon. Interfaces will keep changing.
+> Spice and iLO 4 are in progress. Interfaces will keep changing.
 
 ## Why
 
@@ -30,10 +30,15 @@ gaps:
 | Dummy (test pattern) | ✅ Works |
 | VNC / RFB | 🚧 Works end to end (render, mouse, keyboard), not complete |
 | Spice | 🚧 In progress |
-| HPE iLO Remote Console | ⏳ Starting soon |
+| HPE iLO 4 Remote Console | 🚧 In progress: video, keyboard, mouse, power and status; no virtual media yet |
 
 VNC currently negotiates None / VNC-password auth over plain TCP, using Raw and
 CopyRect encodings. Richer encodings, TLS, and damage updates are on the roadmap.
+
+iLO 4 logs in over HTTPS with an iLO user name and password. iLOs usually have
+self-signed certificates, so the first connection shows the certificate's
+fingerprint and asks whether to trust it. The protocol is documented in
+[`docs/protocols/ilo4.md`](docs/protocols/ilo4.md).
 
 Server setup and known limitations for each protocol are in the
 [protocol notes](docs/protocols/README.md).
@@ -58,10 +63,11 @@ It's a Cargo workspace:
 - `connectors/` — one crate per protocol, implementing the core `Connector`.
   - `vnc` (`server-remote-vnc`) — VNC/RFB, on top of [`vnc-rs`](https://crates.io/crates/vnc-rs).
   - `spice` (`server-remote-spice`) — Spice, on top of `lib/spice`.
-  - `ilo` (`server-remote-ilo`) — placeholder; work starts soon.
+  - `ilo` (`server-remote-ilo`) — HPE iLO 4 Integrated Remote Console,
+    implemented from scratch (see [`docs/protocols/ilo4.md`](docs/protocols/ilo4.md)).
 - `lib/`
   - `core` (`server-remote-core`) — protocol-agnostic traits and types
-    (UI-free), plus the dummy connector.
+    (UI-free), the TLS transport, plus the dummy connector.
   - `spice` (`spice-rs`) — Spice protocol client library.
   - `icons` (`server-remote-icons`) — the app's icon set, embedded at build
     time, with optional `iced` integration.

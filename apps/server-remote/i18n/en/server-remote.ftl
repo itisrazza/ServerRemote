@@ -33,6 +33,7 @@ file-dialog-supported = Supported files
 
 connect-name = Name (used when saving)
 connect-hostname = Hostname
+connect-username = User name
 connect-password = Password
 connect-read-only = Read-only
 connect-save = Save
@@ -51,7 +52,13 @@ status-connected = Connected
 status-disconnected = Disconnected
 close-tab = Close tab
 waiting-for-frame = Waiting for first frame…
-protocol-not-implemented = { $protocol } is not implemented yet
+certificate-title = Untrusted certificate
+certificate-message =
+    { $host } presented a certificate that can't be verified. It may be self-signed or expired. Continue only if this fingerprint matches the one you expect:
+
+    { $fingerprint }
+certificate-trust = Trust and connect
+certificate-not-trusted = The server's certificate wasn't trusted.
 info-protocol = Protocol
 info-address = Address
 info-status = Status
