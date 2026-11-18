@@ -1,0 +1,62 @@
+name: Website
+
+# Publishes website/ to GitHub Pages. The logo, fonts and icons are staged from
+# where the app keeps them, so the site never drifts from the app.
+on:
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - logo.svg
+      - apps/server-remote/assets/fonts/**
+      - lib/icons/assets/**
+      - .github/workflows/website.yml
+  pull_request:
+    paths:
+      - website/**
+      - .github/workflows/website.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Stage site
+        run: |
+          mkdir -p _site/fonts _site/icons
+          cp -r website/. _site/
+          rm -f _site/README.md
+          cp logo.svg _site/
+          cp lib/icons/assets/*.svg _site/icons/
+          cp apps/server-remote/assets/fonts/NunitoSans-Medium.ttf \
+             apps/server-remote/assets/fonts/NunitoSans-Bold.ttf \
+             apps/server-remote/assets/fonts/NunitoSans-SemiExpandedBlack.ttf \
+             apps/server-remote/assets/fonts/OFL.txt \
+             _site/fonts/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

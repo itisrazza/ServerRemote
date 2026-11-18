@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Server Remote</title>
+  <meta name="description" content="A native remote console client for servers and virtual machines, with support for HPE iLO and Spice, on macOS, Windows and Linux.">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <!-- Laid out like the app's title bar: a logo button, tabs, and a button at the far end. -->
+    <nav class="titlebar" aria-label="Site">
+      <a class="control square" href="./" aria-label="Server Remote home">
+        <img src="logo.svg" alt="" width="18" height="18">
+      </a>
+      <a class="control tab active" href="#top"><span class="icon" style="--icon: url(icons/carbon_information.svg)"></span>Overview</a>
+      <a class="control tab" href="#protocols"><span class="icon" style="--icon: url(icons/carbon_screen.svg)"></span>Protocols</a>
+      <a class="control tab" href="#get-it"><span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>Get it</a>
+      <span class="spacer"></span>
+      <a class="control square" href="https://github.com/itisrazza/ServerRemote" aria-label="Server Remote on GitHub">
+        <span class="icon" style="--icon: url(icons/carbon_logo--github.svg)"></span>
+      </a>
+    </nav>
+
+    <header class="hero" id="top">
+      <h1>Server Remote</h1>
+      <p>A native remote console client for servers and virtual machines, with support for HPE iLO and Spice.</p>
+      <p class="badges">
+        <span class="chip"><span class="dot warning"></span>Early and experimental</span>
+        <span class="chip">macOS · Windows · Linux</span>
+        <span class="chip">MIT or Apache 2.0</span>
+      </p>
+    </header>
+
+    <figure class="shot">
+      <picture>
+        <source srcset="screenshot-light.png" media="(prefers-color-scheme: light)">
+        <img src="screenshot-dark.png" width="1024" height="768"
+             alt="Server Remote showing a remote Linux desktop, with connection tabs and a toolbar above it and a status bar below showing link speed, resolution, encryption and server power and health.">
+      </picture>
+    </figure>
+
+    <div class="groups">
+      <section class="group" id="protocols" aria-labelledby="protocols-title">
+        <span class="icon lead" style="--icon: url(icons/carbon_screen.svg)"></span>
+        <div class="group-body">
+          <h2 id="protocols-title">Protocols</h2>
+          <ul class="tiles">
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/protocol_ilo.svg)"></span>
+              <span class="tile-text"><strong>HPE iLO 4 Remote Console</strong><span>An independent implementation of the Integrated Remote Console: video, keyboard and mouse, power control and server status. Virtual media isn't supported yet. Runs on current macOS, Windows and Linux, without tracking down the old Java or .NET versions HPE's consoles depend on.</span></span>
+              <span class="status"><span class="dot warning"></span>In progress</span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_screen.svg)"></span>
+              <span class="tile-text"><strong>Spice</strong><span>For virtual machines running in QEMU, whether managed with libvirt or by hand. Existing Spice clients for macOS depend on GTK; Server Remote implements the protocol natively.</span></span>
+              <span class="status"><span class="dot warning"></span>In progress</span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_screen.svg)"></span>
+              <span class="tile-text"><strong>VNC</strong><span>Display, keyboard and mouse. Included as a well-established reference protocol. In progress until it matches existing VNC clients in features and performance.</span></span>
+              <span class="status"><span class="dot warning"></span>In progress</span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_add-large.svg)"></span>
+              <span class="tile-text"><strong>Other server consoles</strong><span>Other vendors' BMCs use proprietary console protocols of their own. Support depends on contributors with access to the hardware; <a href="https://github.com/itisrazza/ServerRemote">contributions are welcome</a>.</span></span>
+              <span class="status"><span class="dot inactive"></span>Help wanted</span>
+            </li>
+          </ul>
+          <p class="more">
+            Server setup and known limitations for each protocol are in the
+            <a href="https://github.com/itisrazza/ServerRemote/blob/main/docs/protocols/README.md">protocol notes</a>.
+          </p>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="features-title">
+        <span class="icon lead" style="--icon: url(icons/carbon_settings.svg)"></span>
+        <div class="group-body">
+          <h2 id="features-title">Built for consoles</h2>
+          <ul class="tiles">
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_virtual-desktop.svg)"></span>
+              <span class="tile-text"><strong>Nothing else to install</strong><span>A single native binary per platform, written in Rust with <a href="https://iced.rs">iced</a>.</span></span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_power.svg)"></span>
+              <span class="tile-text"><strong>Protocol-specific controls</strong><span>Each protocol adds its own menus, actions and status indicators, such as power control and health for iLO. Multiple connections open side by side in tabs.</span></span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_keyboard.svg)"></span>
+              <span class="tile-text"><strong>On-screen keyboard and trackpad</strong><span>Send keys and key combinations the local system would otherwise intercept, or that a Mac keyboard lacks.</span></span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="group" id="get-it" aria-labelledby="get-it-title">
+        <span class="icon lead" style="--icon: url(icons/carbon_download.svg)"></span>
+        <div class="group-body">
+          <h2 id="get-it-title">Get it</h2>
+          <p>
+            There is no stable release yet. Development builds for Windows,
+            macOS and Linux are produced for every change to
+            <code>main</code> and can be downloaded from the latest Build run
+            (a GitHub account is required).
+          </p>
+          <p class="buttons">
+            <a class="control primary" href="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml?query=branch%3Amain"><span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>Latest builds</a>
+            <a class="control" href="https://github.com/itisrazza/ServerRemote"><span class="icon" style="--icon: url(icons/carbon_logo--github.svg)"></span>Source</a>
+            <a class="control" href="https://github.com/itisrazza/ServerRemote/blob/main/docs/architecture/roadmap.md"><span class="icon" style="--icon: url(icons/carbon_launch.svg)"></span>Roadmap</a>
+          </p>
+          <p>To build from source, install Rust 1.85 or newer and run:</p>
+          <pre><code>git clone https://github.com/itisrazza/ServerRemote
+cd ServerRemote
+cargo run -p server-remote</code></pre>
+        </div>
+      </section>
+    </div>
+
+    <footer>
+      <span>Made by <a href="https://razza.io/">Rareș Nistor</a></span>
+    </footer>
+  </div>
+</body>
+</html>

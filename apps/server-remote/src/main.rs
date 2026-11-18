@@ -285,6 +285,27 @@ mod tests {
         let _ = app.update(session(SessionEvent::Status(status(11_250, 7_125))));
     }
 
+    /// The remote desktop from the containerdesk mock's README capture, cut
+    /// out of the window around it and scaled to the session's 1024×768.
+    fn containerdesk_frame() -> server_remote_core::Frame {
+        use image::imageops;
+
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../mock/containerdesk/screenshot.png"
+        );
+        let capture = image::open(path)
+            .expect("reads the containerdesk capture")
+            .into_rgba8();
+        let desktop = imageops::crop_imm(&capture, 205, 272, 1862, 1396).to_image();
+        let desktop = imageops::resize(&desktop, 1024, 768, imageops::FilterType::Lanczos3);
+        server_remote_core::Frame {
+            width: desktop.width(),
+            height: desktop.height(),
+            pixels: desktop.into_raw(),
+        }
+    }
+
     #[test]
     #[ignore = "writes review snapshots; needs SNAPSHOT_DIR"]
     fn render_review_snapshots() {
@@ -433,6 +454,13 @@ mod tests {
             .collect()
         };
         states.push(("connector-light", true, light(vec![])));
+        // The website's screenshots: a live desktop rather than the
+        // "waiting for first frame" placeholder.
+        let desktop = conn(Conn::Session(server_remote_core::SessionEvent::Frame(
+            containerdesk_frame(),
+        )));
+        states.push(("website", true, vec![desktop.clone()]));
+        states.push(("website-light", true, light(vec![desktop])));
         states.push((
             "power-menu-light",
             true,

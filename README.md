@@ -35,6 +35,9 @@ gaps:
 VNC currently negotiates None / VNC-password auth over plain TCP, using Raw and
 CopyRect encodings. Richer encodings, TLS, and damage updates are on the roadmap.
 
+Server setup and known limitations for each protocol are in the
+[protocol notes](docs/protocols/README.md).
+
 ## Build and run
 
 Requires a recent Rust toolchain (edition 2024, Rust ≥ 1.85).
@@ -62,6 +65,9 @@ It's a Cargo workspace:
   - `spice` (`spice-rs`) — Spice protocol client library.
   - `icons` (`server-remote-icons`) — the app's icon set, embedded at build
     time, with optional `iced` integration.
+
+`website/` is the landing page, published to GitHub Pages (see its
+[README](website/README.md)).
 
 See [docs/architecture/](docs/architecture/README.md) for how connectors, sessions,
 and the capability-driven UI fit together.
