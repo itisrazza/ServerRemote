@@ -546,6 +546,30 @@ mod tests {
         states.push(("trust-certificate-light", false, light(trust.clone())));
         states.push(("trust-certificate-ro", false, romanian(trust)));
 
+        // Bands of the four VGA greys, to check the display shows each
+        // value unchanged (no stray gamma).
+        let greys = server_remote_core::Frame {
+            width: 256,
+            height: 64,
+            pixels: (0..256 * 64)
+                .flat_map(|index: usize| {
+                    let grey = [0, 85, 170, 255][index % 256 / 64];
+                    [grey, grey, grey, 255]
+                })
+                .collect(),
+        };
+        states.push((
+            "display-greys",
+            false,
+            vec![
+                conn(Conn::Session(SessionEvent::Connected {
+                    size: (256, 64),
+                    capabilities: server_remote_core::Capabilities::default(),
+                })),
+                conn(Conn::Session(SessionEvent::Frame(greys))),
+            ],
+        ));
+
         // The Security section with an entry in each list.
         let known = |byte: u8| {
             KnownCertificate::new(

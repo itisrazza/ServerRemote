@@ -94,6 +94,12 @@ changes behaviour across the whole app:
   arriving — the contributor avatars were blank for exactly this reason.
   Create raster handles once (a `LazyLock`, like `AVATARS` in
   `ui/settings.rs`, or a cache) and clone them into the view.
+- With iced's default `web-colors` feature the window surface isn't sRGB and
+  `iced_graphics::color::GAMMA_CORRECTION` is false. A custom `wgpu` texture
+  must follow that constant (`Rgba8Unorm` when false): an `Rgba8UnormSrgb`
+  texture is decoded to linear on sampling and never re-encoded, so mid-tones
+  come out much darker (VGA grey 170 showed as 102). The `display-greys`
+  snapshot checks this; measure its bands.
 - `image::Image::border_radius` exists in 0.14 (round avatars).
 - `Svg` ignores the surrounding text colour and renders `fill="currentColor"`
   or white SVGs in the source colour (black). Always set `.style()`; see
