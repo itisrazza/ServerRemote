@@ -37,8 +37,9 @@ protocol table and crate list; the status line and crate table in
 [docs/architecture/README.md](docs/architecture/README.md); the
 [roadmap](docs/architecture/roadmap.md) (move items between Done, In
 progress and Next); the architecture page for the area you changed; the
-crate `description` in `apps/server-remote/Cargo.toml`; and the protocol
-table and feature list on the [website](website/index.html).
+crate `description` in `apps/server-remote/Cargo.toml`; the caveats in the
+[protocol notes](docs/protocols/README.md); and the protocol table and
+feature list on the [website](website/index.html).
 
 Because of `-D warnings`, a type or function nothing uses yet fails CI as
 dead code. Land a feature together with its first use rather than adding

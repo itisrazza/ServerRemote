@@ -35,6 +35,9 @@ gaps:
 VNC currently negotiates None / VNC-password auth over plain TCP, using Raw and
 CopyRect encodings. Richer encodings, TLS, and damage updates are on the roadmap.
 
+Server setup and known limitations for each protocol are in the
+[protocol notes](docs/protocols/README.md).
+
 ## Build and run
 
 Requires a recent Rust toolchain (edition 2024, Rust ≥ 1.85).
