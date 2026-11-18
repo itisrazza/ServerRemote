@@ -2,7 +2,9 @@
 
 What Server Remote supports for each protocol, what the server needs, and
 what to expect. Every protocol is still in progress; the
-[roadmap](../architecture/roadmap.md) says what's coming next.
+[roadmap](../architecture/roadmap.md) says what's coming next, and
+[implementing a protocol](implementing.md) explains how new protocol work is
+done.
 
 | Protocol | Status | Connection | Authentication |
 |---|---|---|---|

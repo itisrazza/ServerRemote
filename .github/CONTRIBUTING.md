@@ -22,6 +22,11 @@ how connectors, sessions and the capability-driven UI fit together.
 colours, `fl!` strings, protocol traps); they apply to people as much as to
 coding agents.
 
+Protocol work is clean-room: a spec first, then an implementation written
+from that spec alone. Read
+[implementing a protocol](../docs/protocols/implementing.md) before working
+on a connector.
+
 ## Making a change
 
 1. Branch off `main` (`feature/<name>`, `fix/<name>`, …) and open a pull

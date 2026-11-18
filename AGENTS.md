@@ -50,6 +50,12 @@ headlessly through an ignored snapshot test; the UI guides below explain it.
 
 ## Rules that apply everywhere
 
+- **Protocols are clean-room.** Follow
+  [implementing a protocol](docs/protocols/implementing.md). A spec is
+  written first, and a separate session implements it from that spec
+  alone. If your session has read a first-party client, a decompile or
+  another implementation's source, it works on the spec only.
+
 - **Tests never touch the user's real files.** Build the app with
   `Application::new(None, Settings::default())`; persistence takes an
   `Option<&Path>` config directory and stores nothing without one. Tasks
