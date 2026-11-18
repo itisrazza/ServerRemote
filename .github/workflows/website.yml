@@ -1,6 +1,6 @@
 name: Website
 
-# Publishes website/ to GitHub Pages. The logo and fonts are staged from
+# Publishes website/ to GitHub Pages. The logo, fonts and icons are staged from
 # where the app keeps them, so the site never drifts from the app.
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - website/**
       - logo.svg
       - apps/server-remote/assets/fonts/**
+      - lib/icons/assets/**
       - .github/workflows/website.yml
   pull_request:
     paths:
@@ -31,10 +32,11 @@ jobs:
 
       - name: Stage site
         run: |
-          mkdir -p _site/fonts
+          mkdir -p _site/fonts _site/icons
           cp -r website/. _site/
           rm -f _site/README.md
           cp logo.svg _site/
+          cp lib/icons/assets/*.svg _site/icons/
           cp apps/server-remote/assets/fonts/NunitoSans-Medium.ttf \
              apps/server-remote/assets/fonts/NunitoSans-Bold.ttf \
              apps/server-remote/assets/fonts/NunitoSans-SemiExpandedBlack.ttf \

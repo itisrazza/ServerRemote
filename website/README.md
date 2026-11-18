@@ -4,27 +4,37 @@ The project's landing page, published to GitHub Pages by
 [`.github/workflows/website.yml`](../.github/workflows/website.yml) on every
 push to `main` that touches it. It's plain HTML and CSS with no build step.
 
-The workflow adds `logo.svg` from the repository root and the Nunito Sans
-fonts from `apps/server-remote/assets/fonts/`, so those aren't duplicated
-here. To preview locally with them, stage the site the same way:
+Its look follows the app: the same greys, accent, radius and fonts (see
+`apps/server-remote/src/ui/style.rs`), a title bar of bordered tabs, and the
+status bar's indicator dots. The layout (a narrow column of icon-led groups)
+follows [razza.io](https://razza.io/).
+
+The workflow adds `logo.svg` from the repository root, the Nunito Sans fonts
+from `apps/server-remote/assets/fonts/` and the icons from
+`lib/icons/assets/`, so those aren't duplicated here. Icons are drawn as CSS
+masks (`<span class="icon" style="--icon: url(icons/…)">`), so they take the
+text colour like they do in the app. To preview locally, stage the site the
+same way:
 
 ```sh
-mkdir -p _site/fonts
+mkdir -p _site/fonts _site/icons
 cp -r website/. _site/
 cp logo.svg _site/
+cp lib/icons/assets/*.svg _site/icons/
 cp apps/server-remote/assets/fonts/NunitoSans-{Medium,Bold,SemiExpandedBlack}.ttf _site/fonts/
 python -m http.server -d _site
 ```
 
-The screenshots are the app's own `power-menu` review snapshots (dark and
-light), rendered headlessly:
+The screenshots are the app's `website` and `website-light` review
+snapshots, which show the containerdesk mock's desktop as the remote frame.
+Render them headlessly:
 
 ```sh
 SNAPSHOT_DIR=/some/dir cargo test -p server-remote render_review_snapshots -- --ignored
 ```
 
-then copy `power-menu-wgpu.png` and `power-menu-light-wgpu.png` over
+then copy `website-wgpu.png` and `website-light-wgpu.png` over
 `screenshot-dark.png` and `screenshot-light.png`.
 
-Keep the protocol table and status in step with the README when a protocol's
+Keep the protocol list and status in step with the README when a protocol's
 status changes.
