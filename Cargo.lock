@@ -4547,6 +4547,7 @@ dependencies = [
 name = "server-remote-core"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "rcgen",
  "rustls",
  "server-remote-icons",

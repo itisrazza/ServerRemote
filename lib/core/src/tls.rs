@@ -9,14 +9,25 @@
 //! fails normal verification is rejected with
 //! [`ConnectError::UntrustedCertificate`], carrying its fingerprint, unless the
 //! policy names that exact fingerprint as accepted.
+//!
+//! An accepted certificate may also use a legacy RSA key (1024 bits and up,
+//! with SHA-1 signatures), as older iLO firmware does. The peer still has to
+//! prove it holds that key; strict verification is unchanged.
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+use aws_lc_rs::signature::{
+    RSA_PKCS1_1024_8192_SHA1_FOR_LEGACY_USE_ONLY, RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY,
+    RSA_PKCS1_1024_8192_SHA512_FOR_LEGACY_USE_ONLY, RsaParameters, UnparsedPublicKey,
+};
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::CryptoProvider;
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::crypto::{CryptoProvider, WebPkiSupportedAlgorithms};
+use rustls::pki_types::{
+    AlgorithmIdentifier, CertificateDer, InvalidSignature, ServerName,
+    SignatureVerificationAlgorithm, UnixTime, alg_id,
+};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
@@ -159,6 +170,10 @@ impl TofuVerifier {
     fn rejected(&self) -> Option<CertFingerprint> {
         *self.rejected.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    fn is_accepted(&self, cert: &CertificateDer<'_>) -> bool {
+        self.accepted == Some(CertFingerprint::of(cert))
+    }
 }
 
 impl ServerCertVerifier for TofuVerifier {
@@ -188,13 +203,21 @@ impl ServerCertVerifier for TofuVerifier {
     }
 
     // Signatures are always checked, so an accepted fingerprint still
-    // requires the peer to hold the certificate's private key.
+    // requires the peer to hold the certificate's private key. Only the key
+    // size and digest rules relax, and only for that certificate.
     fn verify_tls12_signature(
         &self,
         message: &[u8],
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        let is_legacy_scheme = LEGACY_RSA
+            .mapping
+            .iter()
+            .any(|(scheme, _)| *scheme == dss.scheme);
+        if is_legacy_scheme && self.is_accepted(cert) {
+            return rustls::crypto::verify_tls12_signature(message, cert, dss, &LEGACY_RSA);
+        }
         self.webpki.verify_tls12_signature(message, cert, dss)
     }
 
@@ -208,14 +231,83 @@ impl ServerCertVerifier for TofuVerifier {
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.webpki.supported_verify_schemes()
+        let schemes = self.webpki.supported_verify_schemes();
+        if self.accepted.is_none() {
+            return schemes;
+        }
+        let legacy_only: Vec<SignatureScheme> = LEGACY_RSA
+            .supported_schemes()
+            .into_iter()
+            .filter(|scheme| !schemes.contains(scheme))
+            .collect();
+        [schemes, legacy_only].concat()
     }
 }
+
+/// RSA PKCS#1 verification that accepts keys from 1024 bits, which older
+/// management controllers (iLO 3, early iLO 4) still ship with.
+#[derive(Debug)]
+struct LegacyRsa {
+    signature_alg_id: AlgorithmIdentifier,
+    parameters: &'static RsaParameters,
+}
+
+impl SignatureVerificationAlgorithm for LegacyRsa {
+    fn verify_signature(
+        &self,
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> Result<(), InvalidSignature> {
+        UnparsedPublicKey::new(self.parameters, public_key)
+            .verify(message, signature)
+            .map_err(|_| InvalidSignature)
+    }
+
+    fn public_key_alg_id(&self) -> AlgorithmIdentifier {
+        alg_id::RSA_ENCRYPTION
+    }
+
+    fn signature_alg_id(&self) -> AlgorithmIdentifier {
+        self.signature_alg_id
+    }
+}
+
+/// `sha1WithRSAEncryption` (1.2.840.113549.1.1.5) with NULL parameters, which
+/// `alg_id` doesn't provide.
+const RSA_PKCS1_SHA1: AlgorithmIdentifier = AlgorithmIdentifier::from_slice(&[
+    0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00,
+]);
+
+static LEGACY_RSA_SHA1: LegacyRsa = LegacyRsa {
+    signature_alg_id: RSA_PKCS1_SHA1,
+    parameters: &RSA_PKCS1_1024_8192_SHA1_FOR_LEGACY_USE_ONLY,
+};
+static LEGACY_RSA_SHA256: LegacyRsa = LegacyRsa {
+    signature_alg_id: alg_id::RSA_PKCS1_SHA256,
+    parameters: &RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY,
+};
+static LEGACY_RSA_SHA512: LegacyRsa = LegacyRsa {
+    signature_alg_id: alg_id::RSA_PKCS1_SHA512,
+    parameters: &RSA_PKCS1_1024_8192_SHA512_FOR_LEGACY_USE_ONLY,
+};
+
+/// TLS 1.2 handshake signatures allowed for an accepted certificate, weakest
+/// preferred last. aws-lc-rs has no legacy SHA-384 variant.
+static LEGACY_RSA: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
+    all: &[&LEGACY_RSA_SHA512, &LEGACY_RSA_SHA256, &LEGACY_RSA_SHA1],
+    mapping: &[
+        (SignatureScheme::RSA_PKCS1_SHA512, &[&LEGACY_RSA_SHA512]),
+        (SignatureScheme::RSA_PKCS1_SHA256, &[&LEGACY_RSA_SHA256]),
+        (SignatureScheme::RSA_PKCS1_SHA1, &[&LEGACY_RSA_SHA1]),
+    ],
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rustls::ServerConfig;
+    use rustls::internal::msgs::codec::Codec;
     use rustls::pki_types::PrivateKeyDer;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
@@ -298,5 +390,106 @@ mod tests {
         let mut byte = [0];
         stream.read_exact(&mut byte).await.unwrap();
         assert_eq!(&byte, b"x");
+    }
+
+    /// rustls only builds these internally, so decode one from its wire form.
+    fn signed(scheme: SignatureScheme, signature: &[u8]) -> DigitallySignedStruct {
+        let length = u16::try_from(signature.len()).unwrap();
+        let wire = [
+            &u16::from(scheme).to_be_bytes()[..],
+            &length.to_be_bytes(),
+            signature,
+        ]
+        .concat();
+        DigitallySignedStruct::read_bytes(&wire).unwrap()
+    }
+
+    // aws-lc-rs refuses to sign with a 1024-bit key, so these fixtures come
+    // from `testdata/legacy-rsa/generate.sh` instead of a live handshake.
+    #[test]
+    fn legacy_rsa_signatures_verify_only_for_an_accepted_certificate() {
+        let cert = CertificateDer::from(&include_bytes!("../testdata/legacy-rsa/cert.der")[..]);
+        let message = &include_bytes!("../testdata/legacy-rsa/message.txt")[..];
+        let sha1 = &include_bytes!("../testdata/legacy-rsa/signature-sha1.bin")[..];
+        let sha512 = &include_bytes!("../testdata/legacy-rsa/signature-sha512.bin")[..];
+        let fingerprint = CertFingerprint::of(&cert);
+
+        struct Case<'a> {
+            name: &'a str,
+            accepted: Option<CertFingerprint>,
+            scheme: SignatureScheme,
+            signature: &'a [u8],
+            message: &'a [u8],
+            valid: bool,
+        }
+        let cases = [
+            Case {
+                name: "accepted, SHA-512",
+                accepted: Some(fingerprint),
+                scheme: SignatureScheme::RSA_PKCS1_SHA512,
+                signature: sha512,
+                message,
+                valid: true,
+            },
+            Case {
+                name: "accepted, SHA-1",
+                accepted: Some(fingerprint),
+                scheme: SignatureScheme::RSA_PKCS1_SHA1,
+                signature: sha1,
+                message,
+                valid: true,
+            },
+            Case {
+                name: "nothing accepted",
+                accepted: None,
+                scheme: SignatureScheme::RSA_PKCS1_SHA512,
+                signature: sha512,
+                message,
+                valid: false,
+            },
+            Case {
+                name: "another certificate accepted",
+                accepted: Some(CertFingerprint([0; 32])),
+                scheme: SignatureScheme::RSA_PKCS1_SHA512,
+                signature: sha512,
+                message,
+                valid: false,
+            },
+            Case {
+                name: "tampered message",
+                accepted: Some(fingerprint),
+                scheme: SignatureScheme::RSA_PKCS1_SHA512,
+                signature: sha512,
+                message: b"tampered",
+                valid: false,
+            },
+            Case {
+                name: "mismatched digest",
+                accepted: Some(fingerprint),
+                scheme: SignatureScheme::RSA_PKCS1_SHA256,
+                signature: sha512,
+                message,
+                valid: false,
+            },
+        ];
+
+        for case in cases {
+            let verifier = TofuVerifier::new(case.accepted).unwrap();
+            let dss = signed(case.scheme, case.signature);
+            let result = verifier.verify_tls12_signature(case.message, &cert, &dss);
+            assert_eq!(result.is_ok(), case.valid, "{}: {result:?}", case.name);
+        }
+    }
+
+    #[test]
+    fn sha1_is_advertised_only_with_an_accepted_certificate() {
+        let advertises_sha1 = |accepted| {
+            TofuVerifier::new(accepted)
+                .unwrap()
+                .supported_verify_schemes()
+                .contains(&SignatureScheme::RSA_PKCS1_SHA1)
+        };
+        assert!(!advertises_sha1(None));
+        assert!(advertises_sha1(Some(CertFingerprint([0; 32]))));
     }
 }

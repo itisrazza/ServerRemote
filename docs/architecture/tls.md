@@ -25,6 +25,13 @@ usual, except that a certificate whose SHA-256 fingerprint the policy accepts
 passes without those checks. Handshake signatures are always verified, so the
 peer still has to hold the accepted certificate's private key.
 
+For an accepted certificate only, TLS 1.2 handshake signatures may also use a
+legacy RSA key (1024 bits and up, which older iLO firmware generates) and
+SHA-1, which the verifier then advertises. Without this, such a server fails
+with a misleading `BadSignature` even after the user approves it. Fixtures for
+the test live in `lib/core/testdata/legacy-rsa/`, with the script that made
+them.
+
 Any certificate that fails, under any policy, is reported as
 `UntrustedCertificate` with its fingerprint, so the UI can ask about it.
 Connectors use this rather than building their own TLS; the iLO connector's
