@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in Server Remote doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. For a security problem, don't open an
+        issue; follow the [security policy](https://github.com/itisrazza/ServerRemote/security/policy)
+        instead.
+
+        Please leave passwords, host names and IP addresses out of anything
+        you paste.
+
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options:
+        - HPE iLO
+        - Spice
+        - VNC
+        - Dummy (test pattern)
+        - Not protocol-specific
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Server
+      description: The server software or firmware you connected to, with its version.
+      placeholder: iLO 4 firmware 2.82, QEMU 9.1 Spice, TigerVNC 1.14…
+
+  - type: input
+    id: version
+    attributes:
+      label: Server Remote version
+      description: From Settings → About, or the commit if you built it yourself.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 26.1, Windows 11 24H2, Fedora 43…
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect to…
+        2. Click…
+        3. See…
+
+  - type: textarea
+    id: errors
+    attributes:
+      label: Errors and output
+      description: The error the app showed, and any terminal output if you started it from a terminal.
+      render: text

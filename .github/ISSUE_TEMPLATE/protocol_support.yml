@@ -1,0 +1,47 @@
+name: Protocol or server support
+description: Ask for a new protocol, or report a server or firmware version that won't work with Server Remote.
+labels: [protocol]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [protocol notes](https://github.com/itisrazza/ServerRemote/blob/main/docs/protocols/README.md)
+        first: they list what each protocol supports, what's been tested and
+        the known caveats.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Request
+      options:
+        - A protocol Server Remote doesn't support yet
+        - A server or firmware version that doesn't work
+        - A missing feature of a supported protocol
+    validations:
+      required: true
+
+  - type: input
+    id: protocol
+    attributes:
+      label: Protocol and server
+      description: The protocol, and the server software, hardware or firmware it runs on, with versions.
+      placeholder: iLO 5 firmware 3.05, Dell iDRAC 9, Proxmox VE 9 noVNC…
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What you'd like to do, and what happens today if you try.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: testing
+    attributes:
+      label: Can you help test?
+      description: Much of this work is checked against real hardware, so access to the server helps.
+      options:
+        - Yes, I can test builds against this server
+        - No

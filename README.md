@@ -77,7 +77,8 @@ and the capability-driven UI fit together.
 Work happens on branches merged into `main` by PR. Releases are cut as
 `release/vX.Y` branches, whose builds are release candidates; a validated
 candidate is tagged, and the macOS build is signed and notarised for the
-release. See [docs/releasing.md](docs/releasing.md).
+release. See [docs/releasing.md](docs/releasing.md), and
+[CONTRIBUTING](.github/CONTRIBUTING.md) before opening a pull request.
 
 ## Translations
 
