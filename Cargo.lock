@@ -4555,7 +4555,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
- "webpki-roots 1.0.12",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -4632,9 +4632,9 @@ dependencies = [
 
 [[package]]
 name = "shakenfist-spice-protocol"
-version = "0.1.5"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85aa628c84952dbd13d88ed3bca98c1ca42c011eea8cd6d0a42688528ae4318a"
+checksum = "f7cb23a6ce2c561b5249b2aac9c3472516c1607fbcf75743191c020c3fba4857"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -4644,10 +4644,12 @@ dependencies = [
  "serde",
  "sha1",
  "socket2",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
  "tracing",
- "webpki-roots 0.26.11",
+ "webpki-roots",
+ "x509-parser",
 ]
 
 [[package]]
@@ -5543,7 +5545,7 @@ dependencies = [
  "serde_json",
  "ureq-proto",
  "utf8-zero",
- "webpki-roots 1.0.12",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -5942,15 +5944,6 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "0.26.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
-dependencies = [
- "webpki-roots 1.0.12",
 ]
 
 [[package]]

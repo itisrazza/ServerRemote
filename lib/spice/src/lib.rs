@@ -232,7 +232,9 @@ async fn open_channel(
 
     match stream {
         SpiceStream::Plain(tcp) => Ok(tcp),
-        SpiceStream::Tls(_) => unreachable!("this connector never requests a TLS connection"),
+        SpiceStream::Tls(_) | SpiceStream::TlsServer(_) => {
+            unreachable!("this connector never requests a TLS connection")
+        }
     }
 }
 
