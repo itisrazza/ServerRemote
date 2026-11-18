@@ -27,7 +27,7 @@
 
     <header class="hero" id="top">
       <h1>Server Remote</h1>
-      <p>A native remote console for servers and virtual machines. HPE iLO and Spice, without the Java, .NET or GTK their usual clients drag along.</p>
+      <p>A native remote console client for servers and virtual machines, with support for HPE iLO and Spice. No Java, .NET or GTK runtime required.</p>
       <p class="badges">
         <span class="chip"><span class="dot warning"></span>Early and experimental</span>
         <span class="chip">macOS · Windows · Linux</span>
@@ -51,22 +51,22 @@
           <ul class="tiles">
             <li class="tile">
               <span class="icon" style="--icon: url(icons/protocol_ilo.svg)"></span>
-              <span class="tile-text"><strong>HPE iLO 4 Remote Console</strong><span>Written from scratch: the console, keyboard and mouse, power controls and server status. Still incomplete and rough, but already better than HPE's .NET and Java consoles, and far less hassle to get running.</span></span>
+              <span class="tile-text"><strong>HPE iLO 4 Remote Console</strong><span>An independent implementation of the Integrated Remote Console: video, keyboard and mouse, power control and server status. Virtual media isn't supported yet. Unlike HPE's .NET and Java consoles, it needs no runtime and no browser plugin.</span></span>
               <span class="status"><span class="dot warning"></span>In progress</span>
             </li>
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_screen.svg)"></span>
-              <span class="tile-text"><strong>Spice</strong><span>Spice clients do run on the Mac, once you've installed and set up GTK, which is more hassle than it's worth. Server Remote speaks Spice natively.</span></span>
+              <span class="tile-text"><strong>Spice</strong><span>For QEMU and KVM virtual machines, such as those on Proxmox VE. Existing Spice clients for macOS depend on GTK; Server Remote implements the protocol natively.</span></span>
               <span class="status"><span class="dot warning"></span>In progress</span>
             </li>
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_screen.svg)"></span>
-              <span class="tile-text"><strong>VNC</strong><span>The known good: a baseline for comparing Server Remote with other remote clients.</span></span>
+              <span class="tile-text"><strong>VNC</strong><span>Display, keyboard and mouse. Included as a well-established reference protocol.</span></span>
               <span class="status"><span class="dot ok"></span>Works</span>
             </li>
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_add-large.svg)"></span>
-              <span class="tile-text"><strong>Other server consoles</strong><span>Other vendors' remote consoles have proprietary protocols of their own. HPE's is the only hardware I have to test against, so implementations for the others are very welcome.</span></span>
+              <span class="tile-text"><strong>Other server consoles</strong><span>Other vendors' BMCs use proprietary console protocols of their own. Support depends on contributors with access to the hardware; <a href="https://github.com/itisrazza/ServerRemote">contributions are welcome</a>.</span></span>
               <span class="status"><span class="dot inactive"></span>Help wanted</span>
             </li>
           </ul>
@@ -80,15 +80,15 @@
           <ul class="tiles">
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_virtual-desktop.svg)"></span>
-              <span class="tile-text"><strong>Nothing else to install</strong><span>One native app per platform, written in Rust with <a href="https://iced.rs">iced</a>. No Java, .NET or GTK runtime to set up first.</span></span>
+              <span class="tile-text"><strong>Nothing else to install</strong><span>A single native binary per platform, written in Rust with <a href="https://iced.rs">iced</a>.</span></span>
             </li>
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_power.svg)"></span>
-              <span class="tile-text"><strong>Controls from the server</strong><span>Each protocol adds its own menus, power actions and status, so iLO gets a Power menu and VNC doesn't. Every connection opens in a tab.</span></span>
+              <span class="tile-text"><strong>Protocol-specific controls</strong><span>Each protocol adds its own menus, actions and status indicators, such as power control and health for iLO. Multiple connections open side by side in tabs.</span></span>
             </li>
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_keyboard.svg)"></span>
-              <span class="tile-text"><strong>On-screen keyboard and trackpad</strong><span>Groundwork for the long-term goal of running on iPads and Android tablets. On a Mac, the keyboard also spares you contorting your hands for PC key combinations.</span></span>
+              <span class="tile-text"><strong>On-screen keyboard and trackpad</strong><span>Send keys and key combinations the local system would otherwise intercept, or that a Mac keyboard lacks. Also groundwork for future iPad and Android tablet support.</span></span>
             </li>
           </ul>
         </div>
@@ -99,16 +99,17 @@
         <div class="group-body">
           <h2 id="get-it-title">Get it</h2>
           <p>
-            There's no release yet. Every push to <code>main</code> builds
-            Windows, macOS (universal) and Linux binaries; download one from the
-            latest Build run while signed in to GitHub.
+            There is no stable release yet. Development builds for Windows,
+            macOS (universal) and Linux are produced for every change to
+            <code>main</code> and can be downloaded from the latest Build run
+            (a GitHub account is required).
           </p>
           <p class="buttons">
             <a class="control primary" href="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml?query=branch%3Amain"><span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>Latest builds</a>
             <a class="control" href="https://github.com/itisrazza/ServerRemote"><span class="icon" style="--icon: url(icons/carbon_logo--github.svg)"></span>Source</a>
             <a class="control" href="https://github.com/itisrazza/ServerRemote/blob/main/docs/architecture/roadmap.md"><span class="icon" style="--icon: url(icons/carbon_launch.svg)"></span>Roadmap</a>
           </p>
-          <p>Or build it yourself with Rust 1.85 or newer:</p>
+          <p>To build from source, install Rust 1.85 or newer and run:</p>
           <pre><code>git clone https://github.com/itisrazza/ServerRemote
 cd ServerRemote
 cargo run -p server-remote</code></pre>
