@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Server Remote</title>
-  <meta name="description" content="A native remote console for servers and VMs: HPE iLO and Spice without Java, .NET or GTK, on macOS, Windows and Linux.">
+  <meta name="description" content="A native remote console client for servers and virtual machines, with support for HPE iLO and Spice, on macOS, Windows and Linux.">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
@@ -27,7 +27,7 @@
 
     <header class="hero" id="top">
       <h1>Server Remote</h1>
-      <p>A native remote console client for servers and virtual machines, with support for HPE iLO and Spice. No Java, .NET or GTK runtime required.</p>
+      <p>A native remote console client for servers and virtual machines, with support for HPE iLO and Spice.</p>
       <p class="badges">
         <span class="chip"><span class="dot warning"></span>Early and experimental</span>
         <span class="chip">macOS · Windows · Linux</span>
@@ -51,12 +51,12 @@
           <ul class="tiles">
             <li class="tile">
               <span class="icon" style="--icon: url(icons/protocol_ilo.svg)"></span>
-              <span class="tile-text"><strong>HPE iLO 4 Remote Console</strong><span>An independent implementation of the Integrated Remote Console: video, keyboard and mouse, power control and server status. Virtual media isn't supported yet. Unlike HPE's .NET and Java consoles, it needs no runtime and no browser plugin.</span></span>
+              <span class="tile-text"><strong>HPE iLO 4 Remote Console</strong><span>An independent implementation of the Integrated Remote Console: video, keyboard and mouse, power control and server status. Virtual media isn't supported yet. Runs on current macOS, Windows and Linux, without tracking down the old Java or .NET versions HPE's consoles depend on.</span></span>
               <span class="status"><span class="dot warning"></span>In progress</span>
             </li>
             <li class="tile">
               <span class="icon" style="--icon: url(icons/carbon_screen.svg)"></span>
-              <span class="tile-text"><strong>Spice</strong><span>For QEMU and KVM virtual machines, such as those on Proxmox VE. Existing Spice clients for macOS depend on GTK; Server Remote implements the protocol natively.</span></span>
+              <span class="tile-text"><strong>Spice</strong><span>For virtual machines running in QEMU, whether managed with libvirt, Proxmox VE or by hand. Existing Spice clients for macOS depend on GTK; Server Remote implements the protocol natively.</span></span>
               <span class="status"><span class="dot warning"></span>In progress</span>
             </li>
             <li class="tile">
