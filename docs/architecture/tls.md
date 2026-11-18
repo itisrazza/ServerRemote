@@ -44,16 +44,17 @@ connection starts with:
 
 | Setting | Policy | An unrecognised certificate… |
 |---|---|---|
-| Strict | `Secure` | is refused, with the reason on the disconnected screen. |
+| Strict | `Secure` | is refused, reported in the **Failed to connect** dialog. |
 | Ask (default) | `AllowInsecure`, with the trusted fingerprint for that host and port, if any | prompts, unless it's blocked. |
 | Off | `AcceptAny` | is accepted without asking, and not recorded. |
 
 The prompt shows the fingerprint (colon-separated hex, as browsers show it)
 and offers:
 
-- **Block**: adds it to the blocked list and stays disconnected. A blocked
-  certificate is refused without asking, under Strict or Ask.
-- **Cancel**: stays disconnected.
+- **Block**: adds it to the blocked list and closes the tab. A blocked
+  certificate is refused without asking, under Strict or Ask, and reported
+  in the **Failed to connect** dialog.
+- **Cancel**: closes the tab, back to the page the connection started from.
 - **Connect once**: reconnects trusting that fingerprint, for this tab only.
 - **Always trust**: also saves it to the trusted list, replacing any other
   certificate for that host and port.

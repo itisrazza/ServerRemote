@@ -14,6 +14,9 @@ button-close = Close
 ## Dialogs
 
 error-open-link = Couldn't open the link
+connection-failed-title = Failed to connect
+connection-failed-unknown = The connection closed before it was established.
+copy-details = Copy details
 quit-title = Quit?
 quit-message =
     { $count ->

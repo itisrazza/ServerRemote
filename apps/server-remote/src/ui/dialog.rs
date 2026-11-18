@@ -1,10 +1,12 @@
 //! Modal dialogs: a titled message with buttons, centred over a dimmed
 //! backdrop that swallows clicks to everything underneath.
 
-use iced::widget::{Column, Row, Space, button, container, opaque, text};
+use iced::widget::{Column, Row, Space, button, container, opaque, svg, text, tooltip};
 use iced::{Element, Length};
+use server_remote_icons::Icon;
 
-use super::style;
+use super::{style, themed_icon};
+use crate::tooltip_box::tooltip_box;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -20,6 +22,8 @@ pub struct Button<Message> {
     pub label: String,
     pub on_press: Message,
     pub kind: Kind,
+    /// Shown instead of the label, which becomes the button's tooltip.
+    pub icon: Option<Icon>,
 }
 
 const WIDTH: f32 = 320.0;
@@ -72,14 +76,27 @@ pub fn view_with<'a, Message: Clone + 'a>(
 
 fn button_view<'a, Message: Clone + 'a>(spec: Button<Message>) -> Element<'a, Message> {
     let kind = spec.kind;
-    button(container(text(spec.label)).center_y(Length::Fill))
-        .height(style::CONTROL_HEIGHT)
-        .padding([0, 12])
-        .style(move |theme, status| match kind {
-            Kind::Secondary => style::bordered_button(theme, status, false),
-            Kind::Primary => style::dialog_button(theme, status, false),
-            Kind::Destructive => style::dialog_button(theme, status, true),
-        })
-        .on_press(spec.on_press)
-        .into()
+    let styled = |content: Element<'a, Message>, padding: u16| {
+        button(container(content).center_y(Length::Fill))
+            .height(style::CONTROL_HEIGHT)
+            .padding([0, padding])
+            .style(move |theme, status| match kind {
+                Kind::Secondary => style::bordered_button(theme, status, false),
+                Kind::Primary => style::dialog_button(theme, status, false),
+                Kind::Destructive => style::dialog_button(theme, status, true),
+            })
+            .on_press(spec.on_press.clone())
+    };
+    let Some(icon) = spec.icon else {
+        return styled(text(spec.label).into(), 12).into();
+    };
+    let icon = themed_icon(svg(svg::Handle::from_memory(icon.svg())), |palette| {
+        palette.background.base.text
+    });
+    tooltip(
+        styled(icon.into(), 8),
+        tooltip_box(text(spec.label)),
+        tooltip::Position::Top,
+    )
+    .into()
 }

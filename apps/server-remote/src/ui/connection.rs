@@ -264,6 +264,9 @@ pub struct State {
     tls: TlsPolicy,
     credentials: Credentials,
     phase: Phase,
+    /// Whether the session has ever connected. A failure before then is
+    /// reported where the connection was started, not in this tab.
+    connected_once: bool,
     capabilities: Capabilities,
     frame: Option<DisplayFrame>,
     next_generation: u64,
@@ -303,8 +306,8 @@ pub enum Message {
         fingerprint: CertFingerprint,
         remember: bool,
     },
-    /// Refuse the certificate the dialog showed. The application adds it to
-    /// the blocked list.
+    /// Refuse the certificate the dialog showed. Handled by the application,
+    /// which adds it to the blocked list and closes the tab.
     BlockCertificate(CertFingerprint),
     /// The pointer moved over the framebuffer (in framebuffer coordinates).
     Pointer(Point),
@@ -396,6 +399,7 @@ impl State {
             tls,
             credentials,
             phase: Phase::Connecting,
+            connected_once: false,
             capabilities: Capabilities::default(),
             frame: None,
             next_generation: 0,
@@ -430,6 +434,10 @@ impl State {
         &self.target
     }
 
+    pub fn connected_once(&self) -> bool {
+        self.connected_once
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         if message.closes_menu() {
             self.menu = None;
@@ -462,10 +470,6 @@ impl State {
                     accepted: Some(fingerprint),
                 };
                 self.phase = Phase::Connecting;
-            }
-            Message::BlockCertificate(_) => {
-                self.modal = None;
-                self.phase = Phase::Disconnected(Some(fl!("certificate-blocked")));
             }
             Message::Pointer(point) => self.send_pointer(point),
             Message::Button { button, pressed } => {
@@ -504,6 +508,7 @@ impl State {
             // The application owns the tab list and the settings, so it
             // intercepts these; this arm only satisfies exhaustiveness.
             Message::Close
+            | Message::BlockCertificate(_)
             | Message::OpenSettings(_)
             | Message::ChangeSetting(_)
             | Message::ChooseRecordingFolder => {}
@@ -569,6 +574,7 @@ impl State {
     fn apply(&mut self, event: SessionEvent) {
         match event {
             SessionEvent::Connected { size, capabilities } => {
+                self.connected_once = true;
                 self.size = Some(size);
                 self.set_capabilities(capabilities);
                 self.phase = Phase::Connected;
@@ -1180,11 +1186,13 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                         label: fl!("button-cancel"),
                         on_press: Message::CloseModal,
                         kind: dialog::Kind::Secondary,
+                        icon: None,
                     },
                     dialog::Button {
                         label: confirmation.confirm_label.to_string(),
                         on_press: Message::Confirm,
                         kind,
+                        icon: None,
                     },
                 ],
             )
@@ -1205,22 +1213,26 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                     label: fl!("certificate-block"),
                     on_press: Message::BlockCertificate(*fingerprint),
                     kind: dialog::Kind::Secondary,
+                    icon: None,
                 }],
                 vec![
                     dialog::Button {
                         label: fl!("button-cancel"),
-                        on_press: Message::CloseModal,
+                        on_press: Message::Close,
                         kind: dialog::Kind::Secondary,
+                        icon: None,
                     },
                     dialog::Button {
                         label: fl!("certificate-connect-once"),
                         on_press: trust(false),
                         kind: dialog::Kind::Secondary,
+                        icon: None,
                     },
                     dialog::Button {
                         label: fl!("certificate-always-trust"),
                         on_press: trust(true),
                         kind: dialog::Kind::Primary,
+                        icon: None,
                     },
                 ],
                 dialog::WIDE,
@@ -1233,6 +1245,7 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                 label: fl!("button-ok"),
                 on_press: Message::CloseModal,
                 kind: dialog::Kind::Primary,
+                icon: None,
             }],
         ),
     }
@@ -1699,30 +1712,6 @@ mod tests {
         let lines: Vec<&str> = shown.lines().collect();
         assert_eq!(lines.len(), 4);
         assert!(lines.iter().all(|line| *line == "AB:AB:AB:AB:AB:AB:AB:AB"));
-    }
-
-    #[test]
-    fn declining_a_certificate_stays_disconnected() {
-        let mut state = state();
-        let _ = state.update(Message::UntrustedCertificate(CertFingerprint([1; 32])));
-        let _ = state.update(Message::CloseModal);
-        assert!(state.modal.is_none());
-        assert!(matches!(state.phase, Phase::Disconnected(_)));
-        assert_eq!(state.tls, TlsPolicy::default());
-    }
-
-    #[test]
-    fn blocking_a_certificate_stays_disconnected_and_says_why() {
-        let mut state = state();
-        let fingerprint = CertFingerprint([1; 32]);
-        let _ = state.update(Message::UntrustedCertificate(fingerprint));
-        let _ = state.update(Message::BlockCertificate(fingerprint));
-        assert!(state.modal.is_none());
-        assert_eq!(
-            state.phase,
-            Phase::Disconnected(Some(fl!("certificate-blocked")))
-        );
-        assert_eq!(state.tls, TlsPolicy::default());
     }
 
     #[test]

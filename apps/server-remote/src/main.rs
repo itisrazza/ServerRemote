@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -546,6 +547,14 @@ mod tests {
         states.push(("trust-certificate-light", false, light(trust.clone())));
         states.push(("trust-certificate-ro", false, romanian(trust)));
 
+        // A connection that fails before connecting, back on the Connect page.
+        let failed = vec![conn(Conn::Session(SessionEvent::Disconnected {
+            reason: Some("There is another user using the remote console.".to_owned()),
+        }))];
+        states.push(("connection-failed", false, failed.clone()));
+        states.push(("connection-failed-light", false, light(failed.clone())));
+        states.push(("connection-failed-ro", false, romanian(failed)));
+
         // Bands of the four VGA greys, to check the display shows each
         // value unchanged (no stray gamma).
         let greys = server_remote_core::Frame {
@@ -662,6 +671,75 @@ mod tests {
     }
 
     #[test]
+    fn a_failure_before_connecting_is_reported_where_it_started() {
+        use ui::connection::Message as Conn;
+        for origin in [Tab::Connect, Tab::Manager] {
+            let (mut app, _) = Application::new(None, Settings::default());
+            app.tab = origin.clone();
+            let _ = app.open_connection(request("ilo:443"));
+            let _ = app.update(Message::Connection(
+                0,
+                Conn::Session(SessionEvent::Disconnected {
+                    reason: Some("busy".to_owned()),
+                }),
+            ));
+
+            assert!(app.connections.is_empty(), "{origin:?}");
+            assert_eq!(app.tab, origin);
+            match &app.modal {
+                Some(AppModal::ConnectionFailed { message, details }) => {
+                    assert_eq!(message, "busy");
+                    assert!(details.contains("Address: ilo:443"), "{details}");
+                    assert!(details.ends_with("Error: busy"), "{details}");
+                }
+                other => panic!("{origin:?}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_failure_after_connecting_stays_in_its_tab() {
+        use ui::connection::Message as Conn;
+        let (mut app, _) = Application::new(None, Settings::default());
+        let _ = app.open_connection(request("ilo:443"));
+        for event in [
+            SessionEvent::Connected {
+                size: (1, 1),
+                capabilities: server_remote_core::Capabilities::default(),
+            },
+            SessionEvent::Disconnected {
+                reason: Some("lost".to_owned()),
+            },
+        ] {
+            let _ = app.update(Message::Connection(0, Conn::Session(event)));
+        }
+
+        assert_eq!(app.connections.len(), 1);
+        assert_eq!(app.tab, Tab::Connection(0));
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn cancelling_or_blocking_a_certificate_closes_the_tab_quietly() {
+        use ui::connection::Message as Conn;
+        let fingerprint = server_remote_core::CertFingerprint([4; 32]);
+        for message in [Conn::Close, Conn::BlockCertificate(fingerprint)] {
+            let (mut app, _) = Application::new(None, Settings::default());
+            app.tab = Tab::Manager;
+            let _ = app.open_connection(request("ilo:443"));
+            let _ = app.update(Message::Connection(
+                0,
+                Conn::UntrustedCertificate(fingerprint),
+            ));
+            let _ = app.update(Message::Connection(0, message.clone()));
+
+            assert!(app.connections.is_empty(), "{message:?}");
+            assert_eq!(app.tab, Tab::Manager, "{message:?}");
+            assert!(app.modal.is_none(), "{message:?}");
+        }
+    }
+
+    #[test]
     fn certificate_choices_follow_and_update_the_security_settings() {
         use crate::persistence::settings::{CertificateChecking, Refusal};
         use server_remote_core::CertFingerprint;
@@ -768,11 +846,23 @@ fn apply_graphics_backend(backend: GraphicsBackend) {
     unsafe { std::env::set_var("WGPU_BACKEND", backend.wgpu_name()) };
 }
 
+/// What a failed connection's copy button puts on the clipboard. Kept in
+/// English whatever the UI language, as it's meant for bug reports.
+fn failure_details(protocol: ui::connection::Protocol, target: &Target, error: &str) -> String {
+    format!(
+        "ServerRemote {}\nProtocol: {protocol}\nAddress: {}:{}\nError: {error}",
+        env!("CARGO_PKG_VERSION"),
+        target.host,
+        target.port,
+    )
+}
+
 fn third_party_licences<'a>() -> Element<'a, Message> {
     let link = |label: &str, url: &str| ui::dialog::Button {
         label: label.to_owned(),
         on_press: Message::Settings(ui::settings::Message::OpenUrl(url.to_owned())),
         kind: ui::dialog::Kind::Secondary,
+        icon: None,
     };
     ui::dialog::view(
         fl!("licences-title"),
@@ -787,6 +877,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
                 label: fl!("button-close"),
                 on_press: Message::CloseModal,
                 kind: ui::dialog::Kind::Primary,
+                icon: None,
             },
         ],
     )
@@ -832,6 +923,8 @@ fn platform_specific() -> window::settings::PlatformSpecific {
 
 struct Application {
     connections: Vec<ui::connection::State>,
+    /// The page each connection was opened from, returned to when it closes.
+    origins: HashMap<u64, Tab>,
     next_id: u64,
     tab: Tab,
 
@@ -864,6 +957,12 @@ enum AppModal {
         message: String,
     },
     ThirdPartyLicences,
+    /// A connection failed before it ever connected. `details` is what the
+    /// copy button puts on the clipboard.
+    ConnectionFailed {
+        message: String,
+        details: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -893,6 +992,7 @@ enum Message {
     RequestClose(iced::window::Id),
     Quit(iced::window::Id),
     CloseModal,
+    CopyToClipboard(String),
 }
 
 /// Window management triggered from the custom title bar.
@@ -911,6 +1011,7 @@ impl Application {
         i18n::select(settings.general.language);
         let mut app = Self {
             connections: Vec::new(),
+            origins: HashMap::new(),
             next_id: 0,
             tab: Tab::Connect,
             connect_tab: ui::connect::State::new(),
@@ -1005,6 +1106,19 @@ impl Application {
                     _ => {}
                 }
                 let message = self.settle_certificate(id, message);
+                match message {
+                    Conn::BlockCertificate(_) => {
+                        self.close_connection(id);
+                        return Task::none();
+                    }
+                    Conn::Session(SessionEvent::Disconnected { reason })
+                        if self.never_connected(id) =>
+                    {
+                        self.fail_connection(id, reason);
+                        return Task::none();
+                    }
+                    _ => {}
+                }
                 let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) else {
                     return Task::none();
                 };
@@ -1072,6 +1186,7 @@ impl Application {
                 window::close(id)
             }
             Message::Quit(id) => window::close(id),
+            Message::CopyToClipboard(contents) => iced::clipboard::write(contents),
             Message::CloseModal => {
                 self.modal = None;
                 Task::none()
@@ -1175,14 +1290,39 @@ impl Application {
             },
             &self.settings.input,
         ));
+        let origin = match self.tab {
+            Tab::Manager => Tab::Manager,
+            _ => Tab::Connect,
+        };
+        self.origins.insert(id, origin);
         self.tab = Tab::Connection(id);
         Task::none()
     }
 
+    fn never_connected(&self, id: u64) -> bool {
+        self.connections
+            .iter()
+            .find(|connection| connection.id() == id)
+            .is_some_and(|connection| !connection.connected_once())
+    }
+
+    /// Closes a connection that failed before connecting, reporting the
+    /// failure on the page it was opened from.
+    fn fail_connection(&mut self, id: u64, reason: Option<String>) {
+        let Some(connection) = self.connections.iter().find(|c| c.id() == id) else {
+            return;
+        };
+        let message = reason.unwrap_or_else(|| fl!("connection-failed-unknown"));
+        let details = failure_details(connection.protocol(), connection.target(), &message);
+        self.close_connection(id);
+        self.modal = Some(AppModal::ConnectionFailed { message, details });
+    }
+
     fn close_connection(&mut self, id: u64) {
         self.connections.retain(|connection| connection.id() != id);
+        let origin = self.origins.remove(&id).unwrap_or(Tab::Connect);
         if self.tab == Tab::Connection(id) {
-            self.tab = Tab::Connect;
+            self.tab = origin;
         }
     }
 
@@ -1231,10 +1371,31 @@ impl Application {
                         label: fl!("button-ok"),
                         on_press: Message::CloseModal,
                         kind: ui::dialog::Kind::Primary,
+                        icon: None,
                     }],
                 );
             }
             AppModal::ThirdPartyLicences => return third_party_licences(),
+            AppModal::ConnectionFailed { message, details } => {
+                return ui::dialog::view(
+                    fl!("connection-failed-title"),
+                    message.clone(),
+                    vec![
+                        ui::dialog::Button {
+                            label: fl!("copy-details"),
+                            on_press: Message::CopyToClipboard(details.clone()),
+                            kind: ui::dialog::Kind::Secondary,
+                            icon: Some(icons::COPY_TO_CLIPBOARD),
+                        },
+                        ui::dialog::Button {
+                            label: fl!("button-close"),
+                            on_press: Message::CloseModal,
+                            kind: ui::dialog::Kind::Secondary,
+                            icon: None,
+                        },
+                    ],
+                );
+            }
         };
         ui::dialog::view(
             fl!("quit-title"),
@@ -1244,11 +1405,13 @@ impl Application {
                     label: fl!("button-cancel"),
                     on_press: Message::CloseModal,
                     kind: ui::dialog::Kind::Secondary,
+                    icon: None,
                 },
                 ui::dialog::Button {
                     label: fl!("quit-confirm"),
                     on_press: Message::Quit(id),
                     kind: ui::dialog::Kind::Destructive,
+                    icon: None,
                 },
             ],
         )

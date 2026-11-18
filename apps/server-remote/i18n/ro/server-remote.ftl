@@ -14,6 +14,9 @@ button-close = Închide
 ## Dialoguri
 
 error-open-link = Linkul nu a putut fi deschis
+connection-failed-title = Conectarea a eșuat
+connection-failed-unknown = Conexiunea s-a închis înainte de a fi stabilită.
+copy-details = Copiază detaliile
 quit-title = Ieșire?
 quit-message =
     { $count ->
