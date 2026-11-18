@@ -13,7 +13,11 @@ The workflow adds `logo.svg` from the repository root, the Nunito Sans fonts
 from `apps/server-remote/assets/fonts/` and the icons from
 `lib/icons/assets/`, so those aren't duplicated here. Icons are drawn as CSS
 masks (`<span class="icon" style="--icon: url(icons/…)">`), so they take the
-text colour like they do in the app. To preview locally, stage the site the
+text colour like they do in the app.
+
+Console text is set in [Commit Mono](https://commitmono.com/) 1.143, which
+only the website uses, so it lives here in `fonts/` with its licence (SIL
+OFL 1.1). To preview locally, stage the site the
 same way:
 
 ```sh
