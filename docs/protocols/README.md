@@ -10,6 +10,30 @@ what to expect. Every protocol is still in progress; the
 | [Spice](#spice) | In progress | Plain TCP | Spice password, or none |
 | [VNC](#vnc) | In progress | Plain TCP | VNC password, or none |
 
+## Feature matrix
+
+✅ supported · ⚠️ partly, or not verified on real hardware · ❌ not yet ·
+– not part of the protocol
+
+| Feature | HPE iLO 4 | Spice | VNC |
+|---|:-:|:-:|:-:|
+| Display | ✅ | ⚠️ uncompressed only | ✅ |
+| Keyboard | ⚠️ | ⚠️ US layout only | ✅ |
+| Mouse | ⚠️ | ✅ | ✅ |
+| Password authentication | ✅ | ✅ | ✅ |
+| Encryption | ✅ HTTPS login, encrypted console | ❌ | ❌ |
+| Compressed video | ✅ | ❌ | ❌ |
+| Power control | ⚠️ | – | – |
+| Power, health and POST status | ✅ | – | – |
+| Take over or share a console in use | ❌ | – | – |
+| Virtual media / USB redirection | ❌ | ❌ | – |
+| Clipboard | ❌ | ❌ | ❌ |
+| Audio | – | ❌ | – |
+| Remote cursor shape | – | ❌ | ❌ |
+| Multiple monitors | – | ❌ | ❌ |
+
+The sections below explain each ⚠️ and ❌.
+
 ## HPE iLO 4
 
 Server Remote implements the iLO Integrated Remote Console itself, without
