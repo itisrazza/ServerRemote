@@ -11,4 +11,4 @@ repository.workspace = true
 [dependencies]
 server-remote-core = { path = "../../lib/core" }
 tokio = { version = "1.52.3", features = ["net", "rt", "sync", "time", "macros"] }
-vnc-rs = "0.5.3"
+vnc-rs = "0.6.1"
