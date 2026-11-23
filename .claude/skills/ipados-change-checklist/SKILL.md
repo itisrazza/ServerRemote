@@ -26,6 +26,10 @@ read them first. This is the order of work that keeps to them.
 
 ## While writing Swift
 
+- Design for the iPad. iPhone is best-effort: it has to keep building and
+  working (no iPad-only APIs; layouts that survive a compact width), but
+  iPad wins where they pull apart.
+
 - System controls and layout: `Form`, `List`, `Menu`, `.alert`,
   `.confirmationDialog`, sheets, toolbar items (glass comes with them),
   SF Symbols for the app's own controls. No custom chrome copied from the
