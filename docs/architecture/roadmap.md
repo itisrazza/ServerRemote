@@ -63,3 +63,8 @@ Next:
 2. Pointer capture for `PointerMode::Relative`, and grow the `Control` vocabulary
    (e.g. `Toggle`/`Choose`) as protocols need it.
 3. Android app, through UniFFI's Kotlin bindings to the same core.
+4. Syncing saved connections between devices: a storage interface in the
+   app core with backends beside the local file (iCloud, implemented on the
+   Apple side and plugged in through the FFI; an SQL database; others).
+   Merging needs edit times and markers for deletions; passwords move to
+   the platform keychain rather than syncing in the records.
