@@ -7,6 +7,7 @@ use iced::{
     widget::{Column, Row, Scrollable, Space, button, container, mouse_area, stack, text, tooltip},
     window,
 };
+use server_remote_app::connection::Report;
 use server_remote_core::{SessionEvent, Target};
 use server_remote_icons as icons;
 
@@ -210,7 +211,8 @@ mod tests {
             }],
             details: Vec::new(),
         };
-        let session = |event| Message::Connection(0, ui::connection::Message::Session(event));
+        let session =
+            |event| Message::Connection(0, ui::connection::Message::Report(Report::Session(event)));
 
         let _ = app.update(session(SessionEvent::Connected {
             size: (1024, 768),
@@ -440,8 +442,8 @@ mod tests {
         states.push(("connector-light", true, light(vec![])));
         // The website's screenshots: a live desktop rather than the
         // "waiting for first frame" placeholder.
-        let desktop = conn(Conn::Session(server_remote_core::SessionEvent::Frame(
-            containerdesk_frame(),
+        let desktop = conn(Conn::Report(Report::Session(
+            server_remote_core::SessionEvent::Frame(containerdesk_frame()),
         )));
         states.push(("website", true, vec![desktop.clone()]));
         states.push(("website-light", true, light(vec![desktop])));
@@ -519,9 +521,9 @@ mod tests {
                 ui::connect::IMessage::Protocol(server_remote_app::Protocol::Ilo),
             )),
         ];
-        let trust = vec![conn(Conn::UntrustedCertificate(
+        let trust = vec![conn(Conn::Report(Report::UntrustedCertificate(
             server_remote_core::CertFingerprint(core::array::from_fn(|i| i as u8 * 7)),
-        ))];
+        )))];
         let form =
             |messages: Vec<ui::connect::IMessage>| -> Vec<Message> {
                 std::iter::once(Message::SelectTab(Tab::Connect))
@@ -554,9 +556,11 @@ mod tests {
         states.push(("trust-certificate-ro", false, romanian(trust)));
 
         // A connection that fails before connecting, back on the Connect page.
-        let failed = vec![conn(Conn::Session(SessionEvent::Disconnected {
-            reason: Some("There is another user using the remote console.".to_owned()),
-        }))];
+        let failed = vec![conn(Conn::Report(Report::Session(
+            SessionEvent::Disconnected {
+                reason: Some("There is another user using the remote console.".to_owned()),
+            },
+        )))];
         states.push(("connection-failed", false, failed.clone()));
         states.push(("connection-failed-light", false, light(failed.clone())));
         states.push(("connection-failed-ro", false, romanian(failed)));
@@ -577,11 +581,11 @@ mod tests {
             "display-greys",
             false,
             vec![
-                conn(Conn::Session(SessionEvent::Connected {
+                conn(Conn::Report(Report::Session(SessionEvent::Connected {
                     size: (256, 64),
                     capabilities: server_remote_core::Capabilities::default(),
-                })),
-                conn(Conn::Session(SessionEvent::Frame(greys))),
+                }))),
+                conn(Conn::Report(Report::Session(SessionEvent::Frame(greys)))),
             ],
         ));
 
@@ -755,9 +759,9 @@ mod tests {
             let _ = app.open_connection(request("ilo:443"));
             let _ = app.update(Message::Connection(
                 0,
-                Conn::Session(SessionEvent::Disconnected {
+                Conn::Report(Report::Session(SessionEvent::Disconnected {
                     reason: Some("busy".to_owned()),
-                }),
+                })),
             ));
 
             assert!(app.connections.is_empty(), "{origin:?}");
@@ -787,7 +791,7 @@ mod tests {
                 reason: Some("lost".to_owned()),
             },
         ] {
-            let _ = app.update(Message::Connection(0, Conn::Session(event)));
+            let _ = app.update(Message::Connection(0, Conn::Report(Report::Session(event))));
         }
 
         assert_eq!(app.connections.len(), 1);
@@ -805,7 +809,7 @@ mod tests {
             let _ = app.open_connection(request("ilo:443"));
             let _ = app.update(Message::Connection(
                 0,
-                Conn::UntrustedCertificate(fingerprint),
+                Conn::Report(Report::UntrustedCertificate(fingerprint)),
             ));
             let _ = app.update(Message::Connection(0, message.clone()));
 
@@ -823,7 +827,7 @@ mod tests {
 
         let (mut app, _) = Application::new(None, Settings::default());
         let _ = app.open_connection(request("ilo:443"));
-        let target = app.connections[0].target().clone();
+        let target = app.connections[0].core().target().clone();
         let trusted = CertFingerprint([1; 32]);
         let blocked = CertFingerprint([2; 32]);
 
@@ -854,20 +858,26 @@ mod tests {
         );
 
         let refused_with = |message: Conn| match message {
-            Conn::Session(SessionEvent::Disconnected { reason }) => reason,
+            Conn::Report(Report::Session(SessionEvent::Disconnected { reason })) => reason,
             _ => None,
         };
-        let asked = app.settle_certificate(0, Conn::UntrustedCertificate(CertFingerprint([3; 32])));
+        let asked = app.settle_certificate(
+            0,
+            Conn::Report(Report::UntrustedCertificate(CertFingerprint([3; 32]))),
+        );
         assert!(
-            matches!(asked, Conn::UntrustedCertificate(_)),
+            matches!(asked, Conn::Report(Report::UntrustedCertificate(_))),
             "ask: prompts"
         );
-        let refused = app.settle_certificate(0, Conn::UntrustedCertificate(blocked));
+        let refused =
+            app.settle_certificate(0, Conn::Report(Report::UntrustedCertificate(blocked)));
         assert_eq!(refused_with(refused), Some(Refusal::Blocked.reason()));
 
         app.settings.security.certificate_checking = CertificateChecking::Strict;
-        let refused =
-            app.settle_certificate(0, Conn::UntrustedCertificate(CertFingerprint([3; 32])));
+        let refused = app.settle_certificate(
+            0,
+            Conn::Report(Report::UntrustedCertificate(CertFingerprint([3; 32]))),
+        );
         assert_eq!(refused_with(refused), Some(Refusal::Strict.reason()));
     }
 
@@ -1266,7 +1276,7 @@ impl Application {
                 let message = self.settle_certificate(id, message);
                 match message {
                     Conn::BlockCertificate(_) => return self.close_connection(id),
-                    Conn::Session(SessionEvent::Disconnected { reason })
+                    Conn::Report(Report::Session(SessionEvent::Disconnected { reason }))
                         if self.never_connected(id) =>
                     {
                         self.fail_connection(id, reason);
@@ -1375,16 +1385,16 @@ impl Application {
             .connections
             .iter()
             .find(|connection| connection.id() == id)
-            .map(|connection| connection.target().clone())
+            .map(|connection| connection.core().target().clone())
         else {
             return message;
         };
         match &message {
-            Conn::UntrustedCertificate(fingerprint) => {
+            Conn::Report(Report::UntrustedCertificate(fingerprint)) => {
                 match self.settings.security.refusal(&target, *fingerprint) {
-                    Some(refusal) => Conn::Session(SessionEvent::Disconnected {
+                    Some(refusal) => Conn::Report(Report::Session(SessionEvent::Disconnected {
                         reason: Some(refusal.reason()),
-                    }),
+                    })),
                     None => message,
                 }
             }
@@ -1555,17 +1565,18 @@ impl Application {
         let dir = self.config_dir.clone()?;
         let session_id = *self.saved_origins.get(&id)?;
         self.sessions.get(session_id)?;
-        let (width, height, pixels) = self
+        let screen = self
             .connections
             .iter()
             .find(|connection| connection.id() == id)?
-            .last_frame()?;
+            .core()
+            .screen()?;
         Some(ThumbnailSource {
             dir,
             session_id,
-            width,
-            height,
-            pixels,
+            width: screen.width,
+            height: screen.height,
+            pixels: screen.pixels.clone(),
         })
     }
 
@@ -1589,18 +1600,19 @@ impl Application {
         let target = parse_target(&request.hostname, request.protocol);
         let tls = self.settings.security.policy_for(&target);
 
-        self.connections.push(ui::connection::State::new(
+        let connection = server_remote_app::connection::Connection::new(
             id,
             name,
             request.protocol,
             target,
             tls,
-            ui::connection::Credentials {
+            server_remote_app::connection::Credentials {
                 username: request.username,
                 password: request.password,
             },
-            &self.settings.input,
-        ));
+        );
+        self.connections
+            .push(ui::connection::State::new(connection, &self.settings.input));
         let origin = match self.tab {
             Tab::Manager => Tab::Manager,
             _ => Tab::Connect,
@@ -1614,7 +1626,7 @@ impl Application {
         self.connections
             .iter()
             .find(|connection| connection.id() == id)
-            .is_some_and(|connection| !connection.connected_once())
+            .is_some_and(|connection| !connection.core().connected_once())
     }
 
     /// Closes a connection that failed before connecting, reporting the
@@ -1624,7 +1636,11 @@ impl Application {
             return;
         };
         let message = reason.unwrap_or_else(|| fl!("connection-failed-unknown"));
-        let details = failure_details(connection.protocol(), connection.target(), &message);
+        let details = failure_details(
+            connection.core().protocol(),
+            connection.core().target(),
+            &message,
+        );
         // It never connected, so there's no screen to keep.
         let _ = self.close_connection(id);
         self.modal = Some(AppModal::ConnectionFailed { message, details });
@@ -1893,7 +1909,7 @@ impl Application {
 
         button(
             Row::new()
-                .push(themed(connection.protocol().icon()))
+                .push(themed(connection.core().protocol().icon()))
                 .push(
                     text(connection.name().as_ref())
                         .font(font)

@@ -25,7 +25,10 @@ semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 server-remote-core = { path = "../../lib/core" }
 server-remote-icons = { path = "../../lib/icons" }
-tokio = { version = "1.52.3", features = ["rt"] }
+server-remote-ilo = { path = "../../connectors/ilo" }
+server-remote-spice = { path = "../../connectors/spice" }
+server-remote-vnc = { path = "../../connectors/vnc" }
+tokio = { version = "1.52.3", features = ["rt", "sync"] }
 toml = "1.1.3"
 ureq = { version = "3.5.2", features = ["json"], optional = true }
 

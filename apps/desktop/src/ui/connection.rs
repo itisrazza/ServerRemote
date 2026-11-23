@@ -1,17 +1,15 @@
-//! A single connection tab: runs a [`Connector`] on a background subscription,
-//! renders the framebuffer it streams back, and drives a toolbar of dropdown
-//! menus and a status bar.
+//! A single connection tab: renders a [`Connection`] — its framebuffer, a
+//! toolbar of dropdown menus and a status bar — and runs it on a background
+//! subscription ([`connection::run`]).
 //!
-//! The subscription worker owns the connection's [`SessionHandle`] events end
-//! and hands the UI the input and command senders, so the UI talks to the
-//! session directly. `State` holds what the view needs — the latest frame, the
-//! status, the reported [`Capabilities`], and those senders.
+//! The session logic lives in [`server_remote_app::connection`]; this keeps
+//! what only the desktop UI needs: open menus, keyboard focus, the virtual
+//! keyboard and trackpad.
 
 use crate::i18n::fl;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use iced::keyboard::key::Named;
 use iced::{
@@ -20,15 +18,12 @@ use iced::{
     keyboard,
     widget::{Column, Id, Row, Space, button, center, operation, stack, text},
 };
+use server_remote_app::connection::{self, Connection, Dialog, Params, Phase, Report, format_rate};
 use server_remote_core::{
-    Action, ActionValue, Capabilities, CertFingerprint, ConnectError, Connector, Control,
-    DummyConnector, InputEvent, PointerButton, PointerMode, SessionCommand, SessionEvent,
-    SessionHandle, Status as SessionStatus, Target, TlsPolicy, Traffic,
+    Action, Capabilities, CertFingerprint, PointerButton, PointerMode, SessionEvent,
+    Status as SessionStatus, Target,
 };
 use server_remote_icons as icons;
-use server_remote_ilo::IloConnector;
-use server_remote_spice::SpiceConnector;
-use server_remote_vnc::VncConnector;
 use tokio::sync::mpsc;
 
 use super::contributed;
@@ -42,7 +37,6 @@ use super::virtual_keyboard;
 use super::virtual_trackpad;
 use crate::persistence::settings::Change;
 use crate::persistence::settings::{self as settings, KeyboardSize, Scaling, Settings};
-use server_remote_app::Protocol;
 
 /// The toolbar's dropdown menus.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,109 +70,10 @@ pub struct OpenMenu {
     pub submenu: Option<Submenu>,
 }
 
-/// A dialog shown over the connection.
-#[derive(Debug, Clone)]
-enum Modal {
-    /// Asks before invoking an action that has a
-    /// [`Confirmation`](server_remote_core::Confirmation).
-    Confirm(Action),
-    /// Asks whether to trust a certificate that failed verification.
-    TrustCertificate(CertFingerprint),
-    Error {
-        title: String,
-        message: String,
-    },
-}
-
-/// Turns the connector's cumulative byte counters into rates.
-#[derive(Debug, Default)]
-struct TrafficMeter {
-    last: Option<(Instant, Traffic)>,
-    rate: Option<Rate>,
-}
-
-/// Bytes per second in each direction.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Rate {
-    received: f64,
-    sent: f64,
-}
-
-impl TrafficMeter {
-    /// Samples closer together than this would make the rate jumpy, so
-    /// they're skipped until enough time has passed.
-    const MIN_INTERVAL: Duration = Duration::from_millis(500);
-
-    fn sample(&mut self, at: Instant, traffic: Traffic) {
-        let Some((then, previous)) = self.last else {
-            self.last = Some((at, traffic));
-            return;
-        };
-        let elapsed = at.saturating_duration_since(then);
-        if elapsed < Self::MIN_INTERVAL {
-            return;
-        }
-        let per_second =
-            |now: u64, before: u64| now.saturating_sub(before) as f64 / elapsed.as_secs_f64();
-        self.rate = Some(Rate {
-            received: per_second(traffic.received, previous.received),
-            sent: per_second(traffic.sent, previous.sent),
-        });
-        self.last = Some((at, traffic));
-    }
-}
-
-/// A rate in bits per second, the way network rates are usually written.
-fn format_rate(bytes_per_second: f64) -> String {
-    let bits = bytes_per_second * 8.0;
-    if bits < 1_000_000.0 {
-        format!("{:.0} kb/s", bits / 1_000.0)
-    } else {
-        format!("{:.1} Mb/s", bits / 1_000_000.0)
-    }
-}
-
-/// Where the connection is in its lifecycle.
-#[derive(Debug, PartialEq)]
-enum Phase {
-    Connecting,
-    Connected,
-    Disconnected(Option<String>),
-}
-
-/// What the user signs in with. Only iLO uses the user name.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct Credentials {
-    pub username: String,
-    pub password: String,
-}
-
-/// The senders the UI uses to talk to a running session.
-#[derive(Debug, Clone)]
-pub struct Controls {
-    input: mpsc::Sender<InputEvent>,
-    commands: mpsc::Sender<SessionCommand>,
-}
-
 pub struct State {
-    id: u64,
-    name: Arc<str>,
-    protocol: Protocol,
-    target: Target,
-    tls: TlsPolicy,
-    credentials: Credentials,
-    phase: Phase,
-    /// Whether the session has ever connected. A failure before then is
-    /// reported where the connection was started, not in this tab.
-    connected_once: bool,
-    capabilities: Capabilities,
-    frame: Option<DisplayFrame>,
-    next_generation: u64,
-    /// Remote framebuffer size in pixels, for mapping pointer coordinates.
-    size: Option<(u32, u32)>,
-    controls: Option<Controls>,
+    core: Connection,
     /// Identifies the [`kvm_display`] widget so it can be focused
-    /// programmatically (see [`SessionEvent::Connected`] handling below).
+    /// programmatically (see the first frame's handling in `update`).
     display_id: Id,
     /// Whether the virtual on-screen keyboard panel is shown, and its layout.
     show_virtual_keyboard: bool,
@@ -188,22 +83,14 @@ pub struct State {
     show_virtual_trackpad: bool,
     virtual_trackpad: virtual_trackpad::State,
     menu: Option<OpenMenu>,
-    /// The connector's latest status snapshot.
-    session_status: SessionStatus,
-    traffic: TrafficMeter,
     icons: icon::Cache,
-    modal: Option<Modal>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    /// The worker is live; these are the channels to the session.
-    Ready(Controls),
-    /// An event from the running session.
-    Session(SessionEvent),
-    /// The target's TLS certificate failed verification; ask the user. The
-    /// application refuses it instead if settings say so.
-    UntrustedCertificate(CertFingerprint),
+    /// From the session runner. The application refuses an untrusted
+    /// certificate itself if settings say so.
+    Report(Report),
     /// Trust the certificate the dialog showed, and connect again. The
     /// application also saves it when `remember` is set.
     TrustCertificate {
@@ -285,68 +172,30 @@ impl Message {
 }
 
 impl State {
-    pub fn new(
-        id: u64,
-        name: Arc<str>,
-        protocol: Protocol,
-        target: Target,
-        tls: TlsPolicy,
-        credentials: Credentials,
-        input: &settings::Input,
-    ) -> Self {
+    pub fn new(core: Connection, input: &settings::Input) -> Self {
         Self {
+            core,
             display_id: Id::unique(),
-            id,
-            name,
-            protocol,
-            target,
-            tls,
-            credentials,
-            phase: Phase::Connecting,
-            connected_once: false,
-            capabilities: Capabilities::default(),
-            frame: None,
-            next_generation: 0,
-            size: None,
-            controls: None,
             show_virtual_keyboard: input.open_keyboard_on_connect,
             keyboard_size: input.keyboard_style,
             virtual_keyboard: virtual_keyboard::State::default(),
             show_virtual_trackpad: false,
             virtual_trackpad: virtual_trackpad::State::default(),
             menu: None,
-            session_status: SessionStatus::default(),
-            traffic: TrafficMeter::default(),
             icons: icon::Cache::default(),
-            modal: None,
         }
     }
 
+    pub fn core(&self) -> &Connection {
+        &self.core
+    }
+
     pub fn id(&self) -> u64 {
-        self.id
+        self.core.id()
     }
 
     pub fn name(&self) -> &Arc<str> {
-        &self.name
-    }
-
-    pub fn protocol(&self) -> Protocol {
-        self.protocol
-    }
-
-    /// The last screen received, as RGBA: width, height and pixels.
-    pub fn last_frame(&self) -> Option<(u32, u32, Arc<[u8]>)> {
-        self.frame
-            .as_ref()
-            .map(|frame| (frame.width, frame.height, frame.pixels.clone()))
-    }
-
-    pub fn target(&self) -> &Target {
-        &self.target
-    }
-
-    pub fn connected_once(&self) -> bool {
-        self.connected_once
+        self.core.name()
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -354,65 +203,42 @@ impl State {
             self.menu = None;
         }
         match message {
-            Message::Ready(controls) => self.controls = Some(controls),
-            Message::Session(event) => {
-                // Grabs focus the moment the `kvm_display` widget first
-                // appears (i.e. the first frame arrives — before that, `view`
-                // still shows "Waiting for first frame…" and there's nothing
-                // in the tree to focus), so typing works immediately without
-                // an initial click. Matches the old window-level keyboard
-                // subscription's behaviour, which forwarded keys whenever
-                // this tab was merely selected.
-                let should_focus = matches!(event, SessionEvent::Frame(_)) && self.frame.is_none();
-                self.apply(event);
-                if should_focus {
-                    return operation::focus(self.display_id.clone());
-                }
+            Message::Report(report) => return self.report(report),
+            Message::TrustCertificate {
+                fingerprint,
+                remember,
+            } => {
+                return self.send(connection::Event::TrustCertificate {
+                    fingerprint,
+                    remember,
+                });
             }
-            Message::UntrustedCertificate(fingerprint) => {
-                self.phase = Phase::Disconnected(Some(fl!("certificate-not-trusted")));
-                self.modal = Some(Modal::TrustCertificate(fingerprint));
+            Message::Pointer(point) => {
+                return self.send(connection::Event::Pointer {
+                    x: point.x,
+                    y: point.y,
+                });
             }
-            Message::TrustCertificate { fingerprint, .. } => {
-                self.modal = None;
-                // A new policy changes the subscription's identity, so this
-                // starts a fresh connection attempt.
-                self.tls = TlsPolicy::AllowInsecure {
-                    accepted: Some(fingerprint),
-                };
-                self.phase = Phase::Connecting;
-            }
-            Message::Pointer(point) => self.send_pointer(point),
             Message::Button { button, pressed } => {
-                if let Some(controls) = &self.controls {
-                    let _ = controls
-                        .input
-                        .try_send(InputEvent::PointerButton { button, pressed });
-                }
+                return self.send(connection::Event::Button { button, pressed });
             }
             Message::Key { key, pressed } => {
-                if let (Some(controls), Some(keysym)) = (&self.controls, keysym(&key)) {
-                    let _ = controls.input.try_send(InputEvent::Key { keysym, pressed });
+                if let Some(keysym) = keysym(&key) {
+                    return self.send(connection::Event::Key { keysym, pressed });
                 }
             }
-            Message::Invoke(action) => return self.invoke(action),
-            Message::Confirm => {
-                if let Some(Modal::Confirm(action)) = self.modal.take() {
-                    return self.collect_and_send(action);
-                }
-            }
-            Message::CloseModal => self.modal = None,
+            Message::Invoke(action) => return self.send(connection::Event::Invoke(action)),
+            Message::Confirm => return self.send(connection::Event::Confirm),
+            Message::CloseModal => return self.send(connection::Event::CloseDialog),
             Message::FilePicked { id, path } => {
-                if let Some(path) = path {
-                    self.send_action(id, Some(ActionValue::File(path)));
-                }
+                return self.send(connection::Event::FilePicked { id, path });
             }
-            Message::SendAction(id) => self.send_action(id, None),
+            Message::SendAction(id) => return self.send(connection::Event::SendAction(id)),
             Message::OpenUrl(url) => {
                 if let Err(error) = open::that_detached(url.as_ref()) {
-                    self.modal = Some(Modal::Error {
-                        title: fl!("error-open-link"),
-                        message: format!("{url}: {error}"),
+                    return self.send(connection::Event::OpenUrlFailed {
+                        url: url.into_owned(),
+                        error: error.to_string(),
                     });
                 }
             }
@@ -437,30 +263,29 @@ impl State {
                 for (keysym, pressed) in
                     virtual_keyboard::update(&mut self.virtual_keyboard, message)
                 {
-                    if let Some(controls) = &self.controls {
-                        let _ = controls.input.try_send(InputEvent::Key { keysym, pressed });
-                    }
+                    let _ = self.send(connection::Event::Key { keysym, pressed });
                 }
             }
             Message::VirtualTrackpad(message) => {
-                if let Some((width, height)) = self.size {
-                    let effects = virtual_trackpad::update(
-                        &mut self.virtual_trackpad,
-                        message,
-                        (width as f32, height as f32),
-                    );
-                    for effect in effects {
-                        match effect {
-                            virtual_trackpad::Effect::Move(point) => self.send_pointer(point),
-                            virtual_trackpad::Effect::Click(button, pressed) => {
-                                if let Some(controls) = &self.controls {
-                                    let _ = controls
-                                        .input
-                                        .try_send(InputEvent::PointerButton { button, pressed });
-                                }
-                            }
+                let Some((width, height)) = self.core.size() else {
+                    return Task::none();
+                };
+                let effects = virtual_trackpad::update(
+                    &mut self.virtual_trackpad,
+                    message,
+                    (width as f32, height as f32),
+                );
+                for effect in effects {
+                    let event = match effect {
+                        virtual_trackpad::Effect::Move(point) => connection::Event::Pointer {
+                            x: point.x,
+                            y: point.y,
+                        },
+                        virtual_trackpad::Effect::Click(button, pressed) => {
+                            connection::Event::Button { button, pressed }
                         }
-                    }
+                    };
+                    let _ = self.send(event);
                 }
             }
             Message::ToggleMenu(menu) => {
@@ -482,122 +307,82 @@ impl State {
         Task::none()
     }
 
-    fn apply(&mut self, event: SessionEvent) {
-        match event {
-            SessionEvent::Connected { size, capabilities } => {
-                self.connected_once = true;
-                self.size = Some(size);
-                self.set_capabilities(capabilities);
-                self.phase = Phase::Connected;
-            }
-            SessionEvent::Frame(frame) => {
-                self.size = Some((frame.width, frame.height));
-                let generation = self.next_generation;
-                self.next_generation += 1;
-                self.frame = Some(DisplayFrame {
-                    tab_id: self.id,
-                    generation,
-                    width: frame.width,
-                    height: frame.height,
-                    pixels: Arc::from(frame.pixels),
-                });
-            }
-            SessionEvent::Resized { width, height } => self.size = Some((width, height)),
-            SessionEvent::Capabilities(capabilities) => self.set_capabilities(capabilities),
-            SessionEvent::Status(status) => {
-                if let Some(traffic) = status.traffic {
-                    self.traffic.sample(Instant::now(), traffic);
-                }
-                self.session_status = status;
-                self.refresh_icons();
-            }
-            SessionEvent::Disconnected { reason } => {
-                self.phase = Phase::Disconnected(reason);
-                self.controls = None;
-            }
-        }
-    }
-
-    fn set_capabilities(&mut self, capabilities: Capabilities) {
-        // A contributed menu that disappeared can't stay open.
-        if let Some(OpenMenu {
-            menu: ToolbarMenu::Contributed(id),
-            ..
-        }) = &self.menu
-        {
-            let still_there = capabilities.toolbar.iter().any(|item| {
-                matches!(item, server_remote_core::ToolbarItem::Menu { id: menu_id, .. } if menu_id == id)
-            });
-            if !still_there {
-                self.menu = None;
-            }
-        }
-        self.capabilities = capabilities;
-        self.refresh_icons();
-    }
-
-    fn refresh_icons(&mut self) {
-        self.icons.refresh(
-            icons_in_capabilities(&self.capabilities).chain(icons_in_status(&self.session_status)),
-        );
-    }
-
-    /// Invoking an action: confirm it first if asked to, then collect its
-    /// value and send it.
-    fn invoke(&mut self, action: Action) -> Task<Message> {
-        if !action.enabled {
-            return Task::none();
-        }
-        if action.confirm.is_some() {
-            self.modal = Some(Modal::Confirm(action));
-            return Task::none();
-        }
-        self.collect_and_send(action)
-    }
-
-    fn collect_and_send(&mut self, action: Action) -> Task<Message> {
-        match action.control {
-            Control::Button => {
-                self.send_action(action.id, None);
-                Task::none()
-            }
-            Control::File { extensions } => {
-                let id = action.id;
+    /// Hands `event` to the connection and carries out what it asks for.
+    fn send(&mut self, event: connection::Event) -> Task<Message> {
+        match self.core.update(event) {
+            Some(connection::Effect::PickFile { id, extensions }) => {
                 Task::perform(pick_file(extensions), move |path| Message::FilePicked {
                     id,
                     path,
                 })
             }
+            None => Task::none(),
         }
     }
 
-    fn send_action(&self, id: Cow<'static, str>, value: Option<ActionValue>) {
-        if let Some(controls) = &self.controls {
-            let _ = controls
-                .commands
-                .try_send(SessionCommand::Action { id, value });
+    fn report(&mut self, report: Report) -> Task<Message> {
+        // Grabs focus the moment the `kvm_display` widget first appears
+        // (when the first frame arrives — before that, `view` still shows
+        // "Waiting for first frame…" and there's nothing in the tree to
+        // focus), so typing works immediately without an initial click.
+        let first_frame = matches!(report, Report::Session(SessionEvent::Frame(_)))
+            && self.core.screen().is_none();
+        let refresh = matches!(
+            report,
+            Report::Session(
+                SessionEvent::Connected { .. }
+                    | SessionEvent::Capabilities(_)
+                    | SessionEvent::Status(_)
+            )
+        );
+        let _ = self.send(connection::Event::Report(report));
+        if refresh {
+            self.close_vanished_menu();
+            self.refresh_icons();
         }
+        if first_frame {
+            return operation::focus(self.display_id.clone());
+        }
+        Task::none()
     }
 
-    fn send_pointer(&self, point: Point) {
-        let Some(controls) = &self.controls else {
+    /// A contributed menu that disappeared can't stay open.
+    fn close_vanished_menu(&mut self) {
+        let Some(OpenMenu {
+            menu: ToolbarMenu::Contributed(id),
+            ..
+        }) = &self.menu
+        else {
             return;
         };
-        match self.capabilities.pointer {
-            // `point` is already in framebuffer coordinates (mapped in the view).
-            PointerMode::Absolute => {
-                let _ = controls.input.try_send(InputEvent::PointerMoved {
-                    x: point.x,
-                    y: point.y,
-                });
-            }
-            // TODO: grab the pointer and send PointerMotion deltas.
-            PointerMode::Relative => {}
+        let still_there = self.core.capabilities().toolbar.iter().any(|item| {
+            matches!(item, server_remote_core::ToolbarItem::Menu { id: menu_id, .. } if menu_id == id)
+        });
+        if !still_there {
+            self.menu = None;
         }
+    }
+
+    fn refresh_icons(&mut self) {
+        self.icons.refresh(
+            icons_in_capabilities(self.core.capabilities())
+                .chain(icons_in_status(self.core.status())),
+        );
+    }
+
+    /// The screen as the display widget takes it.
+    fn display_frame(&self) -> Option<DisplayFrame> {
+        self.core.screen().map(|screen| DisplayFrame {
+            tab_id: self.core.id(),
+            generation: screen.generation,
+            width: screen.width,
+            height: screen.height,
+            pixels: screen.pixels.clone(),
+        })
     }
 
     pub fn view<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
-        let body: Element<'_, Message> = match (&self.phase, &self.frame) {
+        let body: Element<'_, Message> = match (self.core.phase(), self.display_frame()) {
             (Phase::Connecting, _) => text(fl!("status-connecting-ellipsis")).into(),
             (Phase::Disconnected(reason), _) => {
                 let reason = reason.clone().unwrap_or_else(|| fl!("status-disconnected"));
@@ -619,8 +404,8 @@ impl State {
             }
             (Phase::Connected, None) => text(fl!("waiting-for-frame")).into(),
             (Phase::Connected, Some(frame)) => kvm_display(
-                frame.clone(),
-                self.capabilities.pointer,
+                frame,
+                self.core.capabilities().pointer,
                 self.display_id.clone(),
             ),
         };
@@ -641,13 +426,16 @@ impl State {
 
         let content = Column::new()
             .spacing(4)
-            .push((!matches!(self.phase, Phase::Disconnected(_))).then(|| self.toolbar(settings)))
+            .push(
+                (!matches!(self.core.phase(), Phase::Disconnected(_)))
+                    .then(|| self.toolbar(settings)),
+            )
             .push(center(body))
             .push(panel)
             .push(self.status_bar());
 
-        match &self.modal {
-            Some(modal) => stack![content, modal_view(modal, &self.target)].into(),
+        match self.core.dialog() {
+            Some(modal) => stack![content, modal_view(modal, self.core.target())].into(),
             None => content.into(),
         }
     }
@@ -670,9 +458,9 @@ impl State {
                 .is_some_and(|open| open.submenu == Some(submenu.clone()))
         };
         let contributed_menus =
-            contributed::toolbar_menus(&self.capabilities, &self.icons, self.menu.as_ref());
-        let chips = contributed::chips(&self.session_status, &self.icons);
-        let links = contributed::toolbar_links(&self.capabilities, &self.icons);
+            contributed::toolbar_menus(self.core.capabilities(), &self.icons, self.menu.as_ref());
+        let chips = contributed::chips(self.core.status(), &self.icons);
+        let links = contributed::toolbar_links(self.core.capabilities(), &self.icons);
 
         Row::new()
             .spacing(style::SPACING)
@@ -713,41 +501,43 @@ impl State {
 
     /// Technical details about the connection, for the info popout.
     fn info(&self) -> Element<'_, Message> {
-        let status = match &self.phase {
+        let status = match self.core.phase() {
             Phase::Connecting => fl!("status-connecting"),
             Phase::Connected => fl!("status-connected"),
             Phase::Disconnected(reason) => {
                 reason.clone().unwrap_or_else(|| fl!("status-disconnected"))
             }
         };
-        let resolution = self.size.map_or_else(
+        let resolution = self.core.size().map_or_else(
             || "—".to_owned(),
             |(width, height)| format!("{width}×{height}"),
         );
-        let pointer = match self.capabilities.pointer {
+        let pointer = match self.core.capabilities().pointer {
             PointerMode::Absolute => fl!("pointer-absolute"),
             PointerMode::Relative => fl!("pointer-relative"),
         };
 
         let encryption = self
-            .session_status
+            .core
+            .status()
             .encryption
             .as_deref()
             .map_or_else(|| fl!("encryption-none"), str::to_owned);
         let built_in = [
-            (fl!("info-protocol"), self.protocol.name().to_owned()),
+            (fl!("info-protocol"), self.core.protocol().name().to_owned()),
             (
                 fl!("info-address"),
-                format!("{}:{}", self.target.host, self.target.port),
+                format!("{}:{}", self.core.target().host, self.core.target().port),
             ),
             (fl!("info-status"), status),
             (fl!("info-resolution"), resolution),
             (fl!("info-pointer"), pointer),
-            (fl!("info-frames"), self.next_generation.to_string()),
+            (fl!("info-frames"), self.core.frames().to_string()),
             (fl!("info-encryption"), encryption),
         ];
         let details = self
-            .session_status
+            .core
+            .status()
             .details
             .iter()
             .map(|detail| (detail.label.to_string(), detail.value.to_string()));
@@ -772,11 +562,13 @@ impl State {
         submenu_open: &impl Fn(Submenu) -> bool,
     ) -> Vec<Item<Message>> {
         let actions = self
-            .capabilities
+            .core
+            .capabilities()
             .input_actions
             .iter()
             .map(|action| contributed::action_item(action, &self.icons));
-        let separator = (!self.capabilities.input_actions.is_empty()).then_some(Item::Separator);
+        let separator =
+            (!self.core.capabilities().input_actions.is_empty()).then_some(Item::Separator);
 
         let keyboard_styles = KeyboardSize::ALL
             .into_iter()
@@ -827,7 +619,7 @@ impl State {
     }
 
     fn status_bar(&self) -> Element<'_, Message> {
-        let (label, indicator) = match self.phase {
+        let (label, indicator) = match self.core.phase() {
             Phase::Connecting => (fl!("status-connecting-ellipsis"), style::Indicator::Warning),
             Phase::Connected => (fl!("status-connected"), style::Indicator::Ok),
             Phase::Disconnected(_) => (fl!("status-disconnected"), style::Indicator::Error),
@@ -838,7 +630,7 @@ impl State {
             .push(style::status_dot(indicator))
             .push(text(label));
 
-        let traffic = self.traffic.rate.map(|rate| {
+        let traffic = self.core.traffic().map(|rate| {
             Row::new()
                 .spacing(6)
                 .align_y(Alignment::Center)
@@ -850,9 +642,10 @@ impl State {
                 .into()
         });
         let resolution = self
-            .size
+            .core
+            .size()
             .map(|(width, height)| text(format!("{width}×{height}")).into());
-        let encryption = self.session_status.encryption.as_ref().map(|encryption| {
+        let encryption = self.core.status().encryption.as_ref().map(|encryption| {
             Row::new()
                 .spacing(6)
                 .align_y(Alignment::Center)
@@ -860,7 +653,7 @@ impl State {
                 .push(text(encryption.as_ref()))
                 .into()
         });
-        let items = contributed::status_items(&self.session_status, &self.icons);
+        let items = contributed::status_items(self.core.status(), &self.icons);
         let connector_items = (!items.is_empty()).then(|| {
             Row::with_children(items)
                 .spacing(16)
@@ -895,26 +688,15 @@ impl State {
             .align_y(Alignment::Center)
             .into()
     }
-
     pub fn subscription(&self) -> Subscription<Message> {
-        if let Phase::Disconnected(_) = self.phase {
-            return Subscription::none();
-        }
-
         // `run_with` identifies the subscription by hashing `Params` (plus the
-        // worker's function pointer), so the `id` keeps each connection's
-        // subscription distinct. The worker must be a plain `fn`, so everything
-        // it needs travels in `Params` rather than a captured closure.
-        Subscription::run_with(
-            Params {
-                id: self.id,
-                protocol: self.protocol,
-                target: self.target.clone(),
-                tls: self.tls.clone(),
-                credentials: self.credentials.clone(),
-            },
-            worker,
-        )
+        // worker's function pointer); the connection's id is among them, so
+        // each connection's subscription is distinct. The worker must be a
+        // plain `fn`, so everything it needs travels in `Params`.
+        match self.core.params() {
+            Some(params) => Subscription::run_with(params, worker),
+            None => Subscription::none(),
+        }
     }
 }
 
@@ -1082,9 +864,9 @@ async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
         .map(|file| file.path().to_path_buf())
 }
 
-fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> {
+fn modal_view<'a>(modal: &'a Dialog, target: &'a Target) -> Element<'a, Message> {
     match modal {
-        Modal::Confirm(action) => {
+        Dialog::Confirm(action) => {
             let confirmation = action
                 .confirm
                 .as_ref()
@@ -1115,7 +897,7 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                 ],
             )
         }
-        Modal::TrustCertificate(fingerprint) => {
+        Dialog::TrustCertificate(fingerprint) => {
             let trust = |remember| Message::TrustCertificate {
                 fingerprint: *fingerprint,
                 remember,
@@ -1160,7 +942,7 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                 dialog::WIDE,
             )
         }
-        Modal::Error { title, message } => dialog::view(
+        Dialog::Error { title, message } => dialog::view(
             title.clone(),
             message.clone(),
             vec![dialog::Button {
@@ -1251,82 +1033,23 @@ pub(crate) fn named_keysym(named: Named) -> Option<u32> {
     Some(keysym)
 }
 
-/// Everything the subscription worker needs, hashed to identify the session.
-#[derive(Hash)]
-struct Params {
-    id: u64,
-    protocol: Protocol,
-    target: Target,
-    tls: TlsPolicy,
-    credentials: Credentials,
-}
-
 // `use<>` declares the returned stream captures nothing from `&Params`, so it
 // is `'static` and the fn coerces to the `fn(&D) -> S` that `run_with` wants.
 fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
-    let protocol = params.protocol;
-    let target = params.target.clone();
-    let tls = params.tls.clone();
-    let Credentials { username, password } = params.credentials.clone();
-
+    let params = params.clone();
     iced::stream::channel(
         32,
         move |mut output: futures_mpsc::Sender<Message>| async move {
-            let result = match protocol {
-                Protocol::Dummy => DummyConnector.connect(&target, &tls).await,
-                Protocol::Vnc => {
-                    let password = (!password.is_empty()).then_some(password);
-                    VncConnector::new(password).connect(&target, &tls).await
-                }
-                Protocol::Spice => {
-                    let password = (!password.is_empty()).then_some(password);
-                    SpiceConnector::new(password).connect(&target, &tls).await
-                }
-                Protocol::Ilo => {
-                    IloConnector::new(username, password)
-                        .connect(&target, &tls)
-                        .await
+            let (reports, mut received) = mpsc::channel(32);
+            let forward = async move {
+                while let Some(report) = received.recv().await {
+                    if output.send(Message::Report(report)).await.is_err() {
+                        break;
+                    }
                 }
             };
-
-            let handle = match result {
-                Ok(handle) => handle,
-                Err(ConnectError::UntrustedCertificate(fingerprint)) => {
-                    let _ = output
-                        .send(Message::UntrustedCertificate(fingerprint))
-                        .await;
-                    return;
-                }
-                Err(error) => {
-                    let _ = output
-                        .send(Message::Session(SessionEvent::Disconnected {
-                            reason: Some(error.to_string()),
-                        }))
-                        .await;
-                    return;
-                }
-            };
-
-            // Hand the UI the session's own senders, then just pump events out.
-            let SessionHandle {
-                mut events,
-                input,
-                commands,
-            } = handle;
-            if output
-                .send(Message::Ready(Controls { input, commands }))
-                .await
-                .is_err()
-            {
-                return;
-            }
-
-            while let Some(event) = events.recv().await {
-                let ended = matches!(event, SessionEvent::Disconnected { .. });
-                if output.send(Message::Session(event)).await.is_err() || ended {
-                    break;
-                }
-            }
+            // Dropping the subscription drops both, which ends the session.
+            iced::futures::join!(connection::run(params, reports), forward);
         },
     )
 }
@@ -1334,19 +1057,9 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use server_remote_core::Frame;
-
-    fn state() -> State {
-        State::new(
-            0,
-            Arc::from("test"),
-            Protocol::Dummy,
-            Target::new("localhost", 0),
-            TlsPolicy::default(),
-            Credentials::default(),
-            &settings::Input::default(),
-        )
-    }
+    use server_remote_app::Protocol;
+    use server_remote_app::connection::Credentials;
+    use server_remote_core::TlsPolicy;
 
     #[test]
     fn new_connections_take_the_keyboard_defaults() {
@@ -1369,264 +1082,18 @@ mod tests {
             ),
         ];
         for (name, input, shown, size) in cases {
-            let state = State::new(
+            let core = Connection::new(
                 0,
                 Arc::from("test"),
                 Protocol::Dummy,
                 Target::new("localhost", 0),
                 TlsPolicy::default(),
                 Credentials::default(),
-                &input,
             );
+            let state = State::new(core, &input);
             assert_eq!(state.show_virtual_keyboard, shown, "{name}");
             assert_eq!(state.keyboard_size, size, "{name}");
         }
-    }
-
-    fn wired_controls() -> (
-        Controls,
-        mpsc::Receiver<InputEvent>,
-        mpsc::Receiver<SessionCommand>,
-    ) {
-        let (input, input_rx) = mpsc::channel(4);
-        let (commands, command_rx) = mpsc::channel(4);
-        (Controls { input, commands }, input_rx, command_rx)
-    }
-
-    #[test]
-    fn connected_event_sets_size_capabilities_and_status() {
-        let mut state = state();
-        let capabilities = Capabilities {
-            pointer: PointerMode::Relative,
-            ..Capabilities::default()
-        };
-        state.apply(SessionEvent::Connected {
-            size: (800, 600),
-            capabilities,
-        });
-
-        assert_eq!(state.size, Some((800, 600)));
-        assert_eq!(state.capabilities.pointer, PointerMode::Relative);
-        assert_eq!(state.phase, Phase::Connected);
-    }
-
-    #[test]
-    fn frame_event_updates_size_and_stores_the_frame() {
-        let mut state = state();
-        state.apply(SessionEvent::Frame(Frame {
-            width: 4,
-            height: 2,
-            pixels: vec![0; 4 * 2 * 4],
-        }));
-
-        assert_eq!(state.size, Some((4, 2)));
-        assert!(state.frame.is_some());
-    }
-
-    #[test]
-    fn resized_event_only_updates_size() {
-        let mut state = state();
-        state.apply(SessionEvent::Resized {
-            width: 10,
-            height: 20,
-        });
-        assert_eq!(state.size, Some((10, 20)));
-    }
-
-    #[test]
-    fn disconnected_event_sets_reason_and_drops_controls() {
-        let mut state = state();
-        let (controls, _input_rx, _command_rx) = wired_controls();
-        state.controls = Some(controls);
-
-        state.apply(SessionEvent::Disconnected {
-            reason: Some("connection reset".to_owned()),
-        });
-
-        assert_eq!(
-            state.phase,
-            Phase::Disconnected(Some("connection reset".to_owned()))
-        );
-        assert!(state.controls.is_none());
-    }
-
-    #[test]
-    fn ready_message_stores_the_controls() {
-        let mut state = state();
-        let (controls, _input_rx, _command_rx) = wired_controls();
-
-        let _ = state.update(Message::Ready(controls));
-
-        assert!(state.controls.is_some());
-    }
-
-    #[test]
-    fn button_message_forwards_to_the_input_channel() {
-        let mut state = state();
-        let (controls, mut input_rx, _command_rx) = wired_controls();
-        state.controls = Some(controls);
-
-        let _ = state.update(Message::Button {
-            button: PointerButton::Right,
-            pressed: true,
-        });
-
-        match input_rx.try_recv() {
-            Ok(InputEvent::PointerButton { button, pressed }) => {
-                assert_eq!(button, PointerButton::Right);
-                assert!(pressed);
-            }
-            other => panic!("expected a pointer button event, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn key_message_forwards_the_mapped_keysym() {
-        let mut state = state();
-        let (controls, mut input_rx, _command_rx) = wired_controls();
-        state.controls = Some(controls);
-
-        let _ = state.update(Message::Key {
-            key: keyboard::Key::Named(Named::Escape),
-            pressed: true,
-        });
-
-        match input_rx.try_recv() {
-            Ok(InputEvent::Key { keysym, pressed }) => {
-                assert_eq!(keysym, 0xFF1B);
-                assert!(pressed);
-            }
-            other => panic!("expected a key event, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn key_message_with_no_mapping_sends_nothing() {
-        let mut state = state();
-        let (controls, mut input_rx, _command_rx) = wired_controls();
-        state.controls = Some(controls);
-
-        let _ = state.update(Message::Key {
-            key: keyboard::Key::Unidentified,
-            pressed: true,
-        });
-
-        assert!(input_rx.try_recv().is_err());
-    }
-
-    fn confirmed(action: Action) -> Action {
-        action.confirm(server_remote_core::Confirmation {
-            title: Cow::Borrowed("Sure?"),
-            message: Cow::Borrowed("Really?"),
-            confirm_label: Cow::Borrowed("Yes"),
-            destructive: false,
-        })
-    }
-
-    /// Actions sent to the session, as `(id, value)`.
-    type Sent = Vec<(String, Option<ActionValue>)>;
-
-    fn sent(command_rx: &mut mpsc::Receiver<SessionCommand>) -> Sent {
-        std::iter::from_fn(|| command_rx.try_recv().ok())
-            .map(|SessionCommand::Action { id, value }| (id.into_owned(), value))
-            .collect()
-    }
-
-    #[test]
-    fn action_flows() {
-        let iso = PathBuf::from("/images/disk.iso");
-        let cases: Vec<(&str, Vec<Message>, Sent)> = vec![
-            (
-                "button is sent straight away",
-                vec![Message::Invoke(Action::button("cad", "Ctrl+Alt+Del"))],
-                vec![("cad".into(), None)],
-            ),
-            (
-                "disabled action is ignored",
-                vec![Message::Invoke(
-                    Action::button("cad", "Ctrl+Alt+Del").enabled(false),
-                )],
-                vec![],
-            ),
-            (
-                "confirmation holds the action back",
-                vec![Message::Invoke(confirmed(Action::button(
-                    "off",
-                    "Power off",
-                )))],
-                vec![],
-            ),
-            (
-                "confirming sends it",
-                vec![
-                    Message::Invoke(confirmed(Action::button("off", "Power off"))),
-                    Message::Confirm,
-                ],
-                vec![("off".into(), None)],
-            ),
-            (
-                "cancelling drops it",
-                vec![
-                    Message::Invoke(confirmed(Action::button("off", "Power off"))),
-                    Message::CloseModal,
-                    Message::Confirm,
-                ],
-                vec![],
-            ),
-            (
-                "picked file is sent as the value",
-                vec![Message::FilePicked {
-                    id: Cow::Borrowed("mount"),
-                    path: Some(iso.clone()),
-                }],
-                vec![("mount".into(), Some(ActionValue::File(iso.clone())))],
-            ),
-            (
-                "cancelled file picker sends nothing",
-                vec![Message::FilePicked {
-                    id: Cow::Borrowed("mount"),
-                    path: None,
-                }],
-                vec![],
-            ),
-            (
-                "chip close sends its action",
-                vec![Message::SendAction(Cow::Borrowed("eject"))],
-                vec![("eject".into(), None)],
-            ),
-        ];
-
-        for (name, messages, expected) in cases {
-            let mut state = state();
-            let (controls, _input_rx, mut command_rx) = wired_controls();
-            state.controls = Some(controls);
-            for message in messages {
-                let _ = state.update(message);
-            }
-            assert_eq!(sent(&mut command_rx), expected, "{name}");
-        }
-    }
-
-    #[test]
-    fn an_untrusted_certificate_asks_and_trusting_it_reconnects() {
-        let mut state = state();
-        let fingerprint = CertFingerprint([7; 32]);
-        let _ = state.update(Message::UntrustedCertificate(fingerprint));
-        assert!(matches!(state.phase, Phase::Disconnected(Some(_))));
-        assert!(matches!(state.modal, Some(Modal::TrustCertificate(f)) if f == fingerprint));
-
-        let _ = state.update(Message::TrustCertificate {
-            fingerprint,
-            remember: false,
-        });
-        assert!(state.modal.is_none());
-        assert_eq!(state.phase, Phase::Connecting);
-        assert_eq!(
-            state.tls,
-            TlsPolicy::AllowInsecure {
-                accepted: Some(fingerprint)
-            }
-        );
     }
 
     #[test]
@@ -1635,114 +1102,6 @@ mod tests {
         let lines: Vec<&str> = shown.lines().collect();
         assert_eq!(lines.len(), 4);
         assert!(lines.iter().all(|line| *line == "AB:AB:AB:AB:AB:AB:AB:AB"));
-    }
-
-    #[test]
-    fn invoking_a_confirmed_action_opens_the_dialog() {
-        let mut state = state();
-        let _ = state.update(Message::Invoke(confirmed(Action::button(
-            "off",
-            "Power off",
-        ))));
-        assert!(matches!(state.modal, Some(Modal::Confirm(_))));
-    }
-
-    #[test]
-    fn status_event_is_stored() {
-        let mut state = state();
-        state.apply(SessionEvent::Status(SessionStatus {
-            encryption: Some(Cow::Borrowed("RC4")),
-            ..SessionStatus::default()
-        }));
-        assert_eq!(state.session_status.encryption.as_deref(), Some("RC4"));
-    }
-
-    #[test]
-    fn traffic_rates() {
-        let start = Instant::now();
-        let at = |millis| start + Duration::from_millis(millis);
-        let traffic = |received, sent| Traffic { received, sent };
-        let cases = [
-            ("one sample has no rate", vec![(0, traffic(0, 0))], None),
-            (
-                "rate over one second",
-                vec![(0, traffic(0, 0)), (1_000, traffic(1_000, 500))],
-                Some(Rate {
-                    received: 1_000.0,
-                    sent: 500.0,
-                }),
-            ),
-            (
-                "too-close samples are skipped",
-                vec![(0, traffic(0, 0)), (100, traffic(900, 900))],
-                None,
-            ),
-            (
-                "rate measured from the last kept sample",
-                vec![
-                    (0, traffic(0, 0)),
-                    (100, traffic(900, 900)),
-                    (2_000, traffic(4_000, 2_000)),
-                ],
-                Some(Rate {
-                    received: 2_000.0,
-                    sent: 1_000.0,
-                }),
-            ),
-        ];
-
-        for (name, samples, expected) in cases {
-            let mut meter = TrafficMeter::default();
-            for (millis, traffic) in samples {
-                meter.sample(at(millis), traffic);
-            }
-            assert_eq!(meter.rate, expected, "{name}");
-        }
-    }
-
-    #[test]
-    fn rate_formatting() {
-        let cases = [
-            (0.0, "0 kb/s"),
-            (18_750.0, "150 kb/s"),
-            (124_999.0, "1000 kb/s"),
-            (125_000.0, "1.0 Mb/s"),
-            (1_500_000.0, "12.0 Mb/s"),
-        ];
-        for (bytes_per_second, expected) in cases {
-            assert_eq!(
-                format_rate(bytes_per_second),
-                expected,
-                "{bytes_per_second}"
-            );
-        }
-    }
-
-    #[test]
-    fn pointer_message_forwards_absolute_position() {
-        let mut state = state();
-        let (controls, mut input_rx, _command_rx) = wired_controls();
-        state.controls = Some(controls);
-        state.capabilities.pointer = PointerMode::Absolute;
-
-        let _ = state.update(Message::Pointer(Point::new(3.0, 4.0)));
-
-        match input_rx.try_recv() {
-            Ok(InputEvent::PointerMoved { x, y }) => assert_eq!((x, y), (3.0, 4.0)),
-            other => panic!("expected a pointer moved event, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn pointer_message_is_dropped_in_relative_mode() {
-        let mut state = state();
-        let (controls, mut input_rx, _command_rx) = wired_controls();
-        state.controls = Some(controls);
-        state.capabilities.pointer = PointerMode::Relative;
-
-        let _ = state.update(Message::Pointer(Point::new(3.0, 4.0)));
-
-        assert!(input_rx.try_recv().is_err());
     }
 
     #[test]

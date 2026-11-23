@@ -2,6 +2,7 @@
 //! (SwiftUI) front ends. Nothing here depends on a UI toolkit.
 
 pub mod connect;
+pub mod connection;
 pub mod i18n;
 pub mod persistence;
 pub mod protocol;
