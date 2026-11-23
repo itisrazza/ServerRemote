@@ -44,7 +44,7 @@ rust_target() {
 
 # Matches the app's deployment target, so C dependencies (aws-lc) build for
 # the same iOS version.
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 
 cd "$root"
 for platform in "${platforms[@]}"; do

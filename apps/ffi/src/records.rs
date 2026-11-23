@@ -7,6 +7,7 @@ use server_remote_app::persistence::sessions::SavedSession;
 use server_remote_app::{App, i18n};
 
 use crate::look::icon_id;
+use crate::settings::SettingsState;
 use server_remote_core::{IndicatorState, MenuItem, StatusItem, ToolbarItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -110,6 +111,7 @@ pub struct AppState {
     pub sessions: Vec<Session>,
     /// The groups sessions are in, by name, with how many each has.
     pub groups: Vec<SessionGroup>,
+    pub settings: SettingsState,
     pub dialog: Option<AppDialog>,
 }
 
@@ -138,6 +140,7 @@ impl From<&App> for AppState {
                     count: count as u64,
                 })
                 .collect(),
+            settings: SettingsState::from(app.settings()),
             dialog: app.dialog().map(AppDialog::from),
         }
     }

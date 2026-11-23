@@ -1,90 +1,79 @@
 import SwiftUI
 
-/// The Connect page: the desktop's small panel in the middle of the window.
+/// The Connect page: a form that opens a connection or saves it.
 struct ConnectView: View {
     @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
     @State private var request = ConnectRequest.blank
+    @State private var naming = false
 
     var body: some View {
-        VStack(spacing: Metrics.spacing * 2) {
+        Form {
             ConnectFields(request: $request)
-            HStack {
-                Button {
-                    dialogs.show(NameDialog(request: request))
-                } label: {
-                    IconView(.save).frame(width: Metrics.controlHeight, height: Metrics.controlHeight)
-                }
-                .buttonStyle(InsetStyle())
-                Spacer()
-                DialogButton(label: model.localize("connect-connect"), kind: .primary) {
-                    model.core.connect(request: request)
+        }
+        .navigationTitle(model.localize("tab-connect"))
+        .toolbar {
+            ToolbarItem {
+                Button(model.localize("connect-save"), systemImage: "square.and.arrow.down") {
+                    naming = true
                 }
             }
+            ToolbarSpacer(.fixed)
+            ToolbarItem {
+                Button(model.localize("connect-connect")) {
+                    model.core.connect(request: request)
+                }
+                .buttonStyle(.glassProminent)
+            }
         }
-        .padding(Metrics.spacing * 2 * Metrics.scale)
-        .frame(width: 300 * Metrics.scale)
-        .panel()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// Asks what to call a connection before saving it.
-private struct NameDialog: View {
-    @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
-    @State var request: ConnectRequest
-
-    var body: some View {
-        DialogView(
-            title: model.localize("connect-save-title"),
-            buttons: [
-                DialogButton(label: model.localize("button-cancel")) { dialogs.dismiss() },
-                DialogButton(label: model.localize("connect-save"), kind: .primary) {
-                    model.core.saveNew(request: request)
-                    dialogs.dismiss()
-                },
-            ]
-        ) {
-            OutlinedField(placeholder: request.hostname, text: $request.name)
+        .alert(model.localize("connect-save-title"), isPresented: $naming) {
+            TextField(model.localize("connect-name"), text: $request.name)
+            Button(model.localize("button-cancel"), role: .cancel) {}
+            Button(model.localize("connect-save")) {
+                model.core.saveNew(request: request)
+            }
         }
     }
 }
 
-/// The fields of a connection: a protocol dropdown, then labelled rows.
+/// The fields of a connection, for a form on the Connect page or in the
+/// manager's editor.
 struct ConnectFields: View {
     @Environment(AppModel.self) private var model
     @Binding var request: ConnectRequest
-    var showsName = false
 
     var body: some View {
-        VStack(spacing: Metrics.spacing * 2) {
-            ProtocolPicker(selection: $request.protocol)
-            if showsName {
-                row("connect-name") {
-                    OutlinedField(placeholder: "", text: $request.name)
+        Section {
+            Picker(model.localize("info-protocol"), selection: $request.protocol) {
+                ForEach(protocols(), id: \.self) { kind in
+                    Label {
+                        Text(protocolName(protocol: kind))
+                    } icon: {
+                        IconView(.connectionProtocol(kind))
+                    }
+                    .tag(kind)
                 }
             }
-            row("connect-hostname") {
-                OutlinedField(placeholder: hostPlaceholder, text: $request.hostname)
-                    .keyboardType(.URL)
-            }
-            if request.protocol == .ilo {
-                row("connect-username") {
-                    OutlinedField(
-                        placeholder: model.localize("connect-username-placeholder"),
-                        text: $request.username
-                    )
-                }
-            }
-            row("connect-password") {
-                OutlinedField(placeholder: "", text: $request.password, secure: true)
-            }
+            TextField(
+                model.localize("connect-hostname"),
+                text: $request.hostname,
+                prompt: Text(model.localize("connect-hostname-placeholder-port", ["port": defaultPort]))
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
         }
-    }
-
-    private var hostPlaceholder: String {
-        model.localize("connect-hostname-placeholder-port", ["port": defaultPort])
+        Section {
+            if request.protocol == .ilo {
+                TextField(
+                    model.localize("connect-username"),
+                    text: $request.username,
+                    prompt: Text(model.localize("connect-username-placeholder"))
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            }
+            SecureField(model.localize("connect-password"), text: $request.password)
+        }
     }
 
     /// As in `server_remote_app::Protocol::default_port`.
@@ -94,44 +83,6 @@ struct ConnectFields: View {
         case .dummy: "0"
         case .vnc, .spice: "5900"
         }
-    }
-
-    private func row<Field: View>(_ label: String, @ViewBuilder field: () -> Field) -> some View {
-        HStack(spacing: Metrics.spacing * 2) {
-            Text(model.localize(label))
-                .frame(width: 75 * Metrics.scale, alignment: .leading)
-            field()
-        }
-    }
-}
-
-/// The protocol, as a dropdown with each protocol's icon.
-private struct ProtocolPicker: View {
-    @Binding var selection: ConnectionProtocol
-
-    var body: some View {
-        Menu {
-            ForEach(protocols(), id: \.self) { kind in
-                Button {
-                    selection = kind
-                } label: {
-                    Text(protocolName(protocol: kind))
-                }
-            }
-        } label: {
-            HStack(spacing: Metrics.spacing * 1.5) {
-                IconView(.connectionProtocol(selection))
-                Text(protocolName(protocol: selection))
-                Spacer()
-                IconView(.chevronDown)
-            }
-            .padding(.horizontal, 6 * Metrics.scale)
-            .frame(height: Metrics.controlHeight)
-            .background(Color.base, in: RoundedRectangle(cornerRadius: Metrics.radius))
-            .overlay(RoundedRectangle(cornerRadius: Metrics.radius).strokeBorder(Color.strong))
-            .contentShape(Rectangle())
-        }
-        .foregroundStyle(Color.text)
     }
 }
 

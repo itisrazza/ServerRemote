@@ -762,7 +762,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
     };
     ui::dialog::view(
         fl!("licences-title"),
-        fl!("licences-message"),
+        format!("{}\n\n{}", fl!("licences-icons"), fl!("licences-font")),
         vec![
             link("Carbon", server_remote_app::about::CARBON_URL),
             link("Nunito Sans", "https://github.com/googlefonts/NunitoSans"),

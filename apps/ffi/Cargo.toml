@@ -20,7 +20,9 @@ path = "src/bin/uniffi-bindgen-swift.rs"
 server-remote-app = { path = "../core", default-features = false }
 resvg = "0.50.0"
 server-remote-core = { path = "../../lib/core" }
-server-remote-icons = { path = "../../lib/icons" }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "sync", "macros"] }
 uniffi = { version = "0.32.2", features = ["cli"] }
+
+[dev-dependencies]
+server-remote-icons = { path = "../../lib/icons" }

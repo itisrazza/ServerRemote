@@ -25,10 +25,8 @@ quit-message =
     }
 quit-confirm = Ieșire
 licences-title = Licențe terțe
-licences-message =
-    Pictograme: Carbon Design System de la IBM, sub Licența Apache 2.0.
-
-    Font: Nunito Sans de la autorii proiectului Nunito Sans, sub licența SIL Open Font License 1.1.
+licences-icons = Pictograme: Carbon Design System de la IBM, sub Licența Apache 2.0.
+licences-font = Font: Nunito Sans de la autorii proiectului Nunito Sans, sub licența SIL Open Font License 1.1.
 recording-folder-dialog-title = Salvează înregistrările în
 file-dialog-supported = Fișiere acceptate
 
@@ -99,6 +97,7 @@ info-resolution = Rezoluție
 info-pointer = Indicator
 info-frames = Cadre primite
 info-encryption = Criptare
+info-title = Detaliile conexiunii
 pointer-absolute = Absolut
 pointer-relative = Relativ
 encryption-none = Niciuna

@@ -24,9 +24,11 @@ use tokio::task::AbortHandle;
 
 mod look;
 mod records;
+mod settings;
 
 pub use look::*;
 pub use records::*;
+pub use settings::*;
 
 uniffi::setup_scaffolding!();
 
@@ -225,6 +227,13 @@ impl Core {
     /// How an export went: `None` if it was written.
     pub fn exported(&self, error: Option<String>) {
         self.send(Event::Exported(error.map_or(Ok(()), Err)));
+    }
+
+    pub fn change_setting(&self, change: SettingChange) {
+        let change = change.resolve(lock(&self.shared.app).settings());
+        if let Some(change) = change {
+            self.send(Event::ChangeSetting(change));
+        }
     }
 
     pub fn close_dialog(&self) {

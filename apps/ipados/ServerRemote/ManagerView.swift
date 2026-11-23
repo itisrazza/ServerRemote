@@ -1,21 +1,44 @@
 import SwiftUI
 
-/// Saved connections as cards in a panel, filtered by the group chosen in
-/// the sidebar beside it. Tap a card to connect; hold it for more.
+/// Saved connections as cards, filtered by group. Tap a card to connect;
+/// hold it for more.
 struct ManagerView: View {
     @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
     /// The group shown, or `nil` for all of them.
     @State private var group: String?
+    @State private var editing: Editing?
+    @State private var deleting: Session?
+    @State private var grouping: Session?
+    @State private var newGroup = ""
 
     var body: some View {
-        HStack(alignment: .top, spacing: Metrics.spacing * 2) {
-            sidebar
-                .frame(width: 200 * Metrics.scale)
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .panel()
-        }
+        content
+            .navigationTitle(title)
+            .toolbar { toolbar }
+            .sheet(item: $editing) { EditSessionSheet(editing: $0) }
+            .confirmationDialog(
+                model.localize("manager-delete-title", ["name": deleting?.name ?? ""]),
+                isPresented: isShown($deleting),
+                titleVisibility: .visible,
+                presenting: deleting
+            ) { session in
+                Button(model.localize("manager-delete-confirm"), role: .destructive) {
+                    model.core.deleteSession(session: session.id)
+                }
+            } message: { _ in
+                Text(model.localize("manager-delete-message"))
+            }
+            .alert(model.localize("manager-new-group-title"), isPresented: isShown($grouping), presenting: grouping) { session in
+                TextField(model.localize("manager-group-name"), text: $newGroup)
+                Button(model.localize("button-cancel"), role: .cancel) {}
+                Button(model.localize("manager-new-group-create")) {
+                    let name = newGroup.trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty {
+                        model.core.setGroup(session: session.id, group: name)
+                    }
+                    newGroup = ""
+                }
+            }
     }
 
     /// The chosen group, unless its last session has gone since.
@@ -23,96 +46,101 @@ struct ManagerView: View {
         group.flatMap { name in model.state.groups.contains { $0.name == name } ? name : nil }
     }
 
-    private var sidebar: some View {
-        VStack(spacing: Metrics.spacing) {
-            groupItem(
-                model.localize("manager-all", ["count": "\(model.state.sessions.count)"]),
-                group: nil
-            )
-            ForEach(model.state.groups, id: \.name) { entry in
-                groupItem(
-                    model.localize("manager-group", ["group": entry.name, "count": "\(entry.count)"]),
-                    group: entry.name
-                )
-            }
-            Spacer()
-        }
+    private var title: String {
+        shownGroup ?? model.localize("tab-manager")
     }
 
-    private func groupItem(_ label: String, group: String?) -> some View {
-        Button(label) { self.group = group }
-            .buttonStyle(SidebarItemStyle(active: shownGroup == group))
-    }
-
+    @ViewBuilder
     private var content: some View {
-        VStack(alignment: .leading, spacing: Metrics.spacing * 2) {
-            HStack(spacing: Metrics.spacing) {
-                toolbarButton(model.localize("manager-add"), icon: .add) {
-                    var request = ConnectRequest.blank
-                    request.group = shownGroup ?? ""
-                    dialogs.show(EditDialog(editing: nil, request: request))
-                }
-                toolbarButton(model.localize("manager-import"), icon: nil) {
-                    model.core.importSessions()
-                }
-            }
-            let sessions = model.state.sessions.filter { shownGroup == nil || $0.group == shownGroup }
-            if model.state.sessions.isEmpty {
-                Text(model.localize("manager-empty"))
-                    .foregroundStyle(Color.strongest)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 220 * Metrics.scale), spacing: Metrics.spacing * 2)],
-                        spacing: Metrics.spacing * 2
-                    ) {
-                        ForEach(sessions, id: \.id) { session in
-                            SessionCard(session: session)
-                        }
+        let sessions = model.state.sessions.filter { shownGroup == nil || $0.group == shownGroup }
+        if model.state.sessions.isEmpty {
+            ContentUnavailableView(model.localize("manager-empty"), systemImage: "square.grid.2x2")
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 20)], spacing: 20) {
+                    ForEach(sessions, id: \.id) { session in
+                        SessionCard(
+                            session: session,
+                            edit: { editing = Editing(id: session.id, request: ConnectRequest(session)) },
+                            newGroup: { grouping = session },
+                            delete: { deleting = session }
+                        )
                     }
                 }
+                .padding(20)
             }
+            .background(Color(.systemGroupedBackground))
         }
-        .padding(Metrics.spacing * 2)
     }
 
-    private func toolbarButton(_ label: String, icon: AppIcon?, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: Metrics.spacing * 1.5) {
-                if let icon { IconView(icon) }
-                Text(label)
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem {
+            Menu {
+                Picker(model.localize("manager-group-menu"), selection: $group) {
+                    Text(model.localize("manager-all", ["count": "\(model.state.sessions.count)"]))
+                        .tag(String?.none)
+                    ForEach(model.state.groups, id: \.name) { entry in
+                        Text(model.localize("manager-group", ["group": entry.name, "count": "\(entry.count)"]))
+                            .tag(Optional(entry.name))
+                    }
+                }
+            } label: {
+                Label(model.localize("manager-group-menu"), systemImage: "line.3.horizontal.decrease")
             }
-            .padding(.horizontal, 10 * Metrics.scale)
-            .frame(height: Metrics.controlHeight)
         }
-        .buttonStyle(InsetStyle())
+        ToolbarSpacer(.fixed)
+        ToolbarItemGroup {
+            Button(model.localize("manager-import"), systemImage: "square.and.arrow.down") {
+                model.core.importSessions()
+            }
+            Button(model.localize("manager-add"), systemImage: "plus") {
+                var request = ConnectRequest.blank
+                request.group = shownGroup ?? ""
+                editing = Editing(id: nil, request: request)
+            }
+        }
     }
+
+    private func isShown<T>(_ item: Binding<T?>) -> Binding<Bool> {
+        Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } })
+    }
+}
+
+/// A session being added (`id` unset) or edited.
+struct Editing: Identifiable {
+    let id: UInt64?
+    var request: ConnectRequest
 }
 
 private struct SessionCard: View {
     @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
     let session: Session
+    let edit: () -> Void
+    let newGroup: () -> Void
+    let delete: () -> Void
 
     var body: some View {
         Button {
             model.core.openSaved(session: session.id)
         } label: {
-            VStack(alignment: .leading, spacing: 2 * Metrics.scale) {
+            VStack(alignment: .leading, spacing: 0) {
                 thumbnail
                     .frame(maxWidth: .infinity)
                     .aspectRatio(16 / 9, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 4 * Metrics.scale))
-                    .padding(.bottom, Metrics.spacing)
-                Text(session.name).font(.uiBold).lineLimit(1)
-                Text(session.hostname).foregroundStyle(Color.strongest).lineLimit(1)
-                Text(protocolName(protocol: session.protocol)).foregroundStyle(Color.strongest)
+                    .clipped()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.name).font(.headline).lineLimit(1)
+                    Text(session.hostname).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text(protocolName(protocol: session.protocol)).font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(12)
             }
-            .padding(Metrics.spacing * 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(InsetStyle(radius: Metrics.panelRadius))
+        .buttonStyle(.plain)
         .contextMenu { menu }
     }
 
@@ -122,24 +150,20 @@ private struct SessionCard: View {
             Image(uiImage: image).resizable().scaledToFill()
         } else {
             ZStack {
-                Color.neutral
-                IconView(.connectionProtocol(session.protocol), size: 64 * Metrics.scale)
-                    .foregroundStyle(Color.strongest)
-                    .opacity(0.6)
+                Color(.tertiarySystemFill)
+                IconView(.connectionProtocol(session.protocol), size: 56)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
 
     @ViewBuilder
     private var menu: some View {
-        Button(model.localize("connect-connect")) {
+        Button(model.localize("connect-connect"), systemImage: "play") {
             model.core.openSaved(session: session.id)
         }
-        Divider()
-        Button(model.localize("manager-edit")) {
-            dialogs.show(EditDialog(editing: session.id, request: ConnectRequest(session)))
-        }
-        Menu(model.localize("manager-group-menu")) {
+        Button(model.localize("manager-edit"), systemImage: "pencil", action: edit)
+        Menu {
             Button(model.localize("manager-group-none")) {
                 model.core.setGroup(session: session.id, group: "")
             }
@@ -149,86 +173,44 @@ private struct SessionCard: View {
                 }
             }
             Divider()
-            Button(model.localize("manager-new-group")) {
-                dialogs.show(NewGroupDialog(session: session.id))
-            }
+            Button(model.localize("manager-new-group"), systemImage: "folder.badge.plus", action: newGroup)
+        } label: {
+            Label(model.localize("manager-group-menu"), systemImage: "folder")
         }
-        Divider()
-        Button(model.localize("manager-export")) {
+        Button(model.localize("manager-export"), systemImage: "square.and.arrow.up") {
             model.core.exportSession(session: session.id)
         }
-        Button(model.localize("manager-delete"), role: .destructive) {
-            dialogs.show(DeleteDialog(session: session))
-        }
+        Divider()
+        Button(model.localize("manager-delete"), systemImage: "trash", role: .destructive, action: delete)
     }
 }
 
-/// Adds a session (`editing` unset) or edits one.
-private struct EditDialog: View {
+private struct EditSessionSheet: View {
     @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
-    let editing: UInt64?
-    @State var request: ConnectRequest
+    @Environment(\.dismiss) private var dismiss
+    @State var editing: Editing
 
     var body: some View {
-        DialogView(
-            title: model.localize(editing == nil ? "manager-add-title" : "manager-edit-title"),
-            buttons: [
-                DialogButton(label: model.localize("button-cancel")) { dialogs.dismiss() },
-                DialogButton(label: model.localize("connect-save"), kind: .primary) {
-                    model.core.saveSession(editing: editing, request: request)
-                    dialogs.dismiss()
-                },
-            ],
-            width: 320 * Metrics.scale
-        ) {
-            ConnectFields(request: $request, showsName: true)
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(model.localize("connect-name"), text: $editing.request.name)
+                }
+                ConnectFields(request: $editing.request)
+            }
+            .navigationTitle(model.localize(editing.id == nil ? "manager-add-title" : "manager-edit-title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(model.localize("button-cancel"), role: .cancel) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(model.localize("connect-save"), role: .confirm) {
+                        model.core.saveSession(editing: editing.id, request: editing.request)
+                        dismiss()
+                    }
+                }
+            }
         }
-    }
-}
-
-private struct NewGroupDialog: View {
-    @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
-    let session: UInt64
-    @State private var name = ""
-
-    var body: some View {
-        DialogView(
-            title: model.localize("manager-new-group-title"),
-            buttons: [
-                DialogButton(label: model.localize("button-cancel")) { dialogs.dismiss() },
-                DialogButton(
-                    label: model.localize("manager-new-group-create"),
-                    kind: .primary,
-                    enabled: !name.trimmingCharacters(in: .whitespaces).isEmpty
-                ) {
-                    model.core.setGroup(session: session, group: name.trimmingCharacters(in: .whitespaces))
-                    dialogs.dismiss()
-                },
-            ]
-        ) {
-            OutlinedField(placeholder: model.localize("manager-group-name"), text: $name)
-        }
-    }
-}
-
-private struct DeleteDialog: View {
-    @Environment(AppModel.self) private var model
-    @Environment(DialogPresenter.self) private var dialogs
-    let session: Session
-
-    var body: some View {
-        DialogView(
-            title: model.localize("manager-delete-title", ["name": session.name]),
-            message: model.localize("manager-delete-message"),
-            buttons: [
-                DialogButton(label: model.localize("button-cancel")) { dialogs.dismiss() },
-                DialogButton(label: model.localize("manager-delete-confirm"), kind: .destructive) {
-                    model.core.deleteSession(session: session.id)
-                    dialogs.dismiss()
-                },
-            ]
-        )
     }
 }

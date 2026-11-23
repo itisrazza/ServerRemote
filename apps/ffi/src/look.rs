@@ -1,68 +1,10 @@
-//! What the front end needs to look like the desktop app: its fonts, and its
-//! icons rendered to images.
+//! Protocol and connector icons, rendered to images for the front end.
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use server_remote_core::Icon;
-use server_remote_icons as icons;
 
 use crate::ConnectionProtocol;
-
-/// Nunito Sans, as the desktop app embeds it.
-const FONTS: [&[u8]; 2] = [
-    include_bytes!("../../desktop/assets/fonts/NunitoSans-Medium.ttf"),
-    include_bytes!("../../desktop/assets/fonts/NunitoSans-Bold.ttf"),
-];
-
-/// The font files to register before drawing any text.
-#[uniffi::export]
-pub fn fonts() -> Vec<Vec<u8>> {
-    FONTS.iter().map(|font| font.to_vec()).collect()
-}
-
-/// The built-in icons the front end draws itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
-pub enum AppIcon {
-    Add,
-    AddLarge,
-    ChevronDown,
-    ChevronRight,
-    Close,
-    CopyToClipboard,
-    Cursor,
-    Download,
-    Information,
-    Keyboard,
-    Launch,
-    Locked,
-    Save,
-    Settings,
-    Upload,
-    VirtualDesktop,
-}
-
-impl AppIcon {
-    fn icon(self) -> icons::Icon {
-        match self {
-            AppIcon::Add => icons::ADD,
-            AppIcon::AddLarge => icons::ADD_LARGE,
-            AppIcon::ChevronDown => icons::CHEVRON_DOWN,
-            AppIcon::ChevronRight => icons::CHEVRON_RIGHT,
-            AppIcon::Close => icons::CLOSE,
-            AppIcon::CopyToClipboard => icons::COPY_TO_CLIPBOARD,
-            AppIcon::Cursor => icons::CURSOR_1,
-            AppIcon::Download => icons::DOWNLOAD,
-            AppIcon::Information => icons::INFORMATION,
-            AppIcon::Keyboard => icons::KEYBOARD,
-            AppIcon::Launch => icons::LAUNCH,
-            AppIcon::Locked => icons::LOCKED,
-            AppIcon::Save => icons::SAVE,
-            AppIcon::Settings => icons::SETTINGS,
-            AppIcon::Upload => icons::UPLOAD,
-            AppIcon::VirtualDesktop => icons::VIRTUAL_DESKTOP,
-        }
-    }
-}
 
 /// An icon as a PNG.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -80,12 +22,6 @@ pub enum IconError {
     Size(u32),
     #[error("couldn't encode the icon: {0}")]
     Encode(String),
-}
-
-/// A built-in icon, `pixels` across.
-#[uniffi::export]
-pub fn app_icon(icon: AppIcon, pixels: u32) -> Result<IconImage, IconError> {
-    render(&Icon::Builtin(icon.icon()), pixels)
 }
 
 /// A protocol's icon, `pixels` across.
@@ -142,33 +78,7 @@ pub fn render(icon: &Icon, pixels: u32) -> Result<IconImage, IconError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_app_icon_renders() {
-        let all = [
-            AppIcon::Add,
-            AppIcon::AddLarge,
-            AppIcon::ChevronDown,
-            AppIcon::ChevronRight,
-            AppIcon::Close,
-            AppIcon::CopyToClipboard,
-            AppIcon::Cursor,
-            AppIcon::Download,
-            AppIcon::Information,
-            AppIcon::Keyboard,
-            AppIcon::Launch,
-            AppIcon::Locked,
-            AppIcon::Save,
-            AppIcon::Settings,
-            AppIcon::Upload,
-            AppIcon::VirtualDesktop,
-        ];
-        for icon in all {
-            let image = app_icon(icon, 32).unwrap_or_else(|error| panic!("{icon:?}: {error}"));
-            assert!(image.template, "{icon:?}");
-            assert!(image.png.starts_with(b"\x89PNG"), "{icon:?}");
-        }
-    }
+    use server_remote_icons as icons;
 
     #[test]
     fn raster_icons_pass_through() {
@@ -180,11 +90,7 @@ mod tests {
 
     #[test]
     fn a_zero_size_is_an_error() {
-        assert!(matches!(app_icon(AppIcon::Add, 0), Err(IconError::Size(0))));
-    }
-
-    #[test]
-    fn fonts_are_truetype() {
-        assert!(fonts().iter().all(|font| font.starts_with(&[0, 1, 0, 0])));
+        let icon = Icon::Builtin(icons::ADD);
+        assert!(matches!(render(&icon, 0), Err(IconError::Size(0))));
     }
 }

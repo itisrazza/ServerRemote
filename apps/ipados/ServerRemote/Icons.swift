@@ -1,38 +1,31 @@
 import OSLog
 import SwiftUI
 
-/// The desktop app's icons, rendered by the core and tinted to the text
-/// colour unless they're pictures.
+/// Icons that belong to the content rather than the chrome: each protocol's,
+/// a connector's own, and the app's logo, rendered by the core. Template
+/// icons take the foreground colour; pictures are drawn as they are.
 struct IconView: View {
     enum Source: Hashable {
-        case app(AppIcon)
         case connectionProtocol(ConnectionProtocol)
         /// A connector's icon, by connection and the id in its records.
         case connector(connection: UInt64, id: UInt64)
+        case logo
     }
 
     @Environment(AppModel.self) private var model
     @Environment(\.displayScale) private var displayScale
     let source: Source
-    var size: CGFloat = Metrics.iconSize
+    var size: CGFloat = 20
 
-    init(_ icon: AppIcon, size: CGFloat = Metrics.iconSize) {
-        source = .app(icon)
-        self.size = size
-    }
-
-    init(_ source: Source, size: CGFloat = Metrics.iconSize) {
+    init(_ source: Source, size: CGFloat = 20) {
         self.source = source
         self.size = size
     }
 
     var body: some View {
         Group {
-            if let rendered = IconCache.shared.image(source, pixels: pixels, core: model.core) {
-                Image(uiImage: rendered.image)
-                    .renderingMode(rendered.template ? .template : .original)
-                    .resizable()
-                    .interpolation(.high)
+            if let image = IconCache.shared.image(source, pixels: pixels, core: model.core) {
+                image.resizable().interpolation(.high)
             } else {
                 Color.clear
             }
@@ -50,44 +43,65 @@ struct IconView: View {
 final class IconCache {
     static let shared = IconCache()
 
-    struct Rendered {
-        let image: UIImage
-        let template: Bool
-    }
-
     private struct Key: Hashable {
         let source: IconView.Source
         let pixels: UInt32
     }
 
-    private var images: [Key: Rendered] = [:]
+    private var images: [Key: Image] = [:]
+    private let log = Logger(subsystem: "io.razza.ServerRemote", category: "icons")
 
-    func image(_ source: IconView.Source, pixels: UInt32, core: Core) -> Rendered? {
+    /// The icon `pixels` across, for drawing at `pixels / displayScale`.
+    func image(_ source: IconView.Source, pixels: UInt32, core: Core) -> Image? {
         let key = Key(source: source, pixels: pixels)
         if let image = images[key] { return image }
         guard let icon = render(source, pixels: pixels, core: core),
               let image = UIImage(data: icon.png)
         else { return nil }
-        let rendered = Rendered(image: image, template: icon.template)
+        let rendered = Image(uiImage: image).renderingMode(icon.template ? .template : .original)
         images[key] = rendered
         return rendered
     }
 
-    private let log = Logger(subsystem: "io.razza.ServerRemote", category: "icons")
-
     private func render(_ source: IconView.Source, pixels: UInt32, core: Core) -> IconImage? {
         do {
             switch source {
-            case let .app(icon):
-                return try appIcon(icon: icon, pixels: pixels)
             case let .connectionProtocol(kind):
                 return try protocolIcon(protocol: kind, pixels: pixels)
             case let .connector(connection, id):
                 return try core.connectionIcon(connection: connection, icon: id, pixels: pixels)
+            case .logo:
+                return try logo(pixels: pixels)
             }
         } catch {
             log.error("couldn't render icon \(String(describing: source)): \(error)")
             return nil
+        }
+    }
+}
+
+extension Color {
+    /// The desktop app's accent, so both feel like the same app.
+    static let brand = Color(red: 0x4C / 255, green: 0x8D / 255, blue: 0xFF / 255)
+}
+
+extension Indicator {
+    var color: Color {
+        switch self {
+        case .ok: .green
+        case .warning: .yellow
+        case .error: .red
+        case .inactive: .secondary
+        }
+    }
+}
+
+extension ConnectionPhase {
+    var color: Color {
+        switch self {
+        case .connecting: .yellow
+        case .connected: .green
+        case .disconnected: .red
         }
     }
 }

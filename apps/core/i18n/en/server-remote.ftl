@@ -25,10 +25,8 @@ quit-message =
     }
 quit-confirm = Quit
 licences-title = Third-party licences
-licences-message =
-    Icons: Carbon Design System by IBM, under the Apache License 2.0.
-
-    Font: Nunito Sans by the Nunito Sans Project Authors, under the SIL Open Font License 1.1.
+licences-icons = Icons: Carbon Design System by IBM, under the Apache License 2.0.
+licences-font = Font: Nunito Sans by the Nunito Sans Project Authors, under the SIL Open Font License 1.1.
 recording-folder-dialog-title = Save recordings to
 file-dialog-supported = Supported files
 
@@ -99,6 +97,7 @@ info-resolution = Resolution
 info-pointer = Pointer
 info-frames = Frames received
 info-encryption = Encryption
+info-title = Connection details
 pointer-absolute = Absolute
 pointer-relative = Relative
 encryption-none = None
