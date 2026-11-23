@@ -25,6 +25,15 @@ pub enum Placement {
     /// To the right of the anchor, top edges aligned; flips left if it would
     /// overflow the window.
     Right,
+    /// Where the anchor was last right-clicked, as a context menu opens; at
+    /// its top-left corner if it hasn't been.
+    Cursor,
+}
+
+/// Where the anchor was last right-clicked, relative to its top-left corner.
+#[derive(Debug, Default)]
+struct State {
+    right_click: Option<Vector>,
 }
 
 pub struct Popover<'a, Message> {
@@ -49,6 +58,14 @@ pub fn popover<'a, Message>(
 }
 
 impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for Popover<'_, Message> {
+    fn tag(&self) -> widget::tree::Tag {
+        widget::tree::Tag::of::<State>()
+    }
+
+    fn state(&self) -> widget::tree::State {
+        widget::tree::State::new(State::default())
+    }
+
     fn children(&self) -> Vec<Tree> {
         std::iter::once(&self.anchor)
             .chain(&self.popup)
@@ -94,6 +111,11 @@ impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for Popover<'_
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) = event
+            && let Some(position) = cursor.position_in(layout.bounds())
+        {
+            tree.state.downcast_mut::<State>().right_click = Some(position - Point::ORIGIN);
+        }
         self.anchor.as_widget_mut().update(
             &mut tree.children[0],
             event,
@@ -164,6 +186,7 @@ impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for Popover<'_
         viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, Message, iced::Theme, iced::Renderer>> {
+        let right_click = tree.state.downcast_ref::<State>().right_click;
         let (anchor_tree, popup_tree) = tree.children.split_at_mut(1);
 
         let anchor_overlay = self.anchor.as_widget_mut().overlay(
@@ -183,6 +206,7 @@ impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for Popover<'_
                     popup,
                     tree,
                     anchor: layout.bounds() + translation,
+                    right_click: right_click.unwrap_or(Vector::ZERO),
                     placement: self.placement,
                     on_dismiss: self.on_dismiss.as_ref(),
                 }))
@@ -203,13 +227,22 @@ struct PopupOverlay<'a, 'b, Message> {
     popup: &'b mut Element<'a, Message>,
     tree: &'b mut Tree,
     anchor: Rectangle,
+    right_click: Vector,
     placement: Placement,
     on_dismiss: Option<&'b Message>,
 }
 
 /// Where the popup's top-left corner goes, kept inside the window.
-fn popup_position(anchor: Rectangle, popup: Size, window: Size, placement: Placement) -> Point {
+/// `right_click` is relative to the anchor, for [`Placement::Cursor`].
+fn popup_position(
+    anchor: Rectangle,
+    right_click: Vector,
+    popup: Size,
+    window: Size,
+    placement: Placement,
+) -> Point {
     let (x, y) = match placement {
+        Placement::Cursor => (anchor.x + right_click.x, anchor.y + right_click.y),
         Placement::Below => (anchor.x, anchor.y + anchor.height + GAP),
         Placement::Right => {
             let right = anchor.x + anchor.width + GAP;
@@ -236,7 +269,13 @@ impl<Message: Clone> overlay::Overlay<Message, iced::Theme, iced::Renderer>
             renderer,
             &layout::Limits::new(Size::ZERO, bounds),
         );
-        let position = popup_position(self.anchor, node.size(), bounds, self.placement);
+        let position = popup_position(
+            self.anchor,
+            self.right_click,
+            node.size(),
+            bounds,
+            self.placement,
+        );
         node.move_to(position)
     }
 
@@ -377,11 +416,17 @@ mod tests {
                 Placement::Right,
                 Point::new(114.0, 500.0),
             ),
+            (
+                "at the right click",
+                Rectangle::new(Point::new(10.0, 50.0), Size::new(100.0, 20.0)),
+                Placement::Cursor,
+                Point::new(40.0, 55.0),
+            ),
         ];
 
         for (name, anchor, placement, expected) in cases {
             assert_eq!(
-                popup_position(anchor, POPUP, WINDOW, placement),
+                popup_position(anchor, Vector::new(30.0, 5.0), POPUP, WINDOW, placement),
                 expected,
                 "{name}"
             );

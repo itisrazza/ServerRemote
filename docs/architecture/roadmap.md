@@ -20,6 +20,10 @@ Done:
 - ~~Certificate checking settings~~ — Strict, Ask or Off in Settings ›
   Security, with saved trusted and blocked certificates per host and port.
   Approved certificates may use legacy 1024-bit RSA keys, as older iLOs do.
+- ~~Connection manager~~ — saved connections as cards with a thumbnail of
+  their last screen (the protocol's icon until there is one), filtered by
+  group in a sidebar. A right click edits, regroups, exports (as TOML,
+  without the password) or deletes one; Add and Import sit above the grid.
 
 In progress:
 

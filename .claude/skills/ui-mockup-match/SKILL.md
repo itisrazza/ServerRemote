@@ -65,6 +65,10 @@ list it in `NARROW` to check a reflowing layout at 640px.
   state twice with a short pause and keeps the second frame. It builds the
   view only once, though, so it can't catch a raster handle created inside
   `view` (which never appears in the real app); see `iced-widget-gotchas`.
+- To check sharpness at 1×, render with `SNAPSHOT_SNAP_SCALE=1`: the
+  layout is then snapped for a 1× display while still drawn at 2×, so any
+  flat edge (border, fill) on an odd pixel would sit between two pixels at
+  1×. Ignore hits inside raster images and dialog shadows.
 - The test app reports `Checking…` for updates, because the default settings
   check on launch.
 - States can switch theme or language first (see the `light` and `romanian`

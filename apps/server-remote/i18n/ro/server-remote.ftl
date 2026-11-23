@@ -34,18 +34,44 @@ file-dialog-supported = Fișiere acceptate
 
 ## Fila Conectare
 
-connect-name = Nume (folosit la salvare)
-connect-hostname = Nume gazdă
-connect-username = Nume de utilizator
+connect-name = Nume
+connect-hostname = Gazdă
+connect-hostname-placeholder = example.com
+connect-hostname-placeholder-port = example.com:{ $port }
+connect-username = Utilizator
+connect-username-placeholder = Administrator
 connect-password = Parolă
-connect-read-only = Doar citire
 connect-save = Salvează
+connect-save-tooltip = Salvează în managerul de conexiuni
+connect-save-title = Salvează conexiunea
 connect-connect = Conectează
 
 ## Managerul de conexiuni
 
-manager-empty = Nicio sesiune salvată încă — salvați una din fila Conectare.
-manager-delete = Șterge
+manager-empty = Nicio conexiune salvată încă. Adăugați una sau importați un fișier.
+manager-all = Toate ({ $count })
+manager-group = { $group } ({ $count })
+manager-add = Adaugă
+manager-import = Importă
+manager-edit = Editează…
+manager-export = Exportă…
+manager-delete = Șterge…
+manager-group-menu = Grup
+manager-group-none = Niciunul
+manager-new-group = Grup nou…
+manager-new-group-title = Grup nou
+manager-group-name = Numele grupului
+manager-new-group-create = Creează
+manager-add-title = Adaugă o conexiune
+manager-edit-title = Editează conexiunea
+manager-delete-title = Ștergeți { $name }?
+manager-delete-message = Conexiunea salvată va fi eliminată definitiv.
+manager-delete-confirm = Șterge
+manager-import-dialog-title = Importă conexiuni
+manager-export-dialog-title = Exportă conexiunea
+manager-file-type = Conexiuni ServerRemote
+manager-import-failed = Conexiunile nu au putut fi importate
+manager-export-failed = Conexiunea nu a putut fi exportată
 
 ## Conexiune
 

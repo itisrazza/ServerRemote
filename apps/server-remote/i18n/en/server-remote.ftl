@@ -34,18 +34,44 @@ file-dialog-supported = Supported files
 
 ## Connect tab
 
-connect-name = Name (used when saving)
-connect-hostname = Hostname
-connect-username = User name
+connect-name = Name
+connect-hostname = Host
+connect-hostname-placeholder = example.com
+connect-hostname-placeholder-port = example.com:{ $port }
+connect-username = Username
+connect-username-placeholder = Administrator
 connect-password = Password
-connect-read-only = Read-only
 connect-save = Save
+connect-save-tooltip = Save to the connection manager
+connect-save-title = Save connection
 connect-connect = Connect
 
 ## Connection manager
 
-manager-empty = No saved sessions yet — save one from the Connect tab.
-manager-delete = Delete
+manager-empty = No saved connections yet. Add one, or import a file.
+manager-all = All ({ $count })
+manager-group = { $group } ({ $count })
+manager-add = Add
+manager-import = Import
+manager-edit = Edit…
+manager-export = Export…
+manager-delete = Delete…
+manager-group-menu = Group
+manager-group-none = None
+manager-new-group = New group…
+manager-new-group-title = New group
+manager-group-name = Group name
+manager-new-group-create = Create
+manager-add-title = Add connection
+manager-edit-title = Edit connection
+manager-delete-title = Delete { $name }?
+manager-delete-message = The saved connection is removed for good.
+manager-delete-confirm = Delete
+manager-import-dialog-title = Import connections
+manager-export-dialog-title = Export connection
+manager-file-type = ServerRemote connections
+manager-import-failed = Couldn't import connections
+manager-export-failed = Couldn't export the connection
 
 ## Connection
 

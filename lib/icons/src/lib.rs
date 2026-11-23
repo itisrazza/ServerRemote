@@ -65,6 +65,9 @@ icons! {
     KEY_ENTER = "key_enter";
     KEY_WINDOWS = "key_windows";
     PROTOCOL_ILO = "protocol_ilo";
+    PROTOCOL_MSRDP = "protocol_msrdp";
+    PROTOCOL_SPICE = "protocol_spice";
+    PROTOCOL_VNC = "protocol_vnc";
 }
 
 /// `iced` integration, enabled by the `iced` feature.
