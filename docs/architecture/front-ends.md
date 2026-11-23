@@ -109,6 +109,27 @@ does on a `macos-26` runner.
 
 Android will use the same `apps/ffi` crate through UniFFI's Kotlin bindings.
 
+## App Store declarations
+
+The iPadOS app declares two things the App Store asks about:
+
+- **Privacy** (`apps/ipados/ServerRemote/PrivacyInfo.xcprivacy`): no
+  tracking and no collected data, since everything stays on the device and
+  it only connects to servers the user adds; and the "required reason" APIs
+  a release build imports. Today those are file timestamps (`stat`,
+  `fstat`, from reading settings, sessions, thumbnails and picked files)
+  and system boot time (`clock_gettime_nsec_np`, from measuring elapsed
+  time), both used by Rust's standard library and tokio rather than called
+  directly. After adding a dependency, list a release build's imports
+  (`nm -u` on the app binary) and declare any new category. Debug builds
+  import more (unused code isn't stripped), so check a release one.
+- **Encryption** (`ITSAppUsesNonExemptEncryption = NO`): the app only uses
+  standard, published encryption (TLS through rustls, and the standard
+  ciphers iLO's console protocol specifies) to talk to the user's own
+  servers, which falls under the exemption for it. This is a declaration
+  the developer makes to Apple, and through it to US export rules;
+  revisit it if the app ever adds its own or non-standard cryptography.
+
 ## Store builds
 
 The update check sits behind the `update-check` feature of
