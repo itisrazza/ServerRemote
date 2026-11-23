@@ -1,21 +1,20 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use iced::{
     Alignment, Element, Length, Subscription, Task, padding,
     widget::{Column, Row, Scrollable, Space, button, container, mouse_area, stack, text, tooltip},
     window,
 };
-use server_remote_app::connection::Report;
-use server_remote_core::{SessionEvent, Target};
+use server_remote_app::App;
+use server_remote_app::app::{Dialog, Effect, Event, Page};
+use server_remote_app::connection::Connection;
+use server_remote_app::persistence::settings::Change;
 use server_remote_icons as icons;
 
 use crate::i18n::fl;
-use crate::persistence::settings::{Appearance, GraphicsBackend, KnownCertificate, Settings};
+use crate::persistence::settings::{Appearance, GraphicsBackend, Settings};
 use crate::tooltip_box::tooltip_box;
-use server_remote_app::connect::{parse_target, saved_session_from_request};
-use server_remote_app::persistence::sessions::export_file_name;
 use server_remote_app::{persistence, update};
 
 mod app_icon;
@@ -27,6 +26,9 @@ mod ui;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::settings::KnownCertificate;
+    use server_remote_app::connection::Report;
+    use server_remote_core::{SessionEvent, Target};
 
     fn request(hostname: &str) -> server_remote_app::connect::Request {
         server_remote_app::connect::Request {
@@ -37,70 +39,6 @@ mod tests {
             username: String::new(),
             password: String::new(),
         }
-    }
-
-    #[test]
-    fn open_connection_assigns_increasing_ids_and_switches_to_the_new_tab() {
-        let (mut app, _) = Application::new(None, Settings::default());
-
-        let _ = app.open_connection(request("first"));
-        let _ = app.open_connection(request("second"));
-
-        assert_eq!(app.connections.len(), 2);
-        assert_eq!(app.connections[0].id(), 0);
-        assert_eq!(app.connections[1].id(), 1);
-        assert_eq!(app.tab, Tab::Connection(1));
-    }
-
-    #[test]
-    fn open_connection_names_an_empty_hostname_after_the_protocol_and_id() {
-        let (mut app, _) = Application::new(None, Settings::default());
-
-        let _ = app.open_connection(request(""));
-
-        assert_eq!(app.connections[0].name().as_ref(), "dummy #0");
-    }
-
-    #[test]
-    fn close_connection_removes_it_and_returns_to_the_connect_tab() {
-        let (mut app, _) = Application::new(None, Settings::default());
-        let _ = app.open_connection(request("only"));
-        assert_eq!(app.tab, Tab::Connection(0));
-
-        let _ = app.close_connection(0);
-
-        assert!(app.connections.is_empty());
-        assert_eq!(app.tab, Tab::Connect);
-    }
-
-    #[test]
-    fn close_connection_leaves_an_unrelated_active_tab_alone() {
-        let (mut app, _) = Application::new(None, Settings::default());
-        let _ = app.open_connection(request("first"));
-        let _ = app.open_connection(request("second"));
-        app.tab = Tab::Manager;
-
-        let _ = app.close_connection(0);
-
-        assert_eq!(app.connections.len(), 1);
-        assert_eq!(app.tab, Tab::Manager);
-    }
-
-    #[test]
-    fn saved_session_uses_the_provided_name_when_set() {
-        let mut req = request("example.com");
-        req.name = "Home NAS".to_owned();
-
-        let saved = saved_session_from_request(req);
-
-        assert_eq!(saved.name, "Home NAS");
-        assert_eq!(saved.hostname, "example.com");
-    }
-
-    #[test]
-    fn saved_session_falls_back_to_hostname_when_name_is_blank() {
-        let saved = saved_session_from_request(request("example.com"));
-        assert_eq!(saved.name, "example.com");
     }
 
     /// Renders the window chrome to PNGs for comparing against the design.
@@ -226,8 +164,9 @@ mod tests {
 
     /// Saved sessions like the connection manager mockup's, with fixed ids
     /// (1–6) so states can refer to them, and two with thumbnails.
-    fn add_saved_sessions(app: &mut Application) {
-        use persistence::sessions::{SavedSession, thumbnail};
+    /// A config folder holding the sample saved sessions, with ids 1 to 6.
+    fn saved_sessions_dir() -> tempfile::TempDir {
+        use persistence::sessions::{SavedSession, Sessions};
         use server_remote_app::Protocol;
 
         let sessions = [
@@ -253,8 +192,10 @@ mod tests {
                 "debdev.vms.cloud",
             ),
         ];
-        for (index, (name, group, protocol, hostname)) in sessions.into_iter().enumerate() {
-            app.sessions.saved.push(SavedSession {
+        let saved = sessions
+            .into_iter()
+            .enumerate()
+            .map(|(index, (name, group, protocol, hostname))| SavedSession {
                 id: index as u64 + 1,
                 name: name.to_owned(),
                 group: group.to_owned(),
@@ -262,10 +203,21 @@ mod tests {
                 hostname: hostname.to_owned(),
                 username: String::new(),
                 password: String::new(),
-            });
-        }
+            })
+            .collect();
+        let dir = tempfile::tempdir().expect("creates a temporary config folder");
+        Sessions { saved }.save(Some(dir.path()));
+        dir
+    }
+
+    /// Gives two of the sample sessions a thumbnail.
+    fn add_thumbnails(app: &mut Application) {
         let desktop = containerdesk_frame();
-        let png = thumbnail::encode(desktop.width, desktop.height, &desktop.pixels);
+        let png = persistence::sessions::thumbnail::encode(
+            desktop.width,
+            desktop.height,
+            &desktop.pixels,
+        );
         for id in [2, 5] {
             app.manager.set_thumbnail(id, png.clone());
         }
@@ -322,7 +274,7 @@ mod tests {
         let conn = |message| Message::Connection(0, message);
         let settings_page = |section, select| {
             vec![
-                Message::SelectTab(Tab::Settings),
+                Message::SelectTab(Page::Settings),
                 Message::Settings(ui::settings::Message::Section(section)),
                 Message::Settings(ui::settings::Message::Toggle(select)),
             ]
@@ -395,14 +347,14 @@ mod tests {
                 "quit-over-settings",
                 false,
                 vec![
-                    Message::SelectTab(Tab::Settings),
+                    Message::SelectTab(Page::Settings),
                     Message::RequestClose(window::Id::unique()),
                 ],
             ),
         ];
 
         let about = vec![
-            Message::SelectTab(Tab::Settings),
+            Message::SelectTab(Page::Settings),
             Message::Settings(ui::settings::Message::Section(ui::settings::Section::About)),
         ];
         states.push(("settings-about", false, about.clone()));
@@ -424,10 +376,12 @@ mod tests {
             about
                 .iter()
                 .cloned()
-                .chain([Message::UpdateChecked(Ok(update::Outcome::Available {
-                    version: semver::Version::new(0, 2, 0),
-                    url: "https://example.invalid/release".to_owned(),
-                }))])
+                .chain([Message::App(Event::UpdateChecked(Ok(
+                    update::Outcome::Available {
+                        version: semver::Version::new(0, 2, 0),
+                        url: "https://example.invalid/release".to_owned(),
+                    },
+                )))])
                 .collect(),
         ));
 
@@ -516,7 +470,7 @@ mod tests {
         // The iLO connect form, and the certificate prompt in each theme and
         // language.
         let ilo_form = vec![
-            Message::SelectTab(Tab::Connect),
+            Message::SelectTab(Page::Connect),
             Message::ConnectTab(ui::connect::Message::Internal(
                 ui::connect::IMessage::Protocol(server_remote_app::Protocol::Ilo),
             )),
@@ -526,7 +480,7 @@ mod tests {
         )))];
         let form =
             |messages: Vec<ui::connect::IMessage>| -> Vec<Message> {
-                std::iter::once(Message::SelectTab(Tab::Connect))
+                std::iter::once(Message::SelectTab(Page::Connect))
                     .chain(messages.into_iter().map(|message| {
                         Message::ConnectTab(ui::connect::Message::Internal(message))
                     }))
@@ -597,7 +551,7 @@ mod tests {
             )
         };
         let security = vec![
-            Message::SelectTab(Tab::Settings),
+            Message::SelectTab(Page::Settings),
             Message::Settings(ui::settings::Message::Section(
                 ui::settings::Section::Security,
             )),
@@ -627,17 +581,17 @@ mod tests {
             "settings-display-narrow",
             false,
             vec![
-                Message::SelectTab(Tab::Settings),
+                Message::SelectTab(Page::Settings),
                 Message::Settings(ui::settings::Message::Section(
                     ui::settings::Section::Display,
                 )),
             ],
         ));
 
-        // The connection manager, filled in by `add_saved_sessions`, except
+        // The connection manager, filled in by `saved_sessions_dir`, except
         // in `manager-empty`.
         let manager = |messages: Vec<ui::manager::IMessage>| -> Vec<Message> {
-            std::iter::once(Message::SelectTab(Tab::Manager))
+            std::iter::once(Message::SelectTab(Page::Manager))
                 .chain(
                     messages
                         .into_iter()
@@ -702,12 +656,16 @@ mod tests {
                 name if NARROW.contains(&name) || name == "manager-narrow" => (640.0, 680.0),
                 _ => (1024.0, 768.0),
             };
-            let (mut app, _) = Application::new(None, Settings::default());
-            let _ = app.open_connection(request("Connection #1"));
-            let _ = app.open_connection(request("Connection #2"));
-            app.tab = Tab::Connection(0);
-            if name.starts_with("manager") && name != "manager-empty" {
-                add_saved_sessions(&mut app);
+            let sessions_dir =
+                (name.starts_with("manager") && name != "manager-empty").then(saved_sessions_dir);
+            let config_dir = sessions_dir.as_ref().map(|dir| dir.path().to_path_buf());
+            let (mut app, _) = Application::new(config_dir, Settings::default());
+            for name in ["Connection #1", "Connection #2"] {
+                let _ = app.update(Message::App(Event::Connect(request(name))));
+            }
+            let _ = app.update(Message::SelectTab(Page::Connection(0)));
+            if sessions_dir.is_some() {
+                add_thumbnails(&mut app);
             }
             // Snapshots render at 2x. `SNAPSHOT_SNAP_SCALE=1` snaps the layout
             // for 1x displays instead: anything then on an odd pixel would sit
@@ -748,143 +706,6 @@ mod tests {
                     .expect("writes png")
             );
         }
-    }
-
-    #[test]
-    fn a_failure_before_connecting_is_reported_where_it_started() {
-        use ui::connection::Message as Conn;
-        for origin in [Tab::Connect, Tab::Manager] {
-            let (mut app, _) = Application::new(None, Settings::default());
-            app.tab = origin.clone();
-            let _ = app.open_connection(request("ilo:443"));
-            let _ = app.update(Message::Connection(
-                0,
-                Conn::Report(Report::Session(SessionEvent::Disconnected {
-                    reason: Some("busy".to_owned()),
-                })),
-            ));
-
-            assert!(app.connections.is_empty(), "{origin:?}");
-            assert_eq!(app.tab, origin);
-            match &app.modal {
-                Some(AppModal::ConnectionFailed { message, details }) => {
-                    assert_eq!(message, "busy");
-                    assert!(details.contains("Address: ilo:443"), "{details}");
-                    assert!(details.ends_with("Error: busy"), "{details}");
-                }
-                other => panic!("{origin:?}: {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn a_failure_after_connecting_stays_in_its_tab() {
-        use ui::connection::Message as Conn;
-        let (mut app, _) = Application::new(None, Settings::default());
-        let _ = app.open_connection(request("ilo:443"));
-        for event in [
-            SessionEvent::Connected {
-                size: (1, 1),
-                capabilities: server_remote_core::Capabilities::default(),
-            },
-            SessionEvent::Disconnected {
-                reason: Some("lost".to_owned()),
-            },
-        ] {
-            let _ = app.update(Message::Connection(0, Conn::Report(Report::Session(event))));
-        }
-
-        assert_eq!(app.connections.len(), 1);
-        assert_eq!(app.tab, Tab::Connection(0));
-        assert!(app.modal.is_none());
-    }
-
-    #[test]
-    fn cancelling_or_blocking_a_certificate_closes_the_tab_quietly() {
-        use ui::connection::Message as Conn;
-        let fingerprint = server_remote_core::CertFingerprint([4; 32]);
-        for message in [Conn::Close, Conn::BlockCertificate(fingerprint)] {
-            let (mut app, _) = Application::new(None, Settings::default());
-            app.tab = Tab::Manager;
-            let _ = app.open_connection(request("ilo:443"));
-            let _ = app.update(Message::Connection(
-                0,
-                Conn::Report(Report::UntrustedCertificate(fingerprint)),
-            ));
-            let _ = app.update(Message::Connection(0, message.clone()));
-
-            assert!(app.connections.is_empty(), "{message:?}");
-            assert_eq!(app.tab, Tab::Manager, "{message:?}");
-            assert!(app.modal.is_none(), "{message:?}");
-        }
-    }
-
-    #[test]
-    fn certificate_choices_follow_and_update_the_security_settings() {
-        use crate::persistence::settings::{CertificateChecking, Refusal};
-        use server_remote_core::CertFingerprint;
-        use ui::connection::Message as Conn;
-
-        let (mut app, _) = Application::new(None, Settings::default());
-        let _ = app.open_connection(request("ilo:443"));
-        let target = app.connections[0].core().target().clone();
-        let trusted = CertFingerprint([1; 32]);
-        let blocked = CertFingerprint([2; 32]);
-
-        let _ = app.settle_certificate(
-            0,
-            Conn::TrustCertificate {
-                fingerprint: trusted,
-                remember: false,
-            },
-        );
-        assert!(app.settings.security.trusted.is_empty(), "connect once");
-        let _ = app.settle_certificate(
-            0,
-            Conn::TrustCertificate {
-                fingerprint: trusted,
-                remember: true,
-            },
-        );
-        assert_eq!(
-            app.settings.security.trusted,
-            vec![KnownCertificate::new(&target, trusted)]
-        );
-
-        let _ = app.settle_certificate(0, Conn::BlockCertificate(blocked));
-        assert_eq!(
-            app.settings.security.blocked,
-            vec![KnownCertificate::new(&target, blocked)]
-        );
-
-        let refused_with = |message: Conn| match message {
-            Conn::Report(Report::Session(SessionEvent::Disconnected { reason })) => reason,
-            _ => None,
-        };
-        let asked = app.settle_certificate(
-            0,
-            Conn::Report(Report::UntrustedCertificate(CertFingerprint([3; 32]))),
-        );
-        assert!(
-            matches!(asked, Conn::Report(Report::UntrustedCertificate(_))),
-            "ask: prompts"
-        );
-        let refused =
-            app.settle_certificate(0, Conn::Report(Report::UntrustedCertificate(blocked)));
-        assert_eq!(refused_with(refused), Some(Refusal::Blocked.reason()));
-
-        app.settings.security.certificate_checking = CertificateChecking::Strict;
-        let refused = app.settle_certificate(
-            0,
-            Conn::Report(Report::UntrustedCertificate(CertFingerprint([3; 32]))),
-        );
-        assert_eq!(refused_with(refused), Some(Refusal::Strict.reason()));
-    }
-
-    #[test]
-    fn saved_session_falls_back_to_the_protocol_label_when_name_and_hostname_are_blank() {
-        let saved = saved_session_from_request(request(""));
-        assert_eq!(saved.name, "dummy");
     }
 }
 
@@ -932,17 +753,6 @@ fn apply_graphics_backend(backend: GraphicsBackend) {
     unsafe { std::env::set_var("WGPU_BACKEND", backend.wgpu_name()) };
 }
 
-/// What a failed connection's copy button puts on the clipboard. Kept in
-/// English whatever the UI language, as it's meant for bug reports.
-fn failure_details(protocol: server_remote_app::Protocol, target: &Target, error: &str) -> String {
-    format!(
-        "ServerRemote {}\nProtocol: {protocol}\nAddress: {}:{}\nError: {error}",
-        env!("CARGO_PKG_VERSION"),
-        target.host,
-        target.port,
-    )
-}
-
 fn third_party_licences<'a>() -> Element<'a, Message> {
     let link = |label: &str, url: &str| ui::dialog::Button {
         label: label.to_owned(),
@@ -971,21 +781,37 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
     )
 }
 
-/// Asks for a file of exported sessions and reads them from it.
+/// Asks for a file of exported sessions and reads it; nothing if cancelled.
 fn import_sessions() -> Task<Message> {
     let dialog = rfd::AsyncFileDialog::new()
         .set_title(fl!("manager-import-dialog-title"))
         .add_filter(fl!("manager-file-type"), &["toml"]);
     Task::perform(
         async move {
-            let Some(file) = dialog.pick_file().await else {
-                return Ok(Vec::new());
-            };
-            let contents = std::fs::read_to_string(file.path()).map_err(|e| e.to_string())?;
-            persistence::sessions::import(&contents).map_err(|e| e.to_string())
+            let file = dialog.pick_file().await?;
+            let contents = std::fs::read_to_string(file.path()).map_err(|e| e.to_string());
+            Some(Message::App(Event::Imported(contents)))
         },
-        Message::Imported,
+        std::convert::identity,
     )
+    .and_then(Task::done)
+}
+
+/// Asks where to save an exported session and writes it there.
+fn export_session(file_name: String, contents: String) -> Task<Message> {
+    let dialog = rfd::AsyncFileDialog::new()
+        .set_title(fl!("manager-export-dialog-title"))
+        .add_filter(fl!("manager-file-type"), &["toml"])
+        .set_file_name(file_name);
+    Task::perform(
+        async move {
+            let file = dialog.save_file().await?;
+            let written = std::fs::write(file.path(), contents).map_err(|e| e.to_string());
+            Some(Message::App(Event::Exported(written)))
+        },
+        std::convert::identity,
+    )
+    .and_then(Task::done)
 }
 
 fn pick_recording_folder() -> Task<Message> {
@@ -1026,50 +852,16 @@ fn platform_specific() -> window::settings::PlatformSpecific {
     window::settings::PlatformSpecific::default()
 }
 
-/// A connection's last screen, to be saved as its session's thumbnail.
-struct ThumbnailSource {
-    dir: PathBuf,
-    session_id: u64,
-    width: u32,
-    height: u32,
-    pixels: Arc<[u8]>,
-}
-
-impl ThumbnailSource {
-    /// Encodes and writes the thumbnail, returning the PNG.
-    fn save(self) -> Option<Vec<u8>> {
-        use persistence::sessions::thumbnail;
-
-        let png = thumbnail::encode(self.width, self.height, &self.pixels)?;
-        match thumbnail::save(&self.dir, self.session_id, &png) {
-            Ok(()) => Some(png),
-            Err(error) => {
-                eprintln!("failed to save thumbnail: {error}");
-                None
-            }
-        }
-    }
-}
-
+/// The desktop front end over [`App`]: the window, and what each page needs
+/// to remember that the app itself doesn't.
 struct Application {
-    connections: Vec<ui::connection::State>,
-    /// The page each connection was opened from, returned to when it closes.
-    origins: HashMap<u64, Tab>,
-    /// The saved session each connection was opened from, if any, whose
-    /// thumbnail it updates when it closes.
-    saved_origins: HashMap<u64, u64>,
-    next_id: u64,
-    tab: Tab,
+    app: App,
+    /// Each open connection's tab, by connection id.
+    tabs: HashMap<u64, ui::connection::State>,
 
     connect_tab: ui::connect::State,
-
-    sessions: persistence::sessions::Sessions,
     manager: ui::manager::State,
-
-    settings: Settings,
     settings_tab: ui::settings::State,
-    /// Where settings are saved; `None` keeps them in memory only.
-    config_dir: Option<PathBuf>,
 
     /// Tracked so the title bar shows restore rather than maximise.
     maximized: bool,
@@ -1077,8 +869,8 @@ struct Application {
     scale_factor: f32,
     /// The operating system's light or dark preference.
     system_theme: iced::theme::Mode,
-    update: update::Status,
-    /// A dialog over the whole window, if any.
+    /// A dialog only the desktop has, over the whole window. The app's own
+    /// come from [`App::dialog`].
     modal: Option<AppModal>,
 }
 
@@ -1086,43 +878,20 @@ struct Application {
 enum AppModal {
     /// "Quit?", for the window that asked to close.
     ConfirmQuit(window::Id),
-    Error {
-        title: String,
-        message: String,
-    },
     ThirdPartyLicences,
-    /// A connection failed before it ever connected. `details` is what the
-    /// copy button puts on the clipboard.
-    ConnectionFailed {
-        message: String,
-        details: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Tab {
-    Manager,
-    Connect,
-    Connection(u64),
-    Settings,
 }
 
 #[derive(Clone)]
 enum Message {
-    SelectTab(Tab),
+    SelectTab(Page),
 
     ConnectTab(ui::connect::Message),
     Manager(ui::manager::Message),
     Connection(u64, ui::connection::Message),
     Settings(ui::settings::Message),
     RecordingFolderPicked(Option<PathBuf>),
-    /// A saved session's new thumbnail, as a PNG; `None` if it couldn't be
-    /// made, which keeps the old one.
-    ThumbnailSaved(u64, Option<Vec<u8>>),
-    /// Sessions read from a file the user picked (none if they cancelled).
-    Imported(Result<Vec<persistence::sessions::SavedSession>, String>),
-    Exported(Result<(), String>),
-    UpdateChecked(Result<update::Outcome, update::Error>),
+    /// Straight to the app, such as the result of an effect.
+    App(Event),
 
     Window(WindowAction),
     Resized(iced::window::Id),
@@ -1147,34 +916,21 @@ enum WindowAction {
 
 impl Application {
     fn new(config_dir: Option<PathBuf>, settings: Settings) -> (Self, Task<Message>) {
-        let check_on_launch = settings.updates.check_on_launch;
-        i18n::select(settings.general.language);
-        let sessions = persistence::sessions::Sessions::load(config_dir.as_deref());
+        let (app, effects) = App::new(config_dir, settings);
         let mut manager = ui::manager::State::default();
-        manager.load_thumbnails(config_dir.as_deref(), &sessions);
-        let mut app = Self {
-            connections: Vec::new(),
-            origins: HashMap::new(),
-            saved_origins: HashMap::new(),
-            next_id: 0,
-            tab: Tab::Connect,
+        manager.load_thumbnails(app.config_dir(), app.sessions());
+        let mut application = Self {
+            app,
+            tabs: HashMap::new(),
             connect_tab: ui::connect::State::new(),
-            sessions,
             manager,
-            settings,
             settings_tab: ui::settings::State::default(),
-            config_dir,
             maximized: false,
             scale_factor: 1.0,
             system_theme: iced::theme::Mode::None,
-            update: update::Status::NotChecked,
             modal: None,
         };
-        let update_check = if update::ENABLED && check_on_launch {
-            app.check_for_updates()
-        } else {
-            Task::none()
-        };
+        let effects = application.perform(effects);
         // iced runs this once the window is open. Opening doesn't report a
         // scale factor, so it's asked for here; later changes (moving to
         // another display) arrive as `Rescaled` events.
@@ -1182,115 +938,96 @@ impl Application {
             .and_then(window::scale_factor)
             .map(Message::Rescaled);
         let system_theme = iced::system::theme().map(Message::SystemThemeChanged);
-        (app, Task::batch([update_check, scale_factor, system_theme]))
+        (
+            application,
+            Task::batch([effects, scale_factor, system_theme]),
+        )
     }
 
-    fn check_for_updates(&mut self) -> Task<Message> {
-        self.update = update::Status::Checking;
-        Task::perform(update::check(), Message::UpdateChecked)
+    /// Hands `event` to the app and carries out what it asks for.
+    fn send(&mut self, event: Event) -> Task<Message> {
+        let effects = self.app.update(event);
+        self.sync_tabs();
+        self.perform(effects)
     }
 
-    fn open_url(&mut self, url: &str) {
-        if let Err(error) = open::that_detached(url) {
-            self.modal = Some(AppModal::Error {
-                title: fl!("error-open-link"),
-                message: format!("{url}: {error}"),
-            });
+    /// Gives new connections a tab and forgets the tabs of closed ones.
+    fn sync_tabs(&mut self) {
+        let input = &self.app.settings().input;
+        for connection in self.app.connections() {
+            self.tabs
+                .entry(connection.id())
+                .or_insert_with(|| ui::connection::State::new(input));
+        }
+        let app = &self.app;
+        self.tabs.retain(|id, _| app.connection(*id).is_some());
+    }
+
+    fn perform(&mut self, effects: Vec<Effect>) -> Task<Message> {
+        Task::batch(effects.into_iter().map(|effect| match effect {
+            Effect::PickFile {
+                connection,
+                action,
+                extensions,
+            } => Task::perform(ui::connection::pick_file(extensions), move |path| {
+                Message::Connection(
+                    connection,
+                    ui::connection::Message::FilePicked { id: action, path },
+                )
+            }),
+            Effect::ExportSession {
+                file_name,
+                contents,
+            } => export_session(file_name, contents),
+            Effect::ImportSessions => import_sessions(),
+            Effect::CheckForUpdates => Task::perform(update::check(), |result| {
+                Message::App(Event::UpdateChecked(result))
+            }),
+            Effect::SaveThumbnail(source) => {
+                let session = source.session();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || source.save())
+                            .await
+                            .ok()
+                            .flatten()
+                    },
+                    move |png| Message::App(Event::ThumbnailSaved { session, png }),
+                )
+            }
+            Effect::Thumbnail { session, png } => {
+                self.manager.set_thumbnail(session, png);
+                Task::none()
+            }
+        }))
+    }
+
+    fn open_url(&mut self, url: &str) -> Task<Message> {
+        match open::that_detached(url) {
+            Ok(()) => Task::none(),
+            Err(error) => self.send(Event::OpenUrlFailed {
+                url: url.to_owned(),
+                error: error.to_string(),
+            }),
         }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::SelectTab(tab) => {
-                self.tab = tab;
-                Task::none()
-            }
+            Message::SelectTab(page) => self.send(Event::ShowPage(page)),
             Message::ConnectTab(message) => match message {
                 ui::connect::Message::Internal(message) => {
                     self.connect_tab.update(message).map(Message::ConnectTab)
                 }
-                ui::connect::Message::Connect(request) => self.open_connection(request),
+                ui::connect::Message::Connect(request) => self.send(Event::Connect(request)),
                 ui::connect::Message::Save(request) => {
                     let _ = self.connect_tab.update(ui::connect::IMessage::CloseNaming);
-                    self.save_session(request);
-                    Task::none()
+                    self.send(Event::SaveNew(request))
                 }
             },
             Message::Manager(message) => self.update_manager(message),
-            Message::ThumbnailSaved(id, png) => {
-                if self.sessions.get(id).is_none() {
-                    // Deleted while the thumbnail was being written.
-                    if let Some(dir) = &self.config_dir {
-                        persistence::sessions::thumbnail::remove(dir, id);
-                    }
-                } else if png.is_some() {
-                    self.manager.set_thumbnail(id, png);
-                }
-                Task::none()
-            }
-            Message::Imported(Ok(imported)) => {
-                for session in imported {
-                    self.sessions.add(session);
-                }
-                self.sessions.save(self.config_dir.as_deref());
-                Task::none()
-            }
-            Message::Imported(Err(message)) => {
-                self.modal = Some(AppModal::Error {
-                    title: fl!("manager-import-failed"),
-                    message,
-                });
-                Task::none()
-            }
-            Message::Exported(result) => {
-                if let Err(message) = result {
-                    self.modal = Some(AppModal::Error {
-                        title: fl!("manager-export-failed"),
-                        message,
-                    });
-                }
-                Task::none()
-            }
-            Message::Connection(id, message) => {
-                use ui::connection::Message as Conn;
-                // Messages about app-wide state are the application's to handle.
-                match message {
-                    Conn::Close => return self.close_connection(id),
-                    Conn::OpenSettings(section) => {
-                        self.close_menu(id);
-                        self.settings_tab.open_section(section);
-                        self.tab = Tab::Settings;
-                        return Task::none();
-                    }
-                    Conn::ChangeSetting(change) => {
-                        self.close_menu(id);
-                        self.change_setting(change);
-                        return Task::none();
-                    }
-                    Conn::ChooseRecordingFolder => {
-                        self.close_menu(id);
-                        return pick_recording_folder();
-                    }
-                    _ => {}
-                }
-                let message = self.settle_certificate(id, message);
-                match message {
-                    Conn::BlockCertificate(_) => return self.close_connection(id),
-                    Conn::Report(Report::Session(SessionEvent::Disconnected { reason }))
-                        if self.never_connected(id) =>
-                    {
-                        self.fail_connection(id, reason);
-                        return Task::none();
-                    }
-                    _ => {}
-                }
-                let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) else {
-                    return Task::none();
-                };
-                connection
-                    .update(message)
-                    .map(move |message| Message::Connection(id, message))
-            }
+            Message::App(event) => self.send(event),
+            Message::Connection(id, message) => self.update_connection(id, message),
             Message::Window(action) => window::latest().and_then(move |id| match action {
                 WindowAction::Drag => window::drag(id),
                 WindowAction::ToggleMaximize => window::toggle_maximize(id),
@@ -1315,15 +1052,11 @@ impl Application {
                 self.settings_tab.update(&message);
                 match message {
                     ui::settings::Message::Change(change) => {
-                        self.change_setting(change);
-                        Task::none()
+                        self.send(Event::ChangeSetting(change))
                     }
                     ui::settings::Message::ChooseRecordingFolder => pick_recording_folder(),
-                    ui::settings::Message::CheckForUpdates => self.check_for_updates(),
-                    ui::settings::Message::OpenUrl(url) => {
-                        self.open_url(&url);
-                        Task::none()
-                    }
+                    ui::settings::Message::CheckForUpdates => self.send(Event::CheckForUpdates),
+                    ui::settings::Message::OpenUrl(url) => self.open_url(&url),
                     ui::settings::Message::ShowThirdPartyLicences => {
                         self.modal = Some(AppModal::ThirdPartyLicences);
                         Task::none()
@@ -1333,330 +1066,96 @@ impl Application {
                     | ui::settings::Message::Dismiss => Task::none(),
                 }
             }
-            Message::UpdateChecked(result) => {
-                self.update = update::Status::Checked(result);
-                Task::none()
-            }
-            Message::RecordingFolderPicked(folder) => {
-                if let Some(folder) = folder {
-                    self.change_setting(persistence::settings::Change::RecordingFolder(folder));
-                }
-                Task::none()
-            }
+            Message::RecordingFolderPicked(folder) => match folder {
+                Some(folder) => self.send(Event::ChangeSetting(Change::RecordingFolder(folder))),
+                None => Task::none(),
+            },
             Message::RequestClose(id) => {
-                if self.settings.general.confirm_quit && !self.connections.is_empty() {
+                if self.app.settings().general.confirm_quit && !self.app.connections().is_empty() {
                     self.modal = Some(AppModal::ConfirmQuit(id));
                     return Task::none();
                 }
-                self.save_thumbnails_now();
+                self.app.save_thumbnails_now();
                 window::close(id)
             }
             Message::Quit(id) => {
-                self.save_thumbnails_now();
+                self.app.save_thumbnails_now();
                 window::close(id)
             }
             Message::CopyToClipboard(contents) => iced::clipboard::write(contents),
             Message::CloseModal => {
-                self.modal = None;
-                Task::none()
-            }
-        }
-    }
-
-    fn change_setting(&mut self, change: persistence::settings::Change) {
-        if let persistence::settings::Change::Language(language) = change {
-            i18n::select(language);
-        }
-        persistence::settings::apply(&mut self.settings, change);
-        self.settings.save(self.config_dir.as_deref());
-    }
-
-    /// Applies the security settings to a connection's certificate messages:
-    /// refuses a certificate they rule out, and saves the user's choice in
-    /// the prompt. Returns what the connection itself should handle.
-    fn settle_certificate(
-        &mut self,
-        id: u64,
-        message: ui::connection::Message,
-    ) -> ui::connection::Message {
-        use persistence::settings::Change;
-        use ui::connection::Message as Conn;
-        let Some(target) = self
-            .connections
-            .iter()
-            .find(|connection| connection.id() == id)
-            .map(|connection| connection.core().target().clone())
-        else {
-            return message;
-        };
-        match &message {
-            Conn::Report(Report::UntrustedCertificate(fingerprint)) => {
-                match self.settings.security.refusal(&target, *fingerprint) {
-                    Some(refusal) => Conn::Report(Report::Session(SessionEvent::Disconnected {
-                        reason: Some(refusal.reason()),
-                    })),
-                    None => message,
+                if self.modal.take().is_some() {
+                    return Task::none();
                 }
+                self.send(Event::CloseDialog)
             }
-            Conn::TrustCertificate {
-                fingerprint,
-                remember: true,
-            } => {
-                self.change_setting(Change::TrustCertificate(KnownCertificate::new(
-                    &target,
-                    *fingerprint,
-                )));
-                message
-            }
-            Conn::BlockCertificate(fingerprint) => {
-                self.change_setting(Change::BlockCertificate(KnownCertificate::new(
-                    &target,
-                    *fingerprint,
-                )));
-                message
-            }
-            _ => message,
         }
+    }
+
+    fn update_connection(&mut self, id: u64, message: ui::connection::Message) -> Task<Message> {
+        use ui::connection::Message as Conn;
+        // Messages about app-wide state are the application's to handle.
+        match message {
+            Conn::Close => return self.send(Event::CloseConnection(id)),
+            Conn::BlockCertificate(fingerprint) => {
+                return self.send(Event::BlockCertificate(id, fingerprint));
+            }
+            Conn::OpenSettings(section) => {
+                self.close_menu(id);
+                self.settings_tab.open_section(section);
+                return self.send(Event::ShowPage(Page::Settings));
+            }
+            Conn::ChangeSetting(change) => {
+                self.close_menu(id);
+                return self.send(Event::ChangeSetting(change));
+            }
+            Conn::ChooseRecordingFolder => {
+                self.close_menu(id);
+                return pick_recording_folder();
+            }
+            _ => {}
+        }
+        let (Some(tab), Some(connection)) = (self.tabs.get_mut(&id), self.app.connection(id))
+        else {
+            return Task::none();
+        };
+        let events = tab.update(message, connection);
+        let sent: Vec<_> = events
+            .into_iter()
+            .map(|event| self.send(Event::Connection(id, event)))
+            .collect();
+        let settled = match (self.tabs.get_mut(&id), self.app.connection(id)) {
+            (Some(tab), Some(connection)) => tab
+                .settle(connection)
+                .map(move |message| Message::Connection(id, message)),
+            _ => Task::none(),
+        };
+        Task::batch(sent.into_iter().chain([settled]))
     }
 
     fn close_menu(&mut self, id: u64) {
-        if let Some(connection) = self.connections.iter_mut().find(|c| c.id() == id) {
-            let _ = connection.update(ui::connection::Message::CloseMenu);
+        if let Some(tab) = self.tabs.get_mut(&id) {
+            tab.close_menu();
         }
-    }
-
-    /// Persists the connect tab's current fields as a saved session and
-    /// switches to the Manager tab so the result is immediately visible.
-    fn save_session(&mut self, request: server_remote_app::connect::Request) {
-        self.sessions.add(saved_session_from_request(request));
-        self.sessions.save(self.config_dir.as_deref());
-        self.tab = Tab::Manager;
     }
 
     fn update_manager(&mut self, message: ui::manager::Message) -> Task<Message> {
-        use persistence::sessions::thumbnail;
         use ui::manager::Message as Manager;
 
-        if let Manager::Internal(message) = message {
-            self.manager.update(message, &self.sessions);
-            return Task::none();
-        }
-        self.manager.dismiss();
-        match message {
-            Manager::Internal(_) => Task::none(),
-            Manager::Connect(id) => self.open_saved(id),
-            Manager::Save { editing, request } => {
-                let session = saved_session_from_request(request);
-                match editing {
-                    Some(id) => {
-                        // A different machine's last screen would mislead.
-                        let moved = self.sessions.get(id).is_some_and(|old| {
-                            old.protocol != session.protocol || old.hostname != session.hostname
-                        });
-                        if moved {
-                            if let Some(dir) = &self.config_dir {
-                                thumbnail::remove(dir, id);
-                            }
-                            self.manager.set_thumbnail(id, None);
-                        }
-                        self.sessions.replace(id, session);
-                    }
-                    None => {
-                        self.sessions.add(session);
-                    }
-                }
-                self.sessions.save(self.config_dir.as_deref());
-                Task::none()
-            }
-            Manager::SetGroup { id, group } => {
-                if let Some(session) = self.sessions.saved.iter_mut().find(|s| s.id == id) {
-                    session.group = group;
-                    self.sessions.save(self.config_dir.as_deref());
-                }
-                Task::none()
-            }
-            Manager::Delete(id) => {
-                if self.sessions.remove(id).is_some() {
-                    self.sessions.save(self.config_dir.as_deref());
-                    if let Some(dir) = &self.config_dir {
-                        thumbnail::remove(dir, id);
-                    }
-                    self.manager.set_thumbnail(id, None);
-                }
-                Task::none()
-            }
-            Manager::Export(id) => self.export_session(id),
-            Manager::Import => import_sessions(),
-        }
-    }
-
-    /// Asks where to save the session and writes it there, without its
-    /// password.
-    fn export_session(&mut self, id: u64) -> Task<Message> {
-        let Some(session) = self.sessions.get(id) else {
-            return Task::none();
-        };
-        let contents = match persistence::sessions::export(session) {
-            Ok(contents) => contents,
-            Err(error) => {
-                self.modal = Some(AppModal::Error {
-                    title: fl!("manager-export-failed"),
-                    message: error.to_string(),
-                });
+        let event = match message {
+            Manager::Internal(message) => {
+                self.manager.update(message, self.app.sessions());
                 return Task::none();
             }
+            Manager::Connect(id) => Event::OpenSaved(id),
+            Manager::Save { editing, request } => Event::SaveSession { editing, request },
+            Manager::SetGroup { id, group } => Event::SetGroup { id, group },
+            Manager::Delete(id) => Event::DeleteSession(id),
+            Manager::Export(id) => Event::ExportSession(id),
+            Manager::Import => Event::ImportSessions,
         };
-        let dialog = rfd::AsyncFileDialog::new()
-            .set_title(fl!("manager-export-dialog-title"))
-            .add_filter(fl!("manager-file-type"), &["toml"])
-            .set_file_name(export_file_name(&session.name));
-        Task::perform(
-            async move {
-                let Some(file) = dialog.save_file().await else {
-                    return Ok(());
-                };
-                std::fs::write(file.path(), contents).map_err(|error| error.to_string())
-            },
-            Message::Exported,
-        )
-    }
-
-    /// Opens a connection to a saved session, named after it.
-    fn open_saved(&mut self, session_id: u64) -> Task<Message> {
-        let Some(session) = self.sessions.get(session_id) else {
-            return Task::none();
-        };
-        let request = server_remote_app::connect::Request::from(session);
-        let task = self.open(request, true);
-        self.saved_origins.insert(self.next_id - 1, session_id);
-        task
-    }
-
-    /// Saves the last screen of a connection to a saved session as that
-    /// session's thumbnail, off the UI thread.
-    fn save_thumbnail(&self, id: u64) -> Task<Message> {
-        let Some(source) = self.thumbnail_source(id) else {
-            return Task::none();
-        };
-        let session_id = source.session_id;
-        Task::perform(
-            async move {
-                let encode = move || source.save();
-                tokio::task::spawn_blocking(encode).await.ok().flatten()
-            },
-            move |png| Message::ThumbnailSaved(session_id, png),
-        )
-    }
-
-    /// Saves every open connection's thumbnail before the app quits, when
-    /// there's no time left for tasks.
-    fn save_thumbnails_now(&self) {
-        for connection in &self.connections {
-            if let Some(source) = self.thumbnail_source(connection.id()) {
-                source.save();
-            }
-        }
-    }
-
-    /// Where a connection's thumbnail goes, for which session, and the
-    /// frame to make it from; `None` if it has no saved session (still) or
-    /// no frame yet.
-    fn thumbnail_source(&self, id: u64) -> Option<ThumbnailSource> {
-        let dir = self.config_dir.clone()?;
-        let session_id = *self.saved_origins.get(&id)?;
-        self.sessions.get(session_id)?;
-        let screen = self
-            .connections
-            .iter()
-            .find(|connection| connection.id() == id)?
-            .core()
-            .screen()?;
-        Some(ThumbnailSource {
-            dir,
-            session_id,
-            width: screen.width,
-            height: screen.height,
-            pixels: screen.pixels.clone(),
-        })
-    }
-
-    fn open_connection(&mut self, request: server_remote_app::connect::Request) -> Task<Message> {
-        self.open(request, false)
-    }
-
-    /// Opens a connection tab. The tab is named after the request when
-    /// `named` (a saved session), otherwise after its hostname.
-    fn open(&mut self, request: server_remote_app::connect::Request, named: bool) -> Task<Message> {
-        let id = self.next_id;
-        self.next_id += 1;
-
-        let name: Arc<str> = if named && !request.name.is_empty() {
-            Arc::from(request.name.as_str())
-        } else if request.hostname.is_empty() {
-            format!("{} #{id}", request.protocol).into()
-        } else {
-            Arc::from(request.hostname.as_str())
-        };
-        let target = parse_target(&request.hostname, request.protocol);
-        let tls = self.settings.security.policy_for(&target);
-
-        let connection = server_remote_app::connection::Connection::new(
-            id,
-            name,
-            request.protocol,
-            target,
-            tls,
-            server_remote_app::connection::Credentials {
-                username: request.username,
-                password: request.password,
-            },
-        );
-        self.connections
-            .push(ui::connection::State::new(connection, &self.settings.input));
-        let origin = match self.tab {
-            Tab::Manager => Tab::Manager,
-            _ => Tab::Connect,
-        };
-        self.origins.insert(id, origin);
-        self.tab = Tab::Connection(id);
-        Task::none()
-    }
-
-    fn never_connected(&self, id: u64) -> bool {
-        self.connections
-            .iter()
-            .find(|connection| connection.id() == id)
-            .is_some_and(|connection| !connection.core().connected_once())
-    }
-
-    /// Closes a connection that failed before connecting, reporting the
-    /// failure on the page it was opened from.
-    fn fail_connection(&mut self, id: u64, reason: Option<String>) {
-        let Some(connection) = self.connections.iter().find(|c| c.id() == id) else {
-            return;
-        };
-        let message = reason.unwrap_or_else(|| fl!("connection-failed-unknown"));
-        let details = failure_details(
-            connection.core().protocol(),
-            connection.core().target(),
-            &message,
-        );
-        // It never connected, so there's no screen to keep.
-        let _ = self.close_connection(id);
-        self.modal = Some(AppModal::ConnectionFailed { message, details });
-    }
-
-    /// Closes a connection tab, saving its last screen as its saved
-    /// session's thumbnail.
-    fn close_connection(&mut self, id: u64) -> Task<Message> {
-        let thumbnail = self.save_thumbnail(id);
-        self.connections.retain(|connection| connection.id() != id);
-        self.saved_origins.remove(&id);
-        let origin = self.origins.remove(&id).unwrap_or(Tab::Connect);
-        if self.tab == Tab::Connection(id) {
-            self.tab = origin;
-        }
-        thumbnail
+        self.manager.dismiss();
+        self.send(event)
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -1686,19 +1185,23 @@ impl Application {
         } else {
             content.into()
         };
-        let tab_modal = match self.tab {
-            Tab::Manager => {
-                ui::manager::modal(&self.manager, &self.sessions).map(|m| m.map(Message::Manager))
-            }
-            Tab::Connect => self.connect_tab.modal().map(|m| m.map(Message::ConnectTab)),
+        let tab_modal = match self.app.page() {
+            Page::Manager => ui::manager::modal(&self.manager, self.app.sessions())
+                .map(|m| m.map(Message::Manager)),
+            Page::Connect => self.connect_tab.modal().map(|m| m.map(Message::ConnectTab)),
             _ => None,
         };
         let window = match tab_modal {
             Some(modal) => stack![window, modal].into(),
             None => window,
         };
-        let window = match &self.modal {
-            Some(modal) => stack![window, self.modal_view(modal)].into(),
+        let modal = match (&self.modal, self.app.dialog()) {
+            (Some(modal), _) => Some(self.modal_view(modal)),
+            (None, Some(dialog)) => Some(dialog_view(dialog)),
+            (None, None) => None,
+        };
+        let window = match modal {
+            Some(modal) => stack![window, modal].into(),
             None => window,
         };
         ui::pixel_snap(ui::arrow_cursor(window), self.scale_factor)
@@ -1707,46 +1210,11 @@ impl Application {
     fn modal_view<'a>(&'a self, modal: &'a AppModal) -> Element<'a, Message> {
         let id = match modal {
             AppModal::ConfirmQuit(id) => *id,
-            AppModal::Error { title, message } => {
-                return ui::dialog::view(
-                    title.clone(),
-                    message.clone(),
-                    vec![ui::dialog::Button {
-                        label: fl!("button-ok"),
-                        on_press: Message::CloseModal,
-                        kind: ui::dialog::Kind::Primary,
-                        icon: None,
-                        enabled: true,
-                    }],
-                );
-            }
             AppModal::ThirdPartyLicences => return third_party_licences(),
-            AppModal::ConnectionFailed { message, details } => {
-                return ui::dialog::view(
-                    fl!("connection-failed-title"),
-                    message.clone(),
-                    vec![
-                        ui::dialog::Button {
-                            label: fl!("copy-details"),
-                            on_press: Message::CopyToClipboard(details.clone()),
-                            kind: ui::dialog::Kind::Secondary,
-                            icon: Some(icons::COPY_TO_CLIPBOARD),
-                            enabled: true,
-                        },
-                        ui::dialog::Button {
-                            label: fl!("button-close"),
-                            on_press: Message::CloseModal,
-                            kind: ui::dialog::Kind::Secondary,
-                            icon: None,
-                            enabled: true,
-                        },
-                    ],
-                );
-            }
         };
         ui::dialog::view(
             fl!("quit-title"),
-            fl!("quit-message", count = self.connections.len()),
+            fl!("quit-message", count = self.app.connections().len()),
             vec![
                 ui::dialog::Button {
                     label: fl!("button-cancel"),
@@ -1767,25 +1235,28 @@ impl Application {
     }
 
     fn body(&self) -> Element<'_, Message> {
-        match &self.tab {
-            Tab::Manager => ui::manager::view(&self.manager, &self.sessions).map(Message::Manager),
-            Tab::Connect => self.connect_tab.view().map(Message::ConnectTab),
-            Tab::Connection(id) => match self.connections.iter().find(|c| c.id() == *id) {
-                Some(connection) => {
-                    let id = *id;
-                    connection
-                        .view(&self.settings)
-                        .map(move |message| Message::Connection(id, message))
-                }
-                None => text(fl!("connection-closed")).into(),
+        match self.app.page() {
+            Page::Manager => {
+                ui::manager::view(&self.manager, self.app.sessions()).map(Message::Manager)
+            }
+            Page::Connect => self.connect_tab.view().map(Message::ConnectTab),
+            Page::Connection(id) => match (self.tabs.get(&id), self.app.connection(id)) {
+                (Some(tab), Some(connection)) => tab
+                    .view(connection, self.app.settings())
+                    .map(move |message| Message::Connection(id, message)),
+                _ => text(fl!("connection-closed")).into(),
             },
-            Tab::Settings => ui::settings::view(&self.settings_tab, &self.settings, &self.update)
-                .map(Message::Settings),
+            Page::Settings => ui::settings::view(
+                &self.settings_tab,
+                self.app.settings(),
+                self.app.update_status(),
+            )
+            .map(Message::Settings),
         }
     }
 
     fn theme(&self) -> iced::Theme {
-        let light = match self.settings.general.appearance {
+        let light = match self.app.settings().general.appearance {
             Appearance::System => self.system_theme == iced::theme::Mode::Light,
             Appearance::Light => true,
             Appearance::Dark => false,
@@ -1806,9 +1277,8 @@ impl Application {
         let close_requests = window::close_requests().map(Message::RequestClose);
         // `Subscription::map` requires a non-capturing closure, so the id rides
         // along via `with` and is unpacked from the tuple instead of captured.
-        let connections = self.connections.iter().map(|connection| {
-            connection
-                .subscription()
+        let connections = self.app.connections().iter().map(|connection| {
+            ui::connection::subscription(connection)
                 .with(connection.id())
                 .map(|(id, message)| Message::Connection(id, message))
         });
@@ -1830,18 +1300,19 @@ impl Application {
 
     fn header(&self) -> Element<'_, Message> {
         let tabs = Row::with_children(
-            self.connections
+            self.app
+                .connections()
                 .iter()
                 .map(|connection| self.connection_tab(connection)),
         )
-        .push(self.icon_tab(Tab::Connect, icons::ADD_LARGE, fl!("tab-connect")))
+        .push(self.icon_tab(Page::Connect, icons::ADD_LARGE, fl!("tab-connect")))
         .spacing(ui::style::SPACING);
 
         // Empty space in the title bar moves the window, as a native one would.
         let drag_region = mouse_area(
             Row::new()
                 .push((!CUSTOM_DECORATIONS).then(|| Space::new().width(TRAFFIC_LIGHTS_WIDTH)))
-                .push(self.icon_tab(Tab::Manager, icons::VIRTUAL_DESKTOP, fl!("tab-manager")))
+                .push(self.icon_tab(Page::Manager, icons::VIRTUAL_DESKTOP, fl!("tab-manager")))
                 .push(Scrollable::new(tabs).horizontal().width(Length::Fill))
                 .spacing(ui::style::SPACING),
         )
@@ -1850,7 +1321,7 @@ impl Application {
 
         Row::new()
             .push(drag_region)
-            .push(self.icon_tab(Tab::Settings, icons::SETTINGS, fl!("tab-settings")))
+            .push(self.icon_tab(Page::Settings, icons::SETTINGS, fl!("tab-settings")))
             .push(CUSTOM_DECORATIONS.then(|| {
                 ui::window_controls::view(
                     self.maximized,
@@ -1875,8 +1346,8 @@ impl Application {
             .into()
     }
 
-    fn icon_tab(&self, tab: Tab, icon: icons::Icon, label: String) -> Element<'_, Message> {
-        let active = self.tab == tab;
+    fn icon_tab(&self, tab: Page, icon: icons::Icon, label: String) -> Element<'_, Message> {
+        let active = self.app.page() == tab;
         tooltip(
             button(container(themed(icon)).center(Length::Fill))
                 .width(ui::style::CONTROL_HEIGHT)
@@ -1890,9 +1361,9 @@ impl Application {
         .into()
     }
 
-    fn connection_tab<'a>(&self, connection: &'a ui::connection::State) -> Element<'a, Message> {
+    fn connection_tab<'a>(&self, connection: &'a Connection) -> Element<'a, Message> {
         let id = connection.id();
-        let active = self.tab == Tab::Connection(id);
+        let active = self.app.page() == Page::Connection(id);
 
         let close = button(container(themed(icons::CLOSE)).center(Length::Fill))
             .width(18)
@@ -1909,7 +1380,7 @@ impl Application {
 
         button(
             Row::new()
-                .push(themed(connection.core().protocol().icon()))
+                .push(themed(connection.protocol().icon()))
                 .push(
                     text(connection.name().as_ref())
                         .font(font)
@@ -1925,8 +1396,45 @@ impl Application {
         .height(ui::style::CONTROL_HEIGHT)
         .padding(padding::left(5).right(5))
         .style(move |theme, status| ui::style::bordered_button(theme, status, active))
-        .on_press(Message::SelectTab(Tab::Connection(id)))
+        .on_press(Message::SelectTab(Page::Connection(id)))
         .into()
+    }
+}
+
+/// A dialog the app put up.
+fn dialog_view<'a>(dialog: &'a Dialog) -> Element<'a, Message> {
+    match dialog {
+        Dialog::Error { title, message } => ui::dialog::view(
+            title.clone(),
+            message.clone(),
+            vec![ui::dialog::Button {
+                label: fl!("button-ok"),
+                on_press: Message::CloseModal,
+                kind: ui::dialog::Kind::Primary,
+                icon: None,
+                enabled: true,
+            }],
+        ),
+        Dialog::ConnectionFailed { message, details } => ui::dialog::view(
+            fl!("connection-failed-title"),
+            message.clone(),
+            vec![
+                ui::dialog::Button {
+                    label: fl!("copy-details"),
+                    on_press: Message::CopyToClipboard(details.clone()),
+                    kind: ui::dialog::Kind::Secondary,
+                    icon: Some(icons::COPY_TO_CLIPBOARD),
+                    enabled: true,
+                },
+                ui::dialog::Button {
+                    label: fl!("button-close"),
+                    on_press: Message::CloseModal,
+                    kind: ui::dialog::Kind::Secondary,
+                    icon: None,
+                    enabled: true,
+                },
+            ],
+        ),
     }
 }
 

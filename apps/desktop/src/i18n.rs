@@ -2,8 +2,6 @@
 //! Message IDs are checked at compile time against the English file there
 //! (see this crate's `i18n.toml`).
 
-pub use server_remote_app::i18n::select;
-
 /// Looks up a message by ID, with optional `name = value` arguments.
 macro_rules! fl {
     ($id:literal) => {

@@ -9,7 +9,6 @@
 use crate::i18n::fl;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use iced::keyboard::key::Named;
 use iced::{
@@ -70,8 +69,8 @@ pub struct OpenMenu {
     pub submenu: Option<Submenu>,
 }
 
+/// What the tab keeps besides the [`Connection`] it shows.
 pub struct State {
-    core: Connection,
     /// Identifies the [`kvm_display`] widget so it can be focused
     /// programmatically (see the first frame's handling in `update`).
     display_id: Id,
@@ -84,6 +83,10 @@ pub struct State {
     virtual_trackpad: virtual_trackpad::State,
     menu: Option<OpenMenu>,
     icons: icon::Cache,
+    /// The first frame arrived: focus the screen.
+    focus_pending: bool,
+    /// The capabilities or status changed: refresh icons and menus.
+    icons_stale: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -172,9 +175,8 @@ impl Message {
 }
 
 impl State {
-    pub fn new(core: Connection, input: &settings::Input) -> Self {
+    pub fn new(input: &settings::Input) -> Self {
         Self {
-            core,
             display_id: Id::unique(),
             show_virtual_keyboard: input.open_keyboard_on_connect,
             keyboard_size: input.keyboard_style,
@@ -183,72 +185,100 @@ impl State {
             virtual_trackpad: virtual_trackpad::State::default(),
             menu: None,
             icons: icon::Cache::default(),
+            focus_pending: false,
+            icons_stale: false,
         }
     }
 
-    pub fn core(&self) -> &Connection {
-        &self.core
-    }
-
-    pub fn id(&self) -> u64 {
-        self.core.id()
-    }
-
-    pub fn name(&self) -> &Arc<str> {
-        self.core.name()
-    }
-
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    /// Handles a message for the tab, returning what to tell the connection
+    /// itself. Call [`State::settle`] once it has been told.
+    pub fn update(&mut self, message: Message, core: &Connection) -> Vec<connection::Event> {
         if message.closes_menu() {
             self.menu = None;
         }
-        match message {
-            Message::Report(report) => return self.report(report),
+        let event = match message {
+            Message::Report(report) => {
+                // The `kvm_display` widget appears with the first frame;
+                // focusing it then lets typing work without a click first.
+                self.focus_pending |= matches!(report, Report::Session(SessionEvent::Frame(_)))
+                    && core.screen().is_none();
+                self.icons_stale |= matches!(
+                    report,
+                    Report::Session(
+                        SessionEvent::Connected { .. }
+                            | SessionEvent::Capabilities(_)
+                            | SessionEvent::Status(_)
+                    )
+                );
+                connection::Event::Report(report)
+            }
             Message::TrustCertificate {
                 fingerprint,
                 remember,
-            } => {
-                return self.send(connection::Event::TrustCertificate {
-                    fingerprint,
-                    remember,
-                });
+            } => connection::Event::TrustCertificate {
+                fingerprint,
+                remember,
+            },
+            Message::Pointer(point) => connection::Event::Pointer {
+                x: point.x,
+                y: point.y,
+            },
+            Message::Button { button, pressed } => connection::Event::Button { button, pressed },
+            Message::Key { key, pressed } => match keysym(&key) {
+                Some(keysym) => connection::Event::Key { keysym, pressed },
+                None => return Vec::new(),
+            },
+            Message::Invoke(action) => connection::Event::Invoke(action),
+            Message::Confirm => connection::Event::Confirm,
+            Message::CloseModal => connection::Event::CloseDialog,
+            Message::FilePicked { id, path } => connection::Event::FilePicked { id, path },
+            Message::SendAction(id) => connection::Event::SendAction(id),
+            Message::OpenUrl(url) => match open::that_detached(url.as_ref()) {
+                Ok(()) => return Vec::new(),
+                Err(error) => connection::Event::OpenUrlFailed {
+                    url: url.into_owned(),
+                    error: error.to_string(),
+                },
+            },
+            Message::VirtualKeyboard(message) => {
+                return virtual_keyboard::update(&mut self.virtual_keyboard, message)
+                    .into_iter()
+                    .map(|(keysym, pressed)| connection::Event::Key { keysym, pressed })
+                    .collect();
             }
-            Message::Pointer(point) => {
-                return self.send(connection::Event::Pointer {
-                    x: point.x,
-                    y: point.y,
-                });
+            Message::VirtualTrackpad(message) => {
+                let Some((width, height)) = core.size() else {
+                    return Vec::new();
+                };
+                let effects = virtual_trackpad::update(
+                    &mut self.virtual_trackpad,
+                    message,
+                    (width as f32, height as f32),
+                );
+                return effects
+                    .into_iter()
+                    .map(|effect| match effect {
+                        virtual_trackpad::Effect::Move(point) => connection::Event::Pointer {
+                            x: point.x,
+                            y: point.y,
+                        },
+                        virtual_trackpad::Effect::Click(button, pressed) => {
+                            connection::Event::Button { button, pressed }
+                        }
+                    })
+                    .collect();
             }
-            Message::Button { button, pressed } => {
-                return self.send(connection::Event::Button { button, pressed });
+            message => {
+                self.update_view(message);
+                return Vec::new();
             }
-            Message::Key { key, pressed } => {
-                if let Some(keysym) = keysym(&key) {
-                    return self.send(connection::Event::Key { keysym, pressed });
-                }
-            }
-            Message::Invoke(action) => return self.send(connection::Event::Invoke(action)),
-            Message::Confirm => return self.send(connection::Event::Confirm),
-            Message::CloseModal => return self.send(connection::Event::CloseDialog),
-            Message::FilePicked { id, path } => {
-                return self.send(connection::Event::FilePicked { id, path });
-            }
-            Message::SendAction(id) => return self.send(connection::Event::SendAction(id)),
-            Message::OpenUrl(url) => {
-                if let Err(error) = open::that_detached(url.as_ref()) {
-                    return self.send(connection::Event::OpenUrlFailed {
-                        url: url.into_owned(),
-                        error: error.to_string(),
-                    });
-                }
-            }
-            // The application owns the tab list and the settings, so it
-            // intercepts these; this arm only satisfies exhaustiveness.
-            Message::Close
-            | Message::BlockCertificate(_)
-            | Message::OpenSettings(_)
-            | Message::ChangeSetting(_)
-            | Message::ChooseRecordingFolder => {}
+        };
+        vec![event]
+    }
+
+    /// Messages that only change what the tab shows.
+    fn update_view(&mut self, message: Message) {
+        match message {
             Message::ToggleVirtualKeyboard => {
                 self.show_virtual_keyboard = !self.show_virtual_keyboard;
             }
@@ -258,35 +288,6 @@ impl State {
             }
             Message::ToggleVirtualTrackpad => {
                 self.show_virtual_trackpad = !self.show_virtual_trackpad;
-            }
-            Message::VirtualKeyboard(message) => {
-                for (keysym, pressed) in
-                    virtual_keyboard::update(&mut self.virtual_keyboard, message)
-                {
-                    let _ = self.send(connection::Event::Key { keysym, pressed });
-                }
-            }
-            Message::VirtualTrackpad(message) => {
-                let Some((width, height)) = self.core.size() else {
-                    return Task::none();
-                };
-                let effects = virtual_trackpad::update(
-                    &mut self.virtual_trackpad,
-                    message,
-                    (width as f32, height as f32),
-                );
-                for effect in effects {
-                    let event = match effect {
-                        virtual_trackpad::Effect::Move(point) => connection::Event::Pointer {
-                            x: point.x,
-                            y: point.y,
-                        },
-                        virtual_trackpad::Effect::Click(button, pressed) => {
-                            connection::Event::Button { button, pressed }
-                        }
-                    };
-                    let _ = self.send(event);
-                }
             }
             Message::ToggleMenu(menu) => {
                 self.menu = match self.menu.take() {
@@ -302,52 +303,34 @@ impl State {
                     open.submenu = Some(submenu);
                 }
             }
-            Message::CloseMenu => {}
-        }
-        Task::none()
-    }
-
-    /// Hands `event` to the connection and carries out what it asks for.
-    fn send(&mut self, event: connection::Event) -> Task<Message> {
-        match self.core.update(event) {
-            Some(connection::Effect::PickFile { id, extensions }) => {
-                Task::perform(pick_file(extensions), move |path| Message::FilePicked {
-                    id,
-                    path,
-                })
-            }
-            None => Task::none(),
+            // The application handles the rest (closing, settings, the
+            // certificate list), and `update` the connection's own.
+            _ => {}
         }
     }
 
-    fn report(&mut self, report: Report) -> Task<Message> {
-        // Grabs focus the moment the `kvm_display` widget first appears
-        // (when the first frame arrives — before that, `view` still shows
-        // "Waiting for first frame…" and there's nothing in the tree to
-        // focus), so typing works immediately without an initial click.
-        let first_frame = matches!(report, Report::Session(SessionEvent::Frame(_)))
-            && self.core.screen().is_none();
-        let refresh = matches!(
-            report,
-            Report::Session(
-                SessionEvent::Connected { .. }
-                    | SessionEvent::Capabilities(_)
-                    | SessionEvent::Status(_)
-            )
-        );
-        let _ = self.send(connection::Event::Report(report));
-        if refresh {
-            self.close_vanished_menu();
-            self.refresh_icons();
+    /// Catches up with the connection once it has handled the tab's events:
+    /// focuses the screen when it first appears, and follows new
+    /// capabilities and status.
+    pub fn settle(&mut self, core: &Connection) -> Task<Message> {
+        if std::mem::take(&mut self.icons_stale) {
+            self.close_vanished_menu(core);
+            self.icons.refresh(
+                icons_in_capabilities(core.capabilities()).chain(icons_in_status(core.status())),
+            );
         }
-        if first_frame {
+        if std::mem::take(&mut self.focus_pending) {
             return operation::focus(self.display_id.clone());
         }
         Task::none()
     }
 
+    pub fn close_menu(&mut self) {
+        self.menu = None;
+    }
+
     /// A contributed menu that disappeared can't stay open.
-    fn close_vanished_menu(&mut self) {
+    fn close_vanished_menu(&mut self, core: &Connection) {
         let Some(OpenMenu {
             menu: ToolbarMenu::Contributed(id),
             ..
@@ -355,7 +338,7 @@ impl State {
         else {
             return;
         };
-        let still_there = self.core.capabilities().toolbar.iter().any(|item| {
+        let still_there = core.capabilities().toolbar.iter().any(|item| {
             matches!(item, server_remote_core::ToolbarItem::Menu { id: menu_id, .. } if menu_id == id)
         });
         if !still_there {
@@ -363,26 +346,12 @@ impl State {
         }
     }
 
-    fn refresh_icons(&mut self) {
-        self.icons.refresh(
-            icons_in_capabilities(self.core.capabilities())
-                .chain(icons_in_status(self.core.status())),
-        );
-    }
-
-    /// The screen as the display widget takes it.
-    fn display_frame(&self) -> Option<DisplayFrame> {
-        self.core.screen().map(|screen| DisplayFrame {
-            tab_id: self.core.id(),
-            generation: screen.generation,
-            width: screen.width,
-            height: screen.height,
-            pixels: screen.pixels.clone(),
-        })
-    }
-
-    pub fn view<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
-        let body: Element<'_, Message> = match (self.core.phase(), self.display_frame()) {
+    pub fn view<'a>(
+        &'a self,
+        core: &'a Connection,
+        settings: &'a Settings,
+    ) -> Element<'a, Message> {
+        let body: Element<'_, Message> = match (core.phase(), display_frame(core)) {
             (Phase::Connecting, _) => text(fl!("status-connecting-ellipsis")).into(),
             (Phase::Disconnected(reason), _) => {
                 let reason = reason.clone().unwrap_or_else(|| fl!("status-disconnected"));
@@ -403,11 +372,9 @@ impl State {
                     .into()
             }
             (Phase::Connected, None) => text(fl!("waiting-for-frame")).into(),
-            (Phase::Connected, Some(frame)) => kvm_display(
-                frame,
-                self.core.capabilities().pointer,
-                self.display_id.clone(),
-            ),
+            (Phase::Connected, Some(frame)) => {
+                kvm_display(frame, core.capabilities().pointer, self.display_id.clone())
+            }
         };
 
         let panel = (self.show_virtual_keyboard || self.show_virtual_trackpad).then(|| {
@@ -427,20 +394,20 @@ impl State {
         let content = Column::new()
             .spacing(4)
             .push(
-                (!matches!(self.core.phase(), Phase::Disconnected(_)))
-                    .then(|| self.toolbar(settings)),
+                (!matches!(core.phase(), Phase::Disconnected(_)))
+                    .then(|| self.toolbar(core, settings)),
             )
             .push(center(body))
             .push(panel)
-            .push(self.status_bar());
+            .push(self.status_bar(core));
 
-        match self.core.dialog() {
-            Some(modal) => stack![content, modal_view(modal, self.core.target())].into(),
+        match core.dialog() {
+            Some(modal) => stack![content, modal_view(modal, core.target())].into(),
             None => content.into(),
         }
     }
 
-    fn toolbar<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
+    fn toolbar<'a>(&'a self, core: &'a Connection, settings: &'a Settings) -> Element<'a, Message> {
         let is_open =
             |menu: &ToolbarMenu| self.menu.as_ref().is_some_and(|open| open.menu == *menu);
         let button_menu = |menu: ToolbarMenu, icon: icons::Icon, items| {
@@ -458,9 +425,9 @@ impl State {
                 .is_some_and(|open| open.submenu == Some(submenu.clone()))
         };
         let contributed_menus =
-            contributed::toolbar_menus(self.core.capabilities(), &self.icons, self.menu.as_ref());
-        let chips = contributed::chips(self.core.status(), &self.icons);
-        let links = contributed::toolbar_links(self.core.capabilities(), &self.icons);
+            contributed::toolbar_menus(core.capabilities(), &self.icons, self.menu.as_ref());
+        let chips = contributed::chips(core.status(), &self.icons);
+        let links = contributed::toolbar_links(core.capabilities(), &self.icons);
 
         Row::new()
             .spacing(style::SPACING)
@@ -473,7 +440,7 @@ impl State {
             .push(button_menu(
                 ToolbarMenu::Input,
                 icons::KEYBOARD,
-                self.input_menu(settings, &submenu_open),
+                self.input_menu(core, settings, &submenu_open),
             ))
             .push(button_menu(
                 ToolbarMenu::Recording,
@@ -491,7 +458,7 @@ impl State {
             .push(Row::with_children(links).spacing(style::SPACING))
             .push(menu::button_popout(
                 icons::INFORMATION.into(),
-                || self.info(),
+                || self.info(core),
                 is_open(&ToolbarMenu::Info),
                 Message::ToggleMenu(ToolbarMenu::Info),
                 Message::CloseMenu,
@@ -500,43 +467,41 @@ impl State {
     }
 
     /// Technical details about the connection, for the info popout.
-    fn info(&self) -> Element<'_, Message> {
-        let status = match self.core.phase() {
+    fn info<'a>(&'a self, core: &'a Connection) -> Element<'a, Message> {
+        let status = match core.phase() {
             Phase::Connecting => fl!("status-connecting"),
             Phase::Connected => fl!("status-connected"),
             Phase::Disconnected(reason) => {
                 reason.clone().unwrap_or_else(|| fl!("status-disconnected"))
             }
         };
-        let resolution = self.core.size().map_or_else(
+        let resolution = core.size().map_or_else(
             || "—".to_owned(),
             |(width, height)| format!("{width}×{height}"),
         );
-        let pointer = match self.core.capabilities().pointer {
+        let pointer = match core.capabilities().pointer {
             PointerMode::Absolute => fl!("pointer-absolute"),
             PointerMode::Relative => fl!("pointer-relative"),
         };
 
-        let encryption = self
-            .core
+        let encryption = core
             .status()
             .encryption
             .as_deref()
             .map_or_else(|| fl!("encryption-none"), str::to_owned);
         let built_in = [
-            (fl!("info-protocol"), self.core.protocol().name().to_owned()),
+            (fl!("info-protocol"), core.protocol().name().to_owned()),
             (
                 fl!("info-address"),
-                format!("{}:{}", self.core.target().host, self.core.target().port),
+                format!("{}:{}", core.target().host, core.target().port),
             ),
             (fl!("info-status"), status),
             (fl!("info-resolution"), resolution),
             (fl!("info-pointer"), pointer),
-            (fl!("info-frames"), self.core.frames().to_string()),
+            (fl!("info-frames"), core.frames().to_string()),
             (fl!("info-encryption"), encryption),
         ];
-        let details = self
-            .core
+        let details = core
             .status()
             .details
             .iter()
@@ -558,17 +523,16 @@ impl State {
 
     fn input_menu(
         &self,
+        core: &Connection,
         settings: &Settings,
         submenu_open: &impl Fn(Submenu) -> bool,
     ) -> Vec<Item<Message>> {
-        let actions = self
-            .core
+        let actions = core
             .capabilities()
             .input_actions
             .iter()
             .map(|action| contributed::action_item(action, &self.icons));
-        let separator =
-            (!self.core.capabilities().input_actions.is_empty()).then_some(Item::Separator);
+        let separator = (!core.capabilities().input_actions.is_empty()).then_some(Item::Separator);
 
         let keyboard_styles = KeyboardSize::ALL
             .into_iter()
@@ -618,8 +582,8 @@ impl State {
             .collect()
     }
 
-    fn status_bar(&self) -> Element<'_, Message> {
-        let (label, indicator) = match self.core.phase() {
+    fn status_bar<'a>(&'a self, core: &'a Connection) -> Element<'a, Message> {
+        let (label, indicator) = match core.phase() {
             Phase::Connecting => (fl!("status-connecting-ellipsis"), style::Indicator::Warning),
             Phase::Connected => (fl!("status-connected"), style::Indicator::Ok),
             Phase::Disconnected(_) => (fl!("status-disconnected"), style::Indicator::Error),
@@ -630,7 +594,7 @@ impl State {
             .push(style::status_dot(indicator))
             .push(text(label));
 
-        let traffic = self.core.traffic().map(|rate| {
+        let traffic = core.traffic().map(|rate| {
             Row::new()
                 .spacing(6)
                 .align_y(Alignment::Center)
@@ -641,11 +605,10 @@ impl State {
                 .push(text(format_rate(rate.sent)))
                 .into()
         });
-        let resolution = self
-            .core
+        let resolution = core
             .size()
             .map(|(width, height)| text(format!("{width}×{height}")).into());
-        let encryption = self.core.status().encryption.as_ref().map(|encryption| {
+        let encryption = core.status().encryption.as_ref().map(|encryption| {
             Row::new()
                 .spacing(6)
                 .align_y(Alignment::Center)
@@ -653,7 +616,7 @@ impl State {
                 .push(text(encryption.as_ref()))
                 .into()
         });
-        let items = contributed::status_items(self.core.status(), &self.icons);
+        let items = contributed::status_items(core.status(), &self.icons);
         let connector_items = (!items.is_empty()).then(|| {
             Row::with_children(items)
                 .spacing(16)
@@ -688,15 +651,28 @@ impl State {
             .align_y(Alignment::Center)
             .into()
     }
-    pub fn subscription(&self) -> Subscription<Message> {
-        // `run_with` identifies the subscription by hashing `Params` (plus the
-        // worker's function pointer); the connection's id is among them, so
-        // each connection's subscription is distinct. The worker must be a
-        // plain `fn`, so everything it needs travels in `Params`.
-        match self.core.params() {
-            Some(params) => Subscription::run_with(params, worker),
-            None => Subscription::none(),
-        }
+}
+
+/// The display widget's view of the connection's screen.
+fn display_frame(core: &Connection) -> Option<DisplayFrame> {
+    core.screen().map(|screen| DisplayFrame {
+        tab_id: core.id(),
+        generation: screen.generation,
+        width: screen.width,
+        height: screen.height,
+        pixels: screen.pixels.clone(),
+    })
+}
+
+/// Runs the connection in the background while it's live.
+pub fn subscription(core: &Connection) -> Subscription<Message> {
+    // `run_with` identifies the subscription by hashing `Params` (plus the
+    // worker's function pointer); the connection's id is among them, so
+    // each connection's subscription is distinct. The worker must be a
+    // plain `fn`, so everything it needs travels in `Params`.
+    match core.params() {
+        Some(params) => Subscription::run_with(params, worker),
+        None => Subscription::none(),
     }
 }
 
@@ -851,7 +827,7 @@ fn icons_in_status(status: &SessionStatus) -> impl Iterator<Item = &server_remot
     items.chain(chips)
 }
 
-async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
+pub(crate) async fn pick_file(extensions: Vec<Cow<'static, str>>) -> Option<PathBuf> {
     let dialog = rfd::AsyncFileDialog::new();
     let dialog = if extensions.is_empty() {
         dialog
@@ -1057,9 +1033,6 @@ fn worker(params: &Params) -> impl Stream<Item = Message> + use<> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use server_remote_app::Protocol;
-    use server_remote_app::connection::Credentials;
-    use server_remote_core::TlsPolicy;
 
     #[test]
     fn new_connections_take_the_keyboard_defaults() {
@@ -1082,15 +1055,7 @@ mod tests {
             ),
         ];
         for (name, input, shown, size) in cases {
-            let core = Connection::new(
-                0,
-                Arc::from("test"),
-                Protocol::Dummy,
-                Target::new("localhost", 0),
-                TlsPolicy::default(),
-                Credentials::default(),
-            );
-            let state = State::new(core, &input);
+            let state = State::new(&input);
             assert_eq!(state.show_virtual_keyboard, shown, "{name}");
             assert_eq!(state.keyboard_size, size, "{name}");
         }
