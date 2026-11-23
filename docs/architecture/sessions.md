@@ -64,7 +64,8 @@ sessions are the same concrete type) and keeps `core` free of any UI dependency.
   and the protocol state machine.
 - Communication with the UI is exclusively through the `SessionHandle` channels.
   No shared mutable state, no locks across the boundary.
-- The GUI runs the connector on an iced `Subscription` whose worker owns the
-  `events` receiver and hands the UI the session's own `input`/`commands`
-  senders, then pumps events out as messages. The UI sends input and commands
-  straight down those senders from its `update` loop.
+- `server_remote_app::connection::run` connects, hands the app the session's
+  own `input`/`commands` senders, then pumps events out until the session
+  ends. The app sends input and commands straight down those senders. The
+  desktop app runs it on an iced `Subscription`, the iPadOS app's core on a
+  tokio runtime of its own (see [Front ends and the app core](front-ends.md)).
