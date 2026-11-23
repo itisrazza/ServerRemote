@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_REPO = "itisrazza/ServerRemote"
-OUT_DIR = Path(__file__).resolve().parent.parent / "apps/desktop/assets/contributors"
+OUT_DIR = Path(__file__).resolve().parent.parent / "apps/core/assets/contributors"
 GENERATED = "generated.rs"
 # Shown at 16pt, so this covers up to 4x displays.
 AVATAR_SIZE = 64

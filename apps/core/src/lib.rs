@@ -1,9 +1,11 @@
 //! ServerRemote's application logic, shared by the desktop (iced) and tablet
 //! (SwiftUI) front ends. Nothing here depends on a UI toolkit.
 
+pub mod about;
 pub mod app;
 pub mod connect;
 pub mod connection;
+mod contributors;
 pub mod i18n;
 pub mod keys;
 pub mod persistence;

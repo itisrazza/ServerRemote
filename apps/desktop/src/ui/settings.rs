@@ -24,7 +24,8 @@ use super::menu::{self, Item};
 use super::{style, themed_icon};
 use crate::i18n::fl;
 use crate::persistence::settings::KeyboardSize;
-use crate::{contributors, update};
+use crate::update;
+use server_remote_app::about::{self, APACHE_LICENSE_URL, MIT_LICENSE_URL, WEBSITE_URL};
 
 const SIDEBAR_WIDTH: f32 = 200.0;
 /// The widest the settings column grows, so labels stay near their controls.
@@ -37,9 +38,6 @@ const SIDE_BY_SIDE_WIDTH: f32 = 480.0;
 /// Keeps the column off the panel's edges when it fills the panel.
 const PANEL_PADDING: f32 = 16.0;
 
-const WEBSITE_URL: &str = "https://serverremote.razza.io/";
-const MIT_LICENSE_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/blob/main/LICENSE-MIT");
-const APACHE_LICENSE_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/blob/main/LICENSE-APACHE");
 const TITLE_SIZE: f32 = 24.0;
 const VERSION_SIZE: f32 = 16.0;
 const LOGO_SIZE: f32 = 64.0;
@@ -582,7 +580,7 @@ fn about_header<'a>() -> Element<'a, Message> {
 /// The contributors, each linking to their GitHub profile.
 fn made_by<'a>() -> Element<'a, Message> {
     let people = Row::with_children(
-        contributors::ALL
+        about::CONTRIBUTORS
             .iter()
             .zip(AVATARS.iter())
             .map(|(contributor, avatar)| contributor_chip(contributor, avatar.clone())),
@@ -602,14 +600,14 @@ fn made_by<'a>() -> Element<'a, Message> {
 /// `view` gets a fresh ID every frame, so iced would restart decoding it each
 /// frame and never get as far as drawing it.
 static AVATARS: LazyLock<Vec<image::Handle>> = LazyLock::new(|| {
-    contributors::ALL
+    about::CONTRIBUTORS
         .iter()
         .map(|contributor| image::Handle::from_bytes(contributor.avatar))
         .collect()
 });
 
 fn contributor_chip(
-    contributor: &contributors::Contributor,
+    contributor: &about::Contributor,
     avatar: image::Handle,
 ) -> Element<'_, Message> {
     let avatar = image(avatar).width(16).height(16).border_radius(8);
@@ -911,7 +909,7 @@ mod tests {
 
     #[test]
     fn avatar_handles_stay_the_same_between_frames() {
-        assert_eq!(AVATARS.len(), contributors::ALL.len());
+        assert_eq!(AVATARS.len(), about::CONTRIBUTORS.len());
         for (first, second) in AVATARS.iter().zip(AVATARS.iter()) {
             assert_eq!(first.clone().id(), second.clone().id());
         }
@@ -919,7 +917,7 @@ mod tests {
 
     #[test]
     fn every_avatar_decodes() {
-        for contributor in contributors::ALL {
+        for contributor in about::CONTRIBUTORS {
             let avatar = ::image::load_from_memory(contributor.avatar)
                 .unwrap_or_else(|error| panic!("@{}'s avatar: {error}", contributor.login));
             assert!(avatar.width() > 0, "@{}", contributor.login);

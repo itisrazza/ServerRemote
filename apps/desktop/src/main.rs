@@ -18,7 +18,6 @@ use crate::tooltip_box::tooltip_box;
 use server_remote_app::{persistence, update};
 
 mod app_icon;
-mod contributors;
 mod i18n;
 mod tooltip_box;
 mod ui;
@@ -765,10 +764,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
         fl!("licences-title"),
         fl!("licences-message"),
         vec![
-            link(
-                "Carbon",
-                "https://carbondesignsystem.com/elements/icons/library/",
-            ),
+            link("Carbon", server_remote_app::about::CARBON_URL),
             link("Nunito Sans", "https://github.com/googlefonts/NunitoSans"),
             ui::dialog::Button {
                 label: fl!("button-close"),
