@@ -6,7 +6,7 @@ use server_remote_app::connection::{self, Connection, Phase, format_rate};
 use server_remote_app::persistence::sessions::SavedSession;
 use server_remote_app::{App, i18n};
 
-use crate::look::icon_id;
+use crate::look::{IconRef, icon_ref};
 use crate::settings::SettingsState;
 use server_remote_core::{IndicatorState, MenuItem, StatusItem, ToolbarItem};
 
@@ -274,7 +274,7 @@ impl From<&Connection> for ConnectionState {
                 label, items, icon, ..
             } => Some(ActionMenu {
                 label: label.to_string(),
-                icon: Some(icon_id(icon)),
+                icon: Some(icon_ref(icon)),
                 actions: flatten(items, ""),
             }),
             ToolbarItem::Link { .. } => None,
@@ -305,7 +305,7 @@ impl From<&Connection> for ConnectionState {
                 .filter_map(|item| match item {
                     ToolbarItem::Link { label, url, icon } => Some(WebLink {
                         label: label.to_string(),
-                        icon: icon_id(icon),
+                        icon: icon_ref(icon),
                         url: url.to_string(),
                     }),
                     ToolbarItem::Menu { .. } => None,
@@ -316,7 +316,7 @@ impl From<&Connection> for ConnectionState {
                 .iter()
                 .map(|chip| Chip {
                     label: chip.label.to_string(),
-                    icon: chip.icon.as_ref().map(icon_id),
+                    icon: chip.icon.as_ref().map(icon_ref),
                     close_action: chip.close_action.as_ref().map(|id| id.to_string()),
                 })
                 .collect(),
@@ -371,7 +371,7 @@ impl ConnectionDialog {
 pub struct ActionMenu {
     pub label: String,
     /// See [`crate::Core::connection_icon`]; the input menu has none.
-    pub icon: Option<u64>,
+    pub icon: Option<IconRef>,
     pub actions: Vec<MenuAction>,
 }
 
@@ -380,7 +380,7 @@ pub struct ActionMenu {
 pub struct MenuAction {
     pub id: String,
     pub label: String,
-    pub icon: Option<u64>,
+    pub icon: Option<IconRef>,
     pub enabled: bool,
     pub checked: bool,
 }
@@ -390,7 +390,7 @@ impl From<&server_remote_core::Action> for MenuAction {
         MenuAction {
             id: action.id.to_string(),
             label: action.label.to_string(),
-            icon: action.icon.as_ref().map(icon_id),
+            icon: action.icon.as_ref().map(icon_ref),
             enabled: action.enabled,
             checked: action.checked,
         }
@@ -414,14 +414,14 @@ fn flatten(items: &[MenuItem], prefix: &str) -> Vec<MenuAction> {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct WebLink {
     pub label: String,
-    pub icon: u64,
+    pub icon: IconRef,
     pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Chip {
     pub label: String,
-    pub icon: Option<u64>,
+    pub icon: Option<IconRef>,
     /// Sent with [`crate::Core::send_action`] when the chip is closed.
     pub close_action: Option<String>,
 }
@@ -437,7 +437,7 @@ pub enum Indicator {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct StatusEntry {
     pub text: String,
-    pub icon: Option<u64>,
+    pub icon: Option<IconRef>,
     /// A coloured dot before the text, if any.
     pub indicator: Option<Indicator>,
 }
@@ -457,7 +457,7 @@ impl From<&StatusItem> for StatusEntry {
             },
             StatusItem::Text { text, icon } => StatusEntry {
                 text: text.to_string(),
-                icon: icon.as_ref().map(icon_id),
+                icon: icon.as_ref().map(icon_ref),
                 indicator: None,
             },
         }

@@ -72,7 +72,7 @@ struct ConnectionView: View {
                             Label {
                                 Text(link.label)
                             } icon: {
-                                IconView(.connector(connection: connection.id, id: link.icon))
+                                ConnectorIcon(connection: connection.id, icon: link.icon)
                             }
                         }
                     }
@@ -121,7 +121,7 @@ struct ConnectionView: View {
             Text(menu.label)
         } icon: {
             if let icon = menu.icon {
-                IconView(.connector(connection: connection.id, id: icon))
+                ConnectorIcon(connection: connection.id, icon: icon)
             }
         }
     }
@@ -164,7 +164,7 @@ private struct ChipButton: View {
                 Text(chip.label).lineLimit(1)
             } icon: {
                 if let icon = chip.icon {
-                    IconView(.connector(connection: connection, id: icon))
+                    ConnectorIcon(connection: connection, icon: icon)
                 } else {
                     Image(systemName: "xmark.circle")
                 }
@@ -239,7 +239,7 @@ private struct StatusCapsule: View {
                         Circle().fill(indicator.color).frame(width: 8, height: 8)
                     }
                     if let icon = entry.icon {
-                        IconView(.connector(connection: connection.id, id: icon), size: 14)
+                        ConnectorIcon(connection: connection.id, icon: icon, size: 14)
                     }
                     Text(entry.text)
                 }

@@ -105,3 +105,61 @@ extension ConnectionPhase {
         }
     }
 }
+
+/// A connector's icon: the matching SF Symbol for the built-in ones, so it
+/// sits evenly with the app's own toolbar symbols, otherwise its own image.
+struct ConnectorIcon: View {
+    let connection: UInt64
+    let icon: IconRef
+    var size: CGFloat = 20
+
+    var body: some View {
+        if let symbol = icon.builtin.flatMap({ Self.symbols[$0] }) {
+            Image(systemName: symbol)
+        } else {
+            IconView(.connector(connection: connection, id: icon.id), size: size)
+        }
+    }
+
+    /// The built-in icons (`lib/icons/assets`) connectors use, as SF Symbols.
+    private static let symbols: [String: String] = [
+        "carbon_add": "plus",
+        "carbon_add-large": "plus",
+        "carbon_arrow-down": "arrow.down",
+        "carbon_arrow-left": "arrow.left",
+        "carbon_arrow-right": "arrow.right",
+        "carbon_arrow-up": "arrow.up",
+        "carbon_arrows-horizontal": "arrow.left.and.right",
+        "carbon_camera": "camera",
+        "carbon_checkmark": "checkmark",
+        "carbon_chevron-down": "chevron.down",
+        "carbon_chevron-left": "chevron.left",
+        "carbon_chevron-right": "chevron.right",
+        "carbon_chevron-up": "chevron.up",
+        "carbon_close": "xmark",
+        "carbon_close-large": "xmark",
+        "carbon_copy-to-clipboard": "doc.on.doc",
+        "carbon_cursor-1": "cursorarrow",
+        "carbon_diamond-outline": "diamond",
+        "carbon_down-to-bottom": "arrow.down.to.line",
+        "carbon_download": "arrow.down.circle",
+        "carbon_folder": "folder",
+        "carbon_information": "info.circle",
+        "carbon_keyboard": "keyboard",
+        "carbon_launch": "arrow.up.forward.square",
+        "carbon_locked": "lock",
+        "carbon_power": "power",
+        "carbon_progress-bar-round": "circle.dotted",
+        "carbon_restart": "arrow.clockwise",
+        "carbon_save": "square.and.arrow.down",
+        "carbon_screen": "display",
+        "carbon_settings": "gear",
+        "carbon_up-to-top": "arrow.up.to.line",
+        "carbon_upload": "arrow.up.circle",
+        "carbon_virtual-desktop": "display.2",
+        "carbon_vmdk-disk": "opticaldiscdrive",
+        "key_backspace": "delete.left",
+        "key_delete": "delete.right",
+        "key_enter": "return",
+    ]
+}

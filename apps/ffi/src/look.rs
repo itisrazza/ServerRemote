@@ -31,8 +31,27 @@ pub fn protocol_icon(protocol: ConnectionProtocol, pixels: u32) -> Result<IconIm
     render(&Icon::Builtin(protocol.icon()), pixels)
 }
 
-/// Identifies a connector's icon in the records, for
-/// [`crate::Core::connection_icon`].
+/// A connector's icon, as the records name it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct IconRef {
+    /// For [`crate::Core::connection_icon`].
+    pub id: u64,
+    /// The built-in icon's name (e.g. `carbon_power`), so the front end can
+    /// use its platform's own symbol for it; `None` for the connector's own.
+    pub builtin: Option<String>,
+}
+
+pub fn icon_ref(icon: &Icon) -> IconRef {
+    IconRef {
+        id: icon_id(icon),
+        builtin: match icon {
+            Icon::Builtin(icon) => Some(icon.name().to_owned()),
+            Icon::Svg(_) | Icon::Raster(_) => None,
+        },
+    }
+}
+
+/// Identifies a connector's icon, for [`crate::Core::connection_icon`].
 pub fn icon_id(icon: &Icon) -> u64 {
     let mut hasher = DefaultHasher::new();
     match icon {

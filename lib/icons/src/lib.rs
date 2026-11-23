@@ -6,17 +6,29 @@
 
 /// An embedded SVG icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Icon(&'static [u8]);
+pub struct Icon {
+    svg: &'static [u8],
+    name: &'static str,
+}
 
 impl Icon {
     pub const fn svg(self) -> &'static [u8] {
-        self.0
+        self.svg
+    }
+
+    /// The icon's file name without `.svg`, e.g. `carbon_power`, so a front
+    /// end can swap in its platform's own symbol for it.
+    pub const fn name(self) -> &'static str {
+        self.name
     }
 }
 
 macro_rules! icons {
     ($($name:ident = $file:literal;)*) => {
-        $(pub const $name: Icon = Icon(include_bytes!(concat!("../assets/", $file, ".svg")));)*
+        $(pub const $name: Icon = Icon {
+            svg: include_bytes!(concat!("../assets/", $file, ".svg")),
+            name: $file,
+        };)*
 
         #[cfg(test)]
         const ALL: &[Icon] = &[$($name),*];
@@ -75,7 +87,7 @@ icons! {
 impl Icon {
     /// Builds an [`iced::widget::svg::Svg`] element for this icon.
     pub fn element<'a>(self) -> ::iced::widget::svg::Svg<'a, ::iced::Theme> {
-        ::iced::widget::svg::Svg::new(::iced::widget::svg::Handle::from_memory(self.0))
+        ::iced::widget::svg::Svg::new(::iced::widget::svg::Handle::from_memory(self.svg))
     }
 }
 
