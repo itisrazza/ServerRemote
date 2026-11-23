@@ -9,7 +9,8 @@ use super::{dialog, icon, style};
 use crate::i18n::fl;
 use crate::persistence::sessions::SavedSession;
 use crate::tooltip_box::tooltip_box;
-use crate::ui::connection::Protocol;
+use server_remote_app::Protocol;
+use server_remote_app::connect::Request;
 
 /// The Connect tab's panel.
 const PANEL_WIDTH: f32 = 245.0;
@@ -40,33 +41,6 @@ pub enum Message {
     Connect(Request),
     /// Bubbles up to the application to persist a saved session.
     Save(Request),
-}
-
-/// Everything needed to either open a connection tab or save a session.
-/// `name` and `group` are only meaningful for saving — the connect flow
-/// derives a tab name from the protocol and hostname instead.
-#[derive(Debug, Clone)]
-pub struct Request {
-    pub protocol: Protocol,
-    pub name: String,
-    pub group: String,
-    pub hostname: String,
-    /// Only iLO asks for one; other protocols ignore it.
-    pub username: String,
-    pub password: String,
-}
-
-impl From<&SavedSession> for Request {
-    fn from(session: &SavedSession) -> Self {
-        Request {
-            protocol: session.protocol,
-            name: session.name.clone(),
-            group: session.group.clone(),
-            hostname: session.hostname.clone(),
-            username: session.username.clone(),
-            password: session.password.clone(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

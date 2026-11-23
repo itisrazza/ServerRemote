@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::ui::connection::Protocol;
+use crate::Protocol;
 
 use super::store;
 
@@ -261,9 +261,56 @@ pub mod thumbnail {
     }
 }
 
+/// A file name to suggest when exporting the session called `name`, safe
+/// on every platform: characters some file systems refuse become dashes,
+/// trailing dots and spaces (which Windows drops) go, and Windows' reserved
+/// device names get a suffix.
+pub fn export_file_name(name: &str) -> String {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if r#"/\:*?"<>|"#.contains(c) || c.is_control() {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let mut stem = cleaned.trim().trim_end_matches(['.', ' ']).to_owned();
+    if stem.is_empty() {
+        stem = "connection".to_owned();
+    }
+    // Windows reserves these even with an extension, as in `CON.toml` or
+    // `con.backup.toml`.
+    let base = stem.split('.').next().unwrap_or_default().trim_end();
+    if RESERVED
+        .iter()
+        .any(|reserved| base.eq_ignore_ascii_case(reserved))
+    {
+        stem.push_str("-connection");
+    }
+    format!("{stem}.toml")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_file_names_are_safe_on_windows() {
+        assert_eq!(export_file_name("Aur"), "Aur.toml");
+        assert_eq!(export_file_name("a/b: c?"), "a-b- c-.toml");
+        assert_eq!(export_file_name("Server. "), "Server.toml");
+        assert_eq!(export_file_name("..."), "connection.toml");
+        assert_eq!(export_file_name("CON"), "CON-connection.toml");
+        assert_eq!(export_file_name("nul.old"), "nul.old-connection.toml");
+        assert_eq!(export_file_name("Console"), "Console.toml");
+    }
 
     fn session(name: &str) -> SavedSession {
         SavedSession {

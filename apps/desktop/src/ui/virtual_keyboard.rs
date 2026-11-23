@@ -9,8 +9,9 @@ use iced::widget::{Column, Row, Space, button, container, text};
 use iced::{Background, Border, Element, Font, Length, Theme};
 use server_remote_icons::{self as icons, Icon};
 
-use super::connection::{KeyboardSize, character_keysym, named_keysym};
+use super::connection::{character_keysym, named_keysym};
 use super::style;
+use crate::persistence::settings::KeyboardSize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKey {

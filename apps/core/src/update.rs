@@ -6,11 +6,13 @@
 use std::fmt;
 
 use semver::Version;
+#[cfg(feature = "update-check")]
 use serde::Deserialize;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const PROJECT_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
+#[cfg(feature = "update-check")]
 const LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/itisrazza/ServerRemote/releases/latest";
 
@@ -55,12 +57,14 @@ impl fmt::Display for Error {
 }
 
 /// The fields of a GitHub release the check needs.
+#[cfg(feature = "update-check")]
 #[derive(Debug, Deserialize)]
 struct Release {
     tag_name: String,
     html_url: String,
 }
 
+#[cfg(feature = "update-check")]
 /// Asks GitHub for the latest release and compares it with this build.
 pub async fn check() -> Result<Outcome, Error> {
     tokio::task::spawn_blocking(fetch_latest)
@@ -68,6 +72,7 @@ pub async fn check() -> Result<Outcome, Error> {
         .map_err(|error| Error::Request(error.to_string()))?
 }
 
+#[cfg(feature = "update-check")]
 fn fetch_latest() -> Result<Outcome, Error> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
@@ -107,6 +112,7 @@ fn fetch_latest() -> Result<Outcome, Error> {
     compare(VERSION, &release)
 }
 
+#[cfg(feature = "update-check")]
 fn compare(current: &str, release: &Release) -> Result<Outcome, Error> {
     let current = Version::parse(current)
         .map_err(|error| Error::Parse(format!("this build's version {current:?}: {error}")))?;
@@ -128,7 +134,7 @@ fn compare(current: &str, release: &Release) -> Result<Outcome, Error> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "update-check"))]
 mod tests {
     use super::*;
 

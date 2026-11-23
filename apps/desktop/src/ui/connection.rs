@@ -36,117 +36,13 @@ use super::dialog;
 use super::icon;
 use super::kvm_display::{DisplayFrame, kvm_display};
 use super::menu::{self, Item};
-use super::settings::{self as settings_ui, Change, Section};
+use super::settings::{self as settings_ui, Section};
 use super::style;
 use super::virtual_keyboard;
 use super::virtual_trackpad;
-use crate::persistence::settings::{self as settings, Scaling, Settings};
-
-/// The protocol a connection speaks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Protocol {
-    Dummy,
-    Vnc,
-    Spice,
-    Ilo,
-}
-
-impl Protocol {
-    pub const ALL: [Protocol; 4] = [
-        Protocol::Dummy,
-        Protocol::Vnc,
-        Protocol::Spice,
-        Protocol::Ilo,
-    ];
-
-    fn label(self) -> &'static str {
-        match self {
-            Protocol::Dummy => "dummy",
-            Protocol::Vnc => "vnc",
-            Protocol::Spice => "spice",
-            Protocol::Ilo => "ilo",
-        }
-    }
-
-    /// Human-facing name, as shown in the status bar.
-    pub fn name(self) -> &'static str {
-        match self {
-            Protocol::Dummy => "Dummy",
-            Protocol::Vnc => "VNC",
-            Protocol::Spice => "SPICE",
-            Protocol::Ilo => "iLO",
-        }
-    }
-
-    /// The name spelt out, as on a connection manager card.
-    pub fn full_name(self) -> &'static str {
-        match self {
-            Protocol::Ilo => "HPE iLO",
-            other => other.name(),
-        }
-    }
-
-    pub fn icon(self) -> icons::Icon {
-        match self {
-            Protocol::Dummy => icons::DIAMOND_OUTLINE,
-            Protocol::Vnc => icons::PROTOCOL_VNC,
-            Protocol::Spice => icons::PROTOCOL_SPICE,
-            Protocol::Ilo => icons::PROTOCOL_ILO,
-        }
-    }
-
-    /// Default port when the hostname doesn't specify one.
-    pub fn default_port(self) -> u16 {
-        match self {
-            Protocol::Dummy => 0,
-            Protocol::Vnc | Protocol::Spice => 5900,
-            Protocol::Ilo => 443,
-        }
-    }
-}
-
-impl std::fmt::Display for Protocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.label())
-    }
-}
-
-/// The layout of the virtual on-screen keyboard.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-)]
-pub enum KeyboardSize {
-    #[serde(rename = "compact")]
-    Small,
-    #[default]
-    #[serde(rename = "tenkeyless")]
-    Medium,
-    #[serde(rename = "full-size")]
-    Large,
-}
-
-impl KeyboardSize {
-    pub const ALL: [KeyboardSize; 3] = [
-        KeyboardSize::Small,
-        KeyboardSize::Medium,
-        KeyboardSize::Large,
-    ];
-
-    pub fn label(self) -> String {
-        match self {
-            KeyboardSize::Small => fl!("keyboard-style-compact"),
-            KeyboardSize::Medium => fl!("keyboard-style-tenkeyless"),
-            KeyboardSize::Large => fl!("keyboard-style-full"),
-        }
-    }
-}
-
-impl std::fmt::Display for KeyboardSize {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.label())
-    }
-}
+use crate::persistence::settings::Change;
+use crate::persistence::settings::{self as settings, KeyboardSize, Scaling, Settings};
+use server_remote_app::Protocol;
 
 /// The toolbar's dropdown menus.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1847,14 +1743,6 @@ mod tests {
         let _ = state.update(Message::Pointer(Point::new(3.0, 4.0)));
 
         assert!(input_rx.try_recv().is_err());
-    }
-
-    #[test]
-    fn default_ports_match_each_protocol() {
-        assert_eq!(Protocol::Dummy.default_port(), 0);
-        assert_eq!(Protocol::Vnc.default_port(), 5900);
-        assert_eq!(Protocol::Spice.default_port(), 5900);
-        assert_eq!(Protocol::Ilo.default_port(), 443);
     }
 
     #[test]

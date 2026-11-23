@@ -9,8 +9,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use server_remote_core::{CertFingerprint, Target, TlsPolicy};
 
-use crate::ui::connection::KeyboardSize;
-
 use super::store;
 use crate::i18n::fl;
 
@@ -533,9 +531,213 @@ impl Settings {
     }
 }
 
+/// The layout of the virtual on-screen keyboard.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
+pub enum KeyboardSize {
+    #[serde(rename = "compact")]
+    Small,
+    #[default]
+    #[serde(rename = "tenkeyless")]
+    Medium,
+    #[serde(rename = "full-size")]
+    Large,
+}
+
+impl KeyboardSize {
+    pub const ALL: [KeyboardSize; 3] = [
+        KeyboardSize::Small,
+        KeyboardSize::Medium,
+        KeyboardSize::Large,
+    ];
+
+    pub fn label(self) -> String {
+        match self {
+            KeyboardSize::Small => fl!("keyboard-style-compact"),
+            KeyboardSize::Medium => fl!("keyboard-style-tenkeyless"),
+            KeyboardSize::Large => fl!("keyboard-style-full"),
+        }
+    }
+}
+
+impl std::fmt::Display for KeyboardSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label())
+    }
+}
+
+/// A change to one setting.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Change {
+    ConfirmQuit(bool),
+    Appearance(Appearance),
+    Language(Language),
+    GraphicsBackend(GraphicsBackend),
+    Scaling(Scaling),
+    KeepAspectRatio(bool),
+    DisplayScale(DisplayScale),
+    KeyboardStyle(KeyboardSize),
+    OpenKeyboardOnConnect(bool),
+    KeyboardLayout(KeyboardLayout),
+    /// Save recordings to the system's videos folder.
+    DefaultRecordingFolder,
+    /// Save recordings to this folder, remembering it among the recent ones.
+    RecordingFolder(PathBuf),
+    RecordingFormat(RecordingFormat),
+    RecordingQuality(RecordingQuality),
+    CheckForUpdatesOnLaunch(bool),
+    CertificateChecking(CertificateChecking),
+    /// Trust this certificate from now on, in place of any other for its
+    /// server.
+    TrustCertificate(KnownCertificate),
+    BlockCertificate(KnownCertificate),
+    ForgetCertificate(KnownCertificate),
+    UnblockCertificate(KnownCertificate),
+}
+
+pub fn apply(settings: &mut Settings, change: Change) {
+    match change {
+        Change::ConfirmQuit(on) => settings.general.confirm_quit = on,
+        Change::Appearance(appearance) => settings.general.appearance = appearance,
+        Change::Language(language) => settings.general.language = language,
+        Change::GraphicsBackend(backend) => settings.general.graphics_backend = backend,
+        Change::Scaling(scaling) => settings.display.scaling = scaling,
+        Change::KeepAspectRatio(on) => settings.display.keep_aspect_ratio = on,
+        Change::DisplayScale(scale) => settings.display.scale = scale,
+        Change::KeyboardStyle(style) => settings.input.keyboard_style = style,
+        Change::OpenKeyboardOnConnect(on) => settings.input.open_keyboard_on_connect = on,
+        Change::KeyboardLayout(layout) => settings.input.keyboard_layout = layout,
+        Change::DefaultRecordingFolder => settings.recording.folder = None,
+        Change::RecordingFolder(folder) => settings.recording.choose_folder(folder),
+        Change::RecordingFormat(format) => settings.recording.format = format,
+        Change::RecordingQuality(quality) => settings.recording.quality = quality,
+        Change::CheckForUpdatesOnLaunch(on) => settings.updates.check_on_launch = on,
+        Change::CertificateChecking(checking) => {
+            settings.security.certificate_checking = checking;
+        }
+        Change::TrustCertificate(certificate) => settings.security.trust(certificate),
+        Change::BlockCertificate(certificate) => settings.security.block(certificate),
+        Change::ForgetCertificate(certificate) => settings.security.forget(&certificate),
+        Change::UnblockCertificate(certificate) => settings.security.unblock(&certificate),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changes_apply_to_their_setting() {
+        let folder = PathBuf::from("/recordings");
+        let certificate = KnownCertificate::new(
+            &server_remote_core::Target::new("ilo", 443),
+            server_remote_core::CertFingerprint([1; 32]),
+        );
+        type Check = fn(&Settings) -> bool;
+        let cases: Vec<(&str, Change, Check)> = vec![
+            ("confirm quit", Change::ConfirmQuit(false), |s| {
+                !s.general.confirm_quit
+            }),
+            ("appearance", Change::Appearance(Appearance::Light), |s| {
+                s.general.appearance == Appearance::Light
+            }),
+            (
+                "graphics backend",
+                Change::GraphicsBackend(GraphicsBackend::Vulkan),
+                |s| s.general.graphics_backend == GraphicsBackend::Vulkan,
+            ),
+            ("scaling", Change::Scaling(Scaling::Actual), |s| {
+                s.display.scaling == Scaling::Actual
+            }),
+            ("aspect ratio", Change::KeepAspectRatio(false), |s| {
+                !s.display.keep_aspect_ratio
+            }),
+            (
+                "display scale",
+                Change::DisplayScale(DisplayScale::Percent150),
+                |s| s.display.scale == DisplayScale::Percent150,
+            ),
+            (
+                "keyboard style",
+                Change::KeyboardStyle(KeyboardSize::Large),
+                |s| s.input.keyboard_style == KeyboardSize::Large,
+            ),
+            (
+                "keyboard on connect",
+                Change::OpenKeyboardOnConnect(true),
+                |s| s.input.open_keyboard_on_connect,
+            ),
+            (
+                "keyboard layout",
+                Change::KeyboardLayout(KeyboardLayout::GermanQwertz),
+                |s| s.input.keyboard_layout == KeyboardLayout::GermanQwertz,
+            ),
+            (
+                "recording folder",
+                Change::RecordingFolder(folder.clone()),
+                |s| s.recording.folder.as_deref() == Some(Path::new("/recordings")),
+            ),
+            (
+                "recording format",
+                Change::RecordingFormat(RecordingFormat::Mkv),
+                |s| s.recording.format == RecordingFormat::Mkv,
+            ),
+            (
+                "recording quality",
+                Change::RecordingQuality(RecordingQuality::Lossless),
+                |s| s.recording.quality == RecordingQuality::Lossless,
+            ),
+            (
+                "certificate checking",
+                Change::CertificateChecking(CertificateChecking::Strict),
+                |s| s.security.certificate_checking == CertificateChecking::Strict,
+            ),
+            (
+                "trust certificate",
+                Change::TrustCertificate(certificate.clone()),
+                |s| s.security.trusted.len() == 1,
+            ),
+            (
+                "block certificate",
+                Change::BlockCertificate(certificate.clone()),
+                |s| s.security.blocked.len() == 1,
+            ),
+        ];
+
+        for (name, change, check) in cases {
+            let mut settings = Settings::default();
+            apply(&mut settings, change);
+            assert!(check(&settings), "{name}");
+        }
+    }
+
+    #[test]
+    fn default_folder_change_keeps_the_recent_list() {
+        let mut settings = Settings::default();
+        apply(&mut settings, Change::RecordingFolder(PathBuf::from("/a")));
+        apply(&mut settings, Change::DefaultRecordingFolder);
+        assert_eq!(settings.recording.folder, None);
+        assert_eq!(settings.recording.recent_folders, vec![PathBuf::from("/a")]);
+    }
+
+    #[test]
+    fn removing_a_certificate_takes_it_off_its_list() {
+        let certificate = KnownCertificate::new(
+            &server_remote_core::Target::new("ilo", 443),
+            server_remote_core::CertFingerprint([1; 32]),
+        );
+        let mut settings = Settings::default();
+        apply(&mut settings, Change::TrustCertificate(certificate.clone()));
+        apply(
+            &mut settings,
+            Change::ForgetCertificate(certificate.clone()),
+        );
+        assert!(settings.security.trusted.is_empty());
+        apply(&mut settings, Change::BlockCertificate(certificate.clone()));
+        apply(&mut settings, Change::UnblockCertificate(certificate));
+        assert!(settings.security.blocked.is_empty());
+    }
 
     #[test]
     fn settings_round_trip_through_toml() {

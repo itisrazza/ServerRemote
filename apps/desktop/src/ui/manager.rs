@@ -19,10 +19,11 @@ use server_remote_icons as icons;
 use crate::i18n::fl;
 use crate::persistence::sessions::{SavedSession, Sessions, thumbnail};
 
-use super::connect::{self, Request};
+use super::connect;
 use super::menu::{self, Item};
 use super::popover::{Placement, popover};
 use super::{dialog, icon, style};
+use server_remote_app::connect::Request;
 
 const SIDEBAR_WIDTH: f32 = 200.0;
 /// Cards are at most this wide; the grid adds a column when they'd be wider.
@@ -514,7 +515,7 @@ fn text_color(theme: &Theme) -> iced::Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::connection::Protocol;
+    use server_remote_app::Protocol;
 
     fn sessions(groups: &[&str]) -> (Sessions, Vec<u64>) {
         let mut sessions = Sessions::default();

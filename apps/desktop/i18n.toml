@@ -1,4 +1,7 @@
+# Only for `fl!`'s compile-time checks: the translations and their loader
+# live in apps/core.
 fallback_language = "en"
 
 [fluent]
-assets_dir = "i18n"
+assets_dir = "../core/i18n"
+domain = "server-remote"

@@ -1,0 +1,6 @@
+fallback_language = "en"
+
+[fluent]
+assets_dir = "i18n"
+# The files keep the app's name rather than this crate's.
+domain = "server-remote"

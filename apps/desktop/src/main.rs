@@ -13,152 +13,23 @@ use server_remote_icons as icons;
 use crate::i18n::fl;
 use crate::persistence::settings::{Appearance, GraphicsBackend, KnownCertificate, Settings};
 use crate::tooltip_box::tooltip_box;
+use server_remote_app::connect::{parse_target, saved_session_from_request};
+use server_remote_app::persistence::sessions::export_file_name;
+use server_remote_app::{persistence, update};
 
 mod app_icon;
 mod contributors;
 mod i18n;
-mod persistence;
 mod tooltip_box;
 mod ui;
-mod update;
-
-/// Split a `host[:port]` string, falling back to the protocol's default port.
-fn parse_target(hostname: &str, protocol: ui::connection::Protocol) -> Target {
-    let default_port = protocol.default_port();
-    if hostname.is_empty() {
-        return Target::new("localhost", default_port);
-    }
-    match hostname.rsplit_once(':') {
-        Some((host, port)) => match port.parse::<u16>() {
-            Ok(port) => Target::new(host, port),
-            Err(_) => Target::new(hostname, default_port),
-        },
-        None => Target::new(hostname, default_port),
-    }
-}
-
-/// Builds a [`persistence::sessions::SavedSession`] from a connect-tab
-/// request, falling back to the hostname and then the protocol label when the
-/// user left the name field blank.
-fn saved_session_from_request(
-    request: ui::connect::Request,
-) -> persistence::sessions::SavedSession {
-    let name = if !request.name.trim().is_empty() {
-        request.name.trim().to_owned()
-    } else if !request.hostname.is_empty() {
-        request.hostname.clone()
-    } else {
-        request.protocol.to_string()
-    };
-
-    persistence::sessions::SavedSession {
-        id: 0,
-        name,
-        group: request.group,
-        protocol: request.protocol,
-        hostname: request.hostname,
-        username: request.username,
-        password: request.password,
-    }
-}
-
-/// A file name to suggest when exporting the session called `name`, safe
-/// on every platform: characters some file systems refuse become dashes,
-/// trailing dots and spaces (which Windows drops) go, and Windows' reserved
-/// device names get a suffix.
-fn export_file_name(name: &str) -> String {
-    const RESERVED: [&str; 22] = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-    ];
-
-    let cleaned: String = name
-        .chars()
-        .map(|c| {
-            if r#"/\:*?"<>|"#.contains(c) || c.is_control() {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect();
-    let mut stem = cleaned.trim().trim_end_matches(['.', ' ']).to_owned();
-    if stem.is_empty() {
-        stem = "connection".to_owned();
-    }
-    // Windows reserves these even with an extension, as in `CON.toml` or
-    // `con.backup.toml`.
-    let base = stem.split('.').next().unwrap_or_default().trim_end();
-    if RESERVED
-        .iter()
-        .any(|reserved| base.eq_ignore_ascii_case(reserved))
-    {
-        stem.push_str("-connection");
-    }
-    format!("{stem}.toml")
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn export_file_names_are_safe_on_windows() {
-        assert_eq!(export_file_name("Aur"), "Aur.toml");
-        assert_eq!(export_file_name("a/b: c?"), "a-b- c-.toml");
-        assert_eq!(export_file_name("Server. "), "Server.toml");
-        assert_eq!(export_file_name("..."), "connection.toml");
-        assert_eq!(export_file_name("CON"), "CON-connection.toml");
-        assert_eq!(export_file_name("nul.old"), "nul.old-connection.toml");
-        assert_eq!(export_file_name("Console"), "Console.toml");
-    }
-
-    #[test]
-    fn a_blank_name_saves_as_the_hostname() {
-        let request = ui::connect::Request {
-            protocol: ui::connection::Protocol::Vnc,
-            name: "   ".to_owned(),
-            group: String::new(),
-            hostname: "nas.local".to_owned(),
-            username: String::new(),
-            password: String::new(),
-        };
-        assert_eq!(saved_session_from_request(request).name, "nas.local");
-    }
-
-    #[test]
-    fn empty_hostname_falls_back_to_localhost_and_default_port() {
-        let target = parse_target("", ui::connection::Protocol::Vnc);
-        assert_eq!(target, Target::new("localhost", 5900));
-    }
-
-    #[test]
-    fn host_without_port_uses_the_protocol_default() {
-        let target = parse_target("example.com", ui::connection::Protocol::Ilo);
-        assert_eq!(target, Target::new("example.com", 443));
-    }
-
-    #[test]
-    fn host_with_valid_port_overrides_the_default() {
-        let target = parse_target("example.com:2222", ui::connection::Protocol::Vnc);
-        assert_eq!(target, Target::new("example.com", 2222));
-    }
-
-    #[test]
-    fn host_with_unparsable_port_keeps_the_whole_string_as_host() {
-        let target = parse_target("example.com:not-a-port", ui::connection::Protocol::Vnc);
-        assert_eq!(target, Target::new("example.com:not-a-port", 5900));
-    }
-
-    #[test]
-    fn host_with_out_of_range_port_keeps_the_whole_string_as_host() {
-        let target = parse_target("example.com:99999", ui::connection::Protocol::Vnc);
-        assert_eq!(target, Target::new("example.com:99999", 5900));
-    }
-
-    fn request(hostname: &str) -> ui::connect::Request {
-        ui::connect::Request {
-            protocol: ui::connection::Protocol::Dummy,
+    fn request(hostname: &str) -> server_remote_app::connect::Request {
+        server_remote_app::connect::Request {
+            protocol: server_remote_app::Protocol::Dummy,
             name: String::new(),
             group: String::new(),
             hostname: hostname.to_owned(),
@@ -355,7 +226,7 @@ mod tests {
     /// (1–6) so states can refer to them, and two with thumbnails.
     fn add_saved_sessions(app: &mut Application) {
         use persistence::sessions::{SavedSession, thumbnail};
-        use ui::connection::Protocol;
+        use server_remote_app::Protocol;
 
         let sessions = [
             ("Aur", "Homelab", Protocol::Ilo, "10.10.5.120"),
@@ -484,7 +355,7 @@ mod tests {
                 "keyboard",
                 false,
                 vec![conn(Conn::SetKeyboardSize(
-                    ui::connection::KeyboardSize::Large,
+                    persistence::settings::KeyboardSize::Large,
                 ))],
             ),
             (
@@ -561,7 +432,7 @@ mod tests {
         // A few in the light theme too.
         let light = |messages: Vec<Message>| -> Vec<Message> {
             std::iter::once(Message::Settings(ui::settings::Message::Change(
-                ui::settings::Change::Appearance(Appearance::Light),
+                persistence::settings::Change::Appearance(Appearance::Light),
             )))
             .chain(messages)
             .collect()
@@ -585,7 +456,7 @@ mod tests {
             "keyboard-light",
             false,
             light(vec![conn(Conn::SetKeyboardSize(
-                ui::connection::KeyboardSize::Large,
+                persistence::settings::KeyboardSize::Large,
             ))]),
         ));
         states.push(("settings-about-light", false, light(about.clone())));
@@ -606,7 +477,7 @@ mod tests {
         // And in Romanian, whose longer words test the layouts.
         let romanian = |messages: Vec<Message>| -> Vec<Message> {
             std::iter::once(Message::Settings(ui::settings::Message::Change(
-                ui::settings::Change::Language(persistence::settings::Language::Romanian),
+                persistence::settings::Change::Language(persistence::settings::Language::Romanian),
             )))
             .chain(messages)
             .collect()
@@ -645,7 +516,7 @@ mod tests {
         let ilo_form = vec![
             Message::SelectTab(Tab::Connect),
             Message::ConnectTab(ui::connect::Message::Internal(
-                ui::connect::IMessage::Protocol(ui::connection::Protocol::Ilo),
+                ui::connect::IMessage::Protocol(server_remote_app::Protocol::Ilo),
             )),
         ];
         let trust = vec![conn(Conn::UntrustedCertificate(
@@ -659,7 +530,7 @@ mod tests {
                     }))
                     .collect()
             };
-        let vnc = || ui::connect::IMessage::Protocol(ui::connection::Protocol::Vnc);
+        let vnc = || ui::connect::IMessage::Protocol(server_remote_app::Protocol::Vnc);
         states.push(("connect-mockup", false, form(vec![vnc()])));
         states.push((
             "connect-protocols",
@@ -727,10 +598,10 @@ mod tests {
                 ui::settings::Section::Security,
             )),
             Message::Settings(ui::settings::Message::Change(
-                ui::settings::Change::TrustCertificate(known(0x5A)),
+                persistence::settings::Change::TrustCertificate(known(0x5A)),
             )),
             Message::Settings(ui::settings::Message::Change(
-                ui::settings::Change::BlockCertificate(known(0xC3)),
+                persistence::settings::Change::BlockCertificate(known(0xC3)),
             )),
         ];
         let security_menu = security
@@ -1053,7 +924,7 @@ fn apply_graphics_backend(backend: GraphicsBackend) {
 
 /// What a failed connection's copy button puts on the clipboard. Kept in
 /// English whatever the UI language, as it's meant for bug reports.
-fn failure_details(protocol: ui::connection::Protocol, target: &Target, error: &str) -> String {
+fn failure_details(protocol: server_remote_app::Protocol, target: &Target, error: &str) -> String {
     format!(
         "ServerRemote {}\nProtocol: {protocol}\nAddress: {}:{}\nError: {error}",
         env!("CARGO_PKG_VERSION"),
@@ -1458,7 +1329,7 @@ impl Application {
             }
             Message::RecordingFolderPicked(folder) => {
                 if let Some(folder) = folder {
-                    self.change_setting(ui::settings::Change::RecordingFolder(folder));
+                    self.change_setting(persistence::settings::Change::RecordingFolder(folder));
                 }
                 Task::none()
             }
@@ -1482,11 +1353,11 @@ impl Application {
         }
     }
 
-    fn change_setting(&mut self, change: ui::settings::Change) {
-        if let ui::settings::Change::Language(language) = change {
+    fn change_setting(&mut self, change: persistence::settings::Change) {
+        if let persistence::settings::Change::Language(language) = change {
             i18n::select(language);
         }
-        ui::settings::apply(&mut self.settings, change);
+        persistence::settings::apply(&mut self.settings, change);
         self.settings.save(self.config_dir.as_deref());
     }
 
@@ -1498,8 +1369,8 @@ impl Application {
         id: u64,
         message: ui::connection::Message,
     ) -> ui::connection::Message {
+        use persistence::settings::Change;
         use ui::connection::Message as Conn;
-        use ui::settings::Change;
         let Some(target) = self
             .connections
             .iter()
@@ -1546,7 +1417,7 @@ impl Application {
 
     /// Persists the connect tab's current fields as a saved session and
     /// switches to the Manager tab so the result is immediately visible.
-    fn save_session(&mut self, request: ui::connect::Request) {
+    fn save_session(&mut self, request: server_remote_app::connect::Request) {
         self.sessions.add(saved_session_from_request(request));
         self.sessions.save(self.config_dir.as_deref());
         self.tab = Tab::Manager;
@@ -1645,7 +1516,7 @@ impl Application {
         let Some(session) = self.sessions.get(session_id) else {
             return Task::none();
         };
-        let request = ui::connect::Request::from(session);
+        let request = server_remote_app::connect::Request::from(session);
         let task = self.open(request, true);
         self.saved_origins.insert(self.next_id - 1, session_id);
         task
@@ -1698,13 +1569,13 @@ impl Application {
         })
     }
 
-    fn open_connection(&mut self, request: ui::connect::Request) -> Task<Message> {
+    fn open_connection(&mut self, request: server_remote_app::connect::Request) -> Task<Message> {
         self.open(request, false)
     }
 
     /// Opens a connection tab. The tab is named after the request when
     /// `named` (a saved session), otherwise after its hostname.
-    fn open(&mut self, request: ui::connect::Request, named: bool) -> Task<Message> {
+    fn open(&mut self, request: server_remote_app::connect::Request, named: bool) -> Task<Message> {
         let id = self.next_id;
         self.next_id += 1;
 
