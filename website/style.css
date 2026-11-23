@@ -41,8 +41,9 @@
   --strongest: #686868;
   --text: #ffffff;
   --muted: #a6a6a6;
-  --primary: #4c8dff;
-  --on-primary: #ffffff;
+  /* The accent comes from the logo: server_remote_app::brand. */
+  --primary: #726dff;
+  --on-primary: #121212;
   --ok: #00c950;
   --warning: #ffd230;
   --inactive: #62748e;
@@ -60,7 +61,8 @@
     --strongest: #767676;
     --text: #1a1a1a;
     --muted: #5e5e5e;
-    --primary: #2f6feb;
+    --primary: #443dff;
+    --on-primary: #ffffff;
     --ok: #00a843;
     --warning: #f0b400;
     color-scheme: light;

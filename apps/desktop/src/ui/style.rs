@@ -10,6 +10,7 @@ use iced::font::{Family, Stretch, Weight};
 use iced::theme::{Palette, palette};
 use iced::widget::{button, container, rule, text_input};
 use iced::{Background, Border, Color, Element, Font, Settings, Shadow, Theme, Vector};
+use server_remote_app::brand;
 
 /// Height of every title bar and toolbar control, so they line up.
 pub const CONTROL_HEIGHT: f32 = 28.0;
@@ -74,7 +75,7 @@ pub fn settings() -> Settings {
 const DARK_PALETTE: Palette = Palette {
     background: Color::from_rgb8(0x12, 0x12, 0x12),
     text: Color::WHITE,
-    primary: Color::from_rgb8(0x4c, 0x8d, 0xff),
+    primary: rgb(brand::ACCENT_DARK),
     success: Color::from_rgb8(0x00, 0xc9, 0x50),
     warning: Color::from_rgb8(0xff, 0xd2, 0x30),
     danger: Color::from_rgb8(0xc4, 0x2b, 0x1c),
@@ -83,7 +84,7 @@ const DARK_PALETTE: Palette = Palette {
 const LIGHT_PALETTE: Palette = Palette {
     background: Color::from_rgb8(0xf0, 0xf0, 0xf0),
     text: Color::from_rgb8(0x1a, 0x1a, 0x1a),
-    primary: Color::from_rgb8(0x2f, 0x6f, 0xeb),
+    primary: rgb(brand::ACCENT_LIGHT),
     success: Color::from_rgb8(0x00, 0xa8, 0x43),
     warning: Color::from_rgb8(0xf0, 0xb4, 0x00),
     danger: Color::from_rgb8(0xc4, 0x2b, 0x1c),
@@ -123,9 +124,25 @@ struct Greys {
 /// - `strong`: borders, dividers, active tab fill
 /// - `stronger`: menu border and separators
 /// - `strongest`: active tab border, disabled and secondary text
-fn extended_palette(palette: Palette, greys: Greys) -> palette::Extended {
+const fn rgb(colour: brand::Rgb) -> Color {
+    Color::from_rgb8(colour.red, colour.green, colour.blue)
+}
+
+fn extended_palette(palette: Palette, greys: Greys, on_primary: brand::Rgb) -> palette::Extended {
     let pair = |grey| palette::Pair::new(Color::from_rgb8(grey, grey, grey), palette.text);
+    let generated = palette::Extended::generate(palette);
+    // The accent is the logo's blue, which carries white text in the light
+    // theme but dark text in the dark one (see `brand`); iced would guess.
+    let on_primary = |pair: palette::Pair| palette::Pair {
+        text: rgb(on_primary),
+        ..pair
+    };
     palette::Extended {
+        primary: palette::Primary {
+            base: on_primary(generated.primary.base),
+            weak: on_primary(generated.primary.weak),
+            strong: on_primary(generated.primary.strong),
+        },
         background: palette::Background {
             base: pair(greys.base),
             weakest: pair(greys.weakest),
@@ -136,7 +153,7 @@ fn extended_palette(palette: Palette, greys: Greys) -> palette::Extended {
             stronger: pair(greys.stronger),
             strongest: pair(greys.strongest),
         },
-        ..palette::Extended::generate(palette)
+        ..generated
     }
 }
 
@@ -153,6 +170,7 @@ fn dark_extended(palette: Palette) -> palette::Extended {
             stronger: 0x4d,
             strongest: 0x68,
         },
+        brand::ON_ACCENT_DARK,
     )
 }
 
@@ -171,6 +189,7 @@ fn light_extended(palette: Palette) -> palette::Extended {
             stronger: 0xc4,
             strongest: 0x76,
         },
+        brand::ON_ACCENT_LIGHT,
     )
 }
 

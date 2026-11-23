@@ -3,6 +3,7 @@
 
 pub mod about;
 pub mod app;
+pub mod brand;
 pub mod connect;
 pub mod connection;
 mod contributors;
