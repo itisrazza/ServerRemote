@@ -1160,7 +1160,7 @@ impl Application {
             update: update::Status::NotChecked,
             modal: None,
         };
-        let update_check = if check_on_launch {
+        let update_check = if update::ENABLED && check_on_launch {
             app.check_for_updates()
         } else {
             Task::none()

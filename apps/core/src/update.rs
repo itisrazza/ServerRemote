@@ -2,6 +2,9 @@
 //!
 //! Only reads the latest release's version and page; getting the update is
 //! left to the browser.
+//!
+//! Builds distributed through a store leave out the `update-check` feature:
+//! the store updates the app, and front ends hide the check ([`ENABLED`]).
 
 use std::fmt;
 
@@ -11,6 +14,8 @@ use serde::Deserialize;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const PROJECT_URL: &str = env!("CARGO_PKG_REPOSITORY");
+/// Whether this build checks for updates at all.
+pub const ENABLED: bool = cfg!(feature = "update-check");
 
 #[cfg(feature = "update-check")]
 const LATEST_RELEASE_URL: &str =
@@ -44,6 +49,8 @@ pub enum Error {
     Status { code: u16, body: String },
     /// The answer didn't contain a usable release.
     Parse(String),
+    /// This build was made without the update check.
+    Disabled,
 }
 
 impl fmt::Display for Error {
@@ -52,6 +59,7 @@ impl fmt::Display for Error {
             Error::Request(message) => write!(f, "request failed: {message}"),
             Error::Status { code, body } => write!(f, "GitHub answered {code}: {body}"),
             Error::Parse(message) => write!(f, "unexpected answer: {message}"),
+            Error::Disabled => f.write_str("this build doesn't check for updates"),
         }
     }
 }
@@ -64,12 +72,20 @@ struct Release {
     html_url: String,
 }
 
-#[cfg(feature = "update-check")]
 /// Asks GitHub for the latest release and compares it with this build.
 pub async fn check() -> Result<Outcome, Error> {
-    tokio::task::spawn_blocking(fetch_latest)
-        .await
-        .map_err(|error| Error::Request(error.to_string()))?
+    if cfg!(feature = "update-check") {
+        tokio::task::spawn_blocking(fetch_latest)
+            .await
+            .map_err(|error| Error::Request(error.to_string()))?
+    } else {
+        Err(Error::Disabled)
+    }
+}
+
+#[cfg(not(feature = "update-check"))]
+fn fetch_latest() -> Result<Outcome, Error> {
+    Err(Error::Disabled)
 }
 
 #[cfg(feature = "update-check")]

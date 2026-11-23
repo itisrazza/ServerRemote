@@ -533,8 +533,8 @@ fn about<'a>(
         .spacing(16)
         .push(container(about_header()).padding(iced::padding::bottom(4)))
         .push(made_by())
-        .push(check_on_launch.view(side_by_side))
-        .push(update_setting(update).view(side_by_side))
+        .push(update::ENABLED.then(|| check_on_launch.view(side_by_side)))
+        .push(update::ENABLED.then(|| update_setting(update).view(side_by_side)))
         .push(licence())
         .into()
 }
