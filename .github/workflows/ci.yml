@@ -26,6 +26,23 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      # Builds for a store (Microsoft Store, Flathub, the App Store) leave out
+      # the update check; make sure that still builds cleanly.
+      - name: Clippy without the update check
+        run: cargo clippy -p server-remote-app -p server-remote --no-default-features --all-targets -- -D warnings
+
+  ipados:
+    name: iPadOS app
+    # Apple silicon, with Xcode 26 and the iOS 26 SDK the app needs.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: scripts/check-ipados.sh
 
   coverage:
     name: coverage

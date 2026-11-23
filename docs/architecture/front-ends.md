@@ -100,7 +100,10 @@ with its C headers in `target/ipados/include/`, and generates the Swift
 bindings into `apps/ipados/Generated/`. The project finds the library
 through search paths rather than an XCFramework, so a clean checkout builds
 in one go. It needs the `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust
-targets.
+targets. `scripts/check-ipados.sh` builds it for the simulator and for
+devices, unsigned and with Swift warnings as errors, as CI's iPadOS job
+does on a `macos-26` runner.
+
 Android will use the same `apps/ffi` crate through UniFFI's Kotlin bindings.
 
 ## Store builds
@@ -110,3 +113,79 @@ The update check sits behind the `update-check` feature of
 distributed through a store (Microsoft Store, Flathub, the App Store) are
 built without it: the store updates the app, so nothing is fetched and the
 About section hides the check. The FFI crate never enables it.
+
+## Rules
+
+What keeps the front ends sharing one app rather than drifting into two.
+
+### Where code goes
+
+- **Behaviour belongs in `apps/core`.** Deciding what happens (saving,
+  connecting, validating, choosing a page, reporting a failure) is an
+  `app::Event` handled by `App::update`, with its tests beside it. A front
+  end turns gestures into events and draws the state; if two front ends
+  would need the same `if`, it belongs in the core.
+- **`apps/ffi` only translates.** It converts records and enums, looks
+  things up by id (actions, icons, certificates by position) and runs the
+  core's effects. Nothing there decides anything the desktop app doesn't
+  also get.
+- **Front ends keep only view state:** what's open, half-typed or scrolled,
+  and platform plumbing (file pickers, key capture, the clipboard).
+- **No UI toolkit below the front ends.** `lib/core`, the connectors and
+  `apps/core` depend on neither iced nor anything Apple's; platform-specific
+  mappings (SF Symbols for icons, UIKit key codes) live in the front end that
+  needs them.
+
+### The FFI surface
+
+- **Records by value, refreshed whole.** The front end reads `AppState`
+  after every `Shell::changed`; keep records to what's shown. Large data
+  (screens, thumbnails, icons) is fetched on its own call, only when needed.
+- **Names mustn't clash in Swift or Kotlin.** UniFFI keeps Rust's names, and
+  the generated Swift sits in the app's own module, so a record called
+  `Menu`, `Link`, `Color` or `Protocol` hides SwiftUI's or Objective-C's.
+  Prefix it (`ActionMenu`, `WebLink`, `ConnectionProtocol`).
+- **Errors are returned, not swallowed.** An exported call that can fail
+  returns a `Result` with a specific error; the front end logs or shows it,
+  never `try?`s it away.
+- **A changed FFI surface is checked by building the app**
+  (`scripts/check-ipados.sh`, or CI); the bindings are regenerated on every
+  build.
+
+### Look
+
+- **Each front end follows its platform.** The desktop app has its own
+  design; the iPadOS app uses iPadOS 26's (Liquid Glass): system controls,
+  forms, menus, alerts and SF Symbols. They share content, not chrome.
+- **Shared content:** every string (`apps/core/i18n`, in every language),
+  the logo, the accent colour from `server_remote_app::brand`, and the
+  protocols' and connectors' icons. No literal colours besides the status
+  ones (connected, warning, error).
+- **Built-in icons map to SF Symbols on iPad**, so connector icons sit
+  evenly with the app's own (`ConnectorIcon` in `Icons.swift`). A new icon
+  in `lib/icons` needs a symbol there; a test in `apps/ffi` fails until it
+  has one, or is listed as one to draw from its image.
+
+### Settings
+
+- **A setting is added once, in the core,** as a field with a default (old
+  files must still load), a `Change` and its `apply` arm. Each front end
+  then shows it if it means something there: the desktop's settings page,
+  and on iPad `SettingsState` and `SettingChange` in `apps/ffi` and a row on
+  the right page.
+- **On iPad, each section is a page** in `apps/ipados/ServerRemote/Settings/`;
+  a new section is a `SettingsSection` case and a view beside it. Settings
+  for features the iPad doesn't have yet (recording, the virtual keyboard,
+  the update check) stay off it.
+
+### Platform limits
+
+- **iPadOS 26 or later**, for its design, so Xcode 26 or later to build it;
+  CI uses the `macos-26` runner's default Xcode.
+- **Sessions don't survive the background yet.** iOS suspends the app
+  within seconds; the session runners are kept separable from `App` so a
+  keep-alive (or reconnecting on return) can be added without reshaping it.
+- **No screen capture to check UI work**, on either platform. The desktop
+  renders review snapshots headlessly; the iPad app is checked by building
+  it, and by a person running it.
+

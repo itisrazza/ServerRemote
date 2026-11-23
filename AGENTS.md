@@ -31,14 +31,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI doesn't build the iPadOS app or the store build. On macOS, after
-changing the app core's public API, `apps/ffi` or `apps/ipados`, also run:
+CI also builds the store build (without the update check):
 
 ```sh
 cargo clippy -p server-remote-app -p server-remote --no-default-features --all-targets -- -D warnings
-xcodebuild -project apps/ipados/ServerRemote.xcodeproj -scheme ServerRemote \
-    -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/ipados/build \
-    CODE_SIGNING_ALLOWED=NO build
+```
+
+and, on a macOS runner, the iPadOS app. On macOS, after changing the app
+core's public API, `apps/ffi` or `apps/ipados`, run that too:
+
+```sh
+scripts/check-ipados.sh
 ```
 
 **Docs are part of done.** When feature work lands or a feature's status
@@ -99,6 +102,7 @@ other agents should read the matching file before starting:
 | any change to what the app shows | [ui-change-checklist](.claude/skills/ui-change-checklist/SKILL.md) |
 | matching a mockup, or checking layout, size or sharpness | [ui-mockup-match](.claude/skills/ui-mockup-match/SKILL.md) (includes `measure.py`) |
 | custom widgets, wrappers, overlays, images, or iced misbehaving | [iced-widget-gotchas](.claude/skills/iced-widget-gotchas/SKILL.md) |
+| any change to the iPadOS app or `apps/ffi` | [ipados-change-checklist](.claude/skills/ipados-change-checklist/SKILL.md) |
 
 The rules that bite most often:
 

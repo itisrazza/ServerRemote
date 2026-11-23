@@ -152,3 +152,34 @@ pub fn accent() -> Accent {
         on_dark: brand::ON_ACCENT_DARK.into(),
     }
 }
+
+#[cfg(test)]
+mod symbol_tests {
+    /// Built-in icons the iPad app deliberately draws from the image: logos
+    /// with no SF Symbol counterpart.
+    const DRAWN: &[&str] = &[
+        "carbon_logo--github",
+        "key_windows",
+        "protocol_ilo",
+        "protocol_msrdp",
+        "protocol_spice",
+        "protocol_vnc",
+    ];
+
+    /// Connectors use built-in icons in the iPad app's toolbar, where only
+    /// SF Symbols sit evenly, so each needs a symbol in `ConnectorIcon`.
+    #[test]
+    fn every_builtin_icon_has_an_ipad_symbol() {
+        let swift = include_str!("../../ipados/ServerRemote/Icons.swift");
+        let missing: Vec<_> = server_remote_icons::ALL
+            .iter()
+            .map(|icon| icon.name())
+            .filter(|name| !DRAWN.contains(name))
+            .filter(|name| !swift.contains(&format!("\"{name}\":")))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "add these to ConnectorIcon.symbols in apps/ipados/ServerRemote/Icons.swift: {missing:?}"
+        );
+    }
+}

@@ -30,8 +30,8 @@ macro_rules! icons {
             name: $file,
         };)*
 
-        #[cfg(test)]
-        const ALL: &[Icon] = &[$($name),*];
+        /// Every icon in the set.
+        pub const ALL: &[Icon] = &[$($name),*];
     };
 }
 
