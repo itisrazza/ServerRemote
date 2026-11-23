@@ -274,6 +274,7 @@ pub fn modal<'a>(state: &'a State, sessions: &'a Sessions) -> Option<Element<'a,
         on_press: Message::Internal(IMessage::CloseModal),
         kind: dialog::Kind::Secondary,
         icon: None,
+        enabled: true,
     };
     match state.modal.as_ref()? {
         Modal::Editor { editing, form } => {
@@ -289,6 +290,7 @@ pub fn modal<'a>(state: &'a State, sessions: &'a Sessions) -> Option<Element<'a,
                 },
                 kind: dialog::Kind::Primary,
                 icon: None,
+                enabled: true,
             };
             let submit = save.on_press.clone();
             Some(dialog::view_content(
@@ -310,6 +312,7 @@ pub fn modal<'a>(state: &'a State, sessions: &'a Sessions) -> Option<Element<'a,
                 on_press: Message::Delete(*id),
                 kind: dialog::Kind::Destructive,
                 icon: None,
+                enabled: true,
             };
             Some(dialog::view(
                 fl!("manager-delete-title", name = session.name.as_str()),
@@ -326,10 +329,11 @@ pub fn modal<'a>(state: &'a State, sessions: &'a Sessions) -> Option<Element<'a,
                 },
                 kind: dialog::Kind::Primary,
                 icon: None,
+                enabled: !name.trim().is_empty(),
             };
             let field = connect::field(&fl!("manager-group-name"), name)
                 .on_input(|name| Message::Internal(IMessage::GroupName(name)))
-                .on_submit(create.on_press.clone());
+                .on_submit_maybe(create.enabled.then(|| create.on_press.clone()));
             Some(dialog::view_content(
                 fl!("manager-new-group-title"),
                 field,

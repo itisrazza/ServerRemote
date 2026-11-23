@@ -187,9 +187,9 @@ impl State {
         };
         let port = self.protocol.default_port();
         let host_hint = if port == 0 {
-            "example.com".to_owned()
+            fl!("connect-hostname-placeholder")
         } else {
-            format!("example.com:{port}")
+            fl!("connect-hostname-placeholder-port", port = port.to_string())
         };
 
         Column::new()
@@ -208,7 +208,8 @@ impl State {
             .push((self.protocol == Protocol::Ilo).then(|| {
                 row(
                     fl!("connect-username"),
-                    field("Administrator", &self.username).on_input(IMessage::Username),
+                    field(&fl!("connect-username-placeholder"), &self.username)
+                        .on_input(IMessage::Username),
                 )
             }))
             .push(row(
@@ -301,12 +302,14 @@ impl State {
                     on_press: Message::Internal(IMessage::CloseNaming),
                     kind: dialog::Kind::Secondary,
                     icon: None,
+                    enabled: true,
                 },
                 dialog::Button {
                     label: fl!("connect-save"),
                     on_press: save,
                     kind: dialog::Kind::Primary,
                     icon: None,
+                    enabled: true,
                 },
             ],
             dialog::WIDTH,

@@ -43,8 +43,8 @@ fn parse_target(hostname: &str, protocol: ui::connection::Protocol) -> Target {
 fn saved_session_from_request(
     request: ui::connect::Request,
 ) -> persistence::sessions::SavedSession {
-    let name = if !request.name.is_empty() {
-        request.name
+    let name = if !request.name.trim().is_empty() {
+        request.name.trim().to_owned()
     } else if !request.hostname.is_empty() {
         request.hostname.clone()
     } else {
@@ -62,9 +62,69 @@ fn saved_session_from_request(
     }
 }
 
+/// A file name to suggest when exporting the session called `name`, safe
+/// on every platform: characters some file systems refuse become dashes,
+/// trailing dots and spaces (which Windows drops) go, and Windows' reserved
+/// device names get a suffix.
+fn export_file_name(name: &str) -> String {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if r#"/\:*?"<>|"#.contains(c) || c.is_control() {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let mut stem = cleaned.trim().trim_end_matches(['.', ' ']).to_owned();
+    if stem.is_empty() {
+        stem = "connection".to_owned();
+    }
+    // Windows reserves these even with an extension, as in `CON.toml` or
+    // `con.backup.toml`.
+    let base = stem.split('.').next().unwrap_or_default().trim_end();
+    if RESERVED
+        .iter()
+        .any(|reserved| base.eq_ignore_ascii_case(reserved))
+    {
+        stem.push_str("-connection");
+    }
+    format!("{stem}.toml")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_file_names_are_safe_on_windows() {
+        assert_eq!(export_file_name("Aur"), "Aur.toml");
+        assert_eq!(export_file_name("a/b: c?"), "a-b- c-.toml");
+        assert_eq!(export_file_name("Server. "), "Server.toml");
+        assert_eq!(export_file_name("..."), "connection.toml");
+        assert_eq!(export_file_name("CON"), "CON-connection.toml");
+        assert_eq!(export_file_name("nul.old"), "nul.old-connection.toml");
+        assert_eq!(export_file_name("Console"), "Console.toml");
+    }
+
+    #[test]
+    fn a_blank_name_saves_as_the_hostname() {
+        let request = ui::connect::Request {
+            protocol: ui::connection::Protocol::Vnc,
+            name: "   ".to_owned(),
+            group: String::new(),
+            hostname: "nas.local".to_owned(),
+            username: String::new(),
+            password: String::new(),
+        };
+        assert_eq!(saved_session_from_request(request).name, "nas.local");
+    }
 
     #[test]
     fn empty_hostname_falls_back_to_localhost_and_default_port() {
@@ -291,8 +351,6 @@ mod tests {
         let _ = app.update(session(SessionEvent::Status(status(11_250, 7_125))));
     }
 
-    /// The remote desktop from the containerdesk mock's README capture, cut
-    /// out of the window around it and scaled to the session's 1024×768.
     /// Saved sessions like the connection manager mockup's, with fixed ids
     /// (1–6) so states can refer to them, and two with thumbnails.
     fn add_saved_sessions(app: &mut Application) {
@@ -340,6 +398,8 @@ mod tests {
         }
     }
 
+    /// The remote desktop from the containerdesk mock's README capture, cut
+    /// out of the window around it and scaled to the session's 1024×768.
     fn containerdesk_frame() -> server_remote_core::Frame {
         use image::imageops;
 
@@ -1008,6 +1068,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
         on_press: Message::Settings(ui::settings::Message::OpenUrl(url.to_owned())),
         kind: ui::dialog::Kind::Secondary,
         icon: None,
+        enabled: true,
     };
     ui::dialog::view(
         fl!("licences-title"),
@@ -1023,6 +1084,7 @@ fn third_party_licences<'a>() -> Element<'a, Message> {
                 on_press: Message::CloseModal,
                 kind: ui::dialog::Kind::Primary,
                 icon: None,
+                enabled: true,
             },
         ],
     )
@@ -1275,7 +1337,12 @@ impl Application {
             },
             Message::Manager(message) => self.update_manager(message),
             Message::ThumbnailSaved(id, png) => {
-                if png.is_some() {
+                if self.sessions.get(id).is_none() {
+                    // Deleted while the thumbnail was being written.
+                    if let Some(dir) = &self.config_dir {
+                        persistence::sessions::thumbnail::remove(dir, id);
+                    }
+                } else if png.is_some() {
                     self.manager.set_thumbnail(id, png);
                 }
                 Task::none()
@@ -1501,6 +1568,16 @@ impl Application {
                 let session = saved_session_from_request(request);
                 match editing {
                     Some(id) => {
+                        // A different machine's last screen would mislead.
+                        let moved = self.sessions.get(id).is_some_and(|old| {
+                            old.protocol != session.protocol || old.hostname != session.hostname
+                        });
+                        if moved {
+                            if let Some(dir) = &self.config_dir {
+                                thumbnail::remove(dir, id);
+                            }
+                            self.manager.set_thumbnail(id, None);
+                        }
                         self.sessions.replace(id, session);
                     }
                     None => {
@@ -1548,16 +1625,10 @@ impl Application {
                 return Task::none();
             }
         };
-        // Characters some file systems refuse become dashes.
-        let file_name: String = session
-            .name
-            .chars()
-            .map(|c| if r#"/\:*?"<>|"#.contains(c) { '-' } else { c })
-            .collect();
         let dialog = rfd::AsyncFileDialog::new()
             .set_title(fl!("manager-export-dialog-title"))
             .add_filter(fl!("manager-file-type"), &["toml"])
-            .set_file_name(format!("{file_name}.toml"));
+            .set_file_name(export_file_name(&session.name));
         Task::perform(
             async move {
                 let Some(file) = dialog.save_file().await else {
@@ -1758,6 +1829,7 @@ impl Application {
                         on_press: Message::CloseModal,
                         kind: ui::dialog::Kind::Primary,
                         icon: None,
+                        enabled: true,
                     }],
                 );
             }
@@ -1772,12 +1844,14 @@ impl Application {
                             on_press: Message::CopyToClipboard(details.clone()),
                             kind: ui::dialog::Kind::Secondary,
                             icon: Some(icons::COPY_TO_CLIPBOARD),
+                            enabled: true,
                         },
                         ui::dialog::Button {
                             label: fl!("button-close"),
                             on_press: Message::CloseModal,
                             kind: ui::dialog::Kind::Secondary,
                             icon: None,
+                            enabled: true,
                         },
                     ],
                 );
@@ -1792,12 +1866,14 @@ impl Application {
                     on_press: Message::CloseModal,
                     kind: ui::dialog::Kind::Secondary,
                     icon: None,
+                    enabled: true,
                 },
                 ui::dialog::Button {
                     label: fl!("quit-confirm"),
                     on_press: Message::Quit(id),
                     kind: ui::dialog::Kind::Destructive,
                     icon: None,
+                    enabled: true,
                 },
             ],
         )

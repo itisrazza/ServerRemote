@@ -1207,12 +1207,14 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                         on_press: Message::CloseModal,
                         kind: dialog::Kind::Secondary,
                         icon: None,
+                        enabled: true,
                     },
                     dialog::Button {
                         label: confirmation.confirm_label.to_string(),
                         on_press: Message::Confirm,
                         kind,
                         icon: None,
+                        enabled: true,
                     },
                 ],
             )
@@ -1234,6 +1236,7 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                     on_press: Message::BlockCertificate(*fingerprint),
                     kind: dialog::Kind::Secondary,
                     icon: None,
+                    enabled: true,
                 }],
                 vec![
                     dialog::Button {
@@ -1241,18 +1244,21 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                         on_press: Message::Close,
                         kind: dialog::Kind::Secondary,
                         icon: None,
+                        enabled: true,
                     },
                     dialog::Button {
                         label: fl!("certificate-connect-once"),
                         on_press: trust(false),
                         kind: dialog::Kind::Secondary,
                         icon: None,
+                        enabled: true,
                     },
                     dialog::Button {
                         label: fl!("certificate-always-trust"),
                         on_press: trust(true),
                         kind: dialog::Kind::Primary,
                         icon: None,
+                        enabled: true,
                     },
                 ],
                 dialog::WIDE,
@@ -1266,6 +1272,7 @@ fn modal_view<'a>(modal: &'a Modal, target: &'a Target) -> Element<'a, Message> 
                 on_press: Message::CloseModal,
                 kind: dialog::Kind::Primary,
                 icon: None,
+                enabled: true,
             }],
         ),
     }

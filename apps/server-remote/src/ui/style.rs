@@ -461,13 +461,17 @@ pub fn dialog_button(theme: &Theme, status: button::Status, destructive: bool) -
     } else {
         (palette.primary.base, palette.primary.strong)
     };
-    let background = match status {
-        button::Status::Hovered | button::Status::Pressed => strong.color,
-        button::Status::Active | button::Status::Disabled => base.color,
+    let (background, text_color) = match status {
+        button::Status::Hovered | button::Status::Pressed => (strong.color, base.text),
+        button::Status::Active => (base.color, base.text),
+        button::Status::Disabled => (
+            palette.background.strong.color,
+            palette.background.strongest.color,
+        ),
     };
     button::Style {
         background: Some(Background::Color(background)),
-        text_color: base.text,
+        text_color,
         border: iced::border::rounded(RADIUS),
         ..button::Style::default()
     }

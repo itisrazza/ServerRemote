@@ -36,7 +36,10 @@ file-dialog-supported = Fișiere acceptate
 
 connect-name = Nume
 connect-hostname = Gazdă
+connect-hostname-placeholder = example.com
+connect-hostname-placeholder-port = example.com:{ $port }
 connect-username = Utilizator
+connect-username-placeholder = Administrator
 connect-password = Parolă
 connect-save = Salvează
 connect-save-tooltip = Salvează în managerul de conexiuni

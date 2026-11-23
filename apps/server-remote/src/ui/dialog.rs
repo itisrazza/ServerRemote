@@ -24,6 +24,8 @@ pub struct Button<Message> {
     pub kind: Kind,
     /// Shown instead of the label, which becomes the button's tooltip.
     pub icon: Option<Icon>,
+    /// A disabled button is greyed out and ignores presses.
+    pub enabled: bool,
 }
 
 pub const WIDTH: f32 = 320.0;
@@ -97,7 +99,7 @@ fn button_view<'a, Message: Clone + 'a>(spec: Button<Message>) -> Element<'a, Me
                 Kind::Primary => style::dialog_button(theme, status, false),
                 Kind::Destructive => style::dialog_button(theme, status, true),
             })
-            .on_press(spec.on_press.clone())
+            .on_press_maybe(spec.enabled.then(|| spec.on_press.clone()))
     };
     let Some(icon) = spec.icon else {
         return styled(text(spec.label).into(), 12).into();

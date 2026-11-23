@@ -36,7 +36,10 @@ file-dialog-supported = Supported files
 
 connect-name = Name
 connect-hostname = Host
+connect-hostname-placeholder = example.com
+connect-hostname-placeholder-port = example.com:{ $port }
 connect-username = Username
+connect-username-placeholder = Administrator
 connect-password = Password
 connect-save = Save
 connect-save-tooltip = Save to the connection manager

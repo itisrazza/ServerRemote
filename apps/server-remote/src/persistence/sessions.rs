@@ -53,16 +53,35 @@ impl Sessions {
         dir.join("sessions.toml")
     }
 
+    /// Copies the sessions file to the first free `sessions.toml.bak`,
+    /// `sessions.toml.bak.1`, … so an earlier backup is never replaced.
+    fn back_up(dir: &Path) {
+        let source = Self::path(dir);
+        let backup = (0..)
+            .map(|n| match n {
+                0 => dir.join("sessions.toml.bak"),
+                n => dir.join(format!("sessions.toml.bak.{n}")),
+            })
+            .find(|path| !path.exists())
+            .expect("an unbounded range always finds a free name");
+        match fs::copy(&source, &backup) {
+            Ok(_) => eprintln!("kept the unreadable sessions as {}", backup.display()),
+            Err(error) => eprintln!("failed to back up saved sessions: {error}"),
+        }
+    }
+
     /// Loads saved sessions from `dir`, falling back to an empty list without
     /// one or if the file is unreadable or fails to parse. Sessions saved
     /// before they had ids get one, written back straight away so their
-    /// thumbnails stay attached.
+    /// thumbnails stay attached. A file that fails to load is copied aside
+    /// first, since the next save overwrites it.
     pub fn load(dir: Option<&Path>) -> Self {
         let Some(dir) = dir else {
             return Self::default();
         };
         let mut sessions: Self = store::load(&Self::path(dir)).unwrap_or_else(|error| {
             eprintln!("failed to load saved sessions: {error}");
+            Self::back_up(dir);
             Self::default()
         });
         if sessions.assign_ids() {
@@ -306,6 +325,30 @@ mod tests {
 
         let reloaded = Sessions::load(Some(dir.path()));
         assert_eq!(reloaded, loaded);
+    }
+
+    #[test]
+    fn an_unreadable_file_is_kept_aside_before_it_can_be_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let broken = "[[saved]\nname = \"a\"\n";
+        fs::write(dir.path().join("sessions.toml"), broken).unwrap();
+        fs::write(dir.path().join("sessions.toml.bak"), "older").unwrap();
+
+        let mut loaded = Sessions::load(Some(dir.path()));
+        assert!(loaded.saved.is_empty());
+        loaded.add(session("new"));
+        loaded.save(Some(dir.path()));
+
+        let read = |name| fs::read_to_string(dir.path().join(name)).unwrap();
+        assert_eq!(read("sessions.toml.bak"), "older");
+        assert_eq!(read("sessions.toml.bak.1"), broken);
+    }
+
+    #[test]
+    fn a_missing_file_is_not_backed_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let _ = Sessions::load(Some(dir.path()));
+        assert!(!dir.path().join("sessions.toml.bak").exists());
     }
 
     #[test]
