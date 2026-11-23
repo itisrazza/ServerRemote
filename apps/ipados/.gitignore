@@ -1,0 +1,5 @@
+# Made by scripts/build-ipados-core.sh.
+/Generated/
+xcuserdata/
+*.xcuserstate
+/build/

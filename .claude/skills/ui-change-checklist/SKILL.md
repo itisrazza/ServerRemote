@@ -15,7 +15,8 @@ UI bugs here come from building for one of each. Work through this list.
   style function in `style.rs`. A literal colour will be wrong in either the
   dark or the light theme.
 - **Text:** every user-facing string is `fl!("id")`. Add the message to
-  `i18n/en/server-remote.ftl` *and* `i18n/ro/server-remote.ftl`. Use Fluent
+  `apps/core/i18n/en/server-remote.ftl` *and*
+  `apps/core/i18n/ro/server-remote.ftl` (shared with the iPadOS app). Use Fluent
   variables (`{ $count }`) and plural selectors, never `format!` around
   translated fragments. Romanian has three plural categories: `one` (1),
   `few` (0, 2–19, decimals) and `other` (20 and up). `*[other]` covers
@@ -34,19 +35,25 @@ UI bugs here come from building for one of each. Work through this list.
   `fill="white"`) and are listed in `lib/icons/src/lib.rs`. Copy the path
   data exactly from the Carbon source; don't retype it. Always tint
   (`ui::themed_icon`), since an `Svg` renders black otherwise.
-- **Settings:** a new setting is a field in `persistence/settings.rs` (with a
-  default; files from older versions must still load), a `Change` variant and
-  `apply` arm in `ui/settings.rs`, and a `setting(...)` row. Add a case to
+- **Settings:** a new setting is a field in
+  `apps/core/src/persistence/settings.rs` (with a default; files from older
+  versions must still load), a `Change` variant and `apply` arm beside it,
+  and a `setting(...)` row in `ui/settings.rs`. Add a case to
   `changes_apply_to_their_setting`. Something that must take effect
-  immediately (theme, language) is handled where the app applies changes
-  (`Application::change_setting`) or read in `Application::theme`.
-- **Dialogs** go through `ui::dialog::view`; app-level ones are an
-  `AppModal` variant in `main.rs`, connection-level ones a `Modal` in
-  `ui/connection.rs`.
+  immediately is applied in `App::change_setting` (language) or read in
+  `Application::theme` (theme).
+- **Dialogs** go through `ui::dialog::view`. Ones the app raises are an
+  `app::Dialog` (or `connection::Dialog`) in `apps/core`, so the iPadOS app
+  shows them too; only desktop-specific ones (quitting, licences) are an
+  `AppModal` in `main.rs`.
 - **App-wide effects from a connection tab** (opening Settings, changing a
   setting, closing the tab, picking a folder) are `connection::Message`
-  variants that `Application::update` intercepts before forwarding; the
-  connection's own `update` only lists them for exhaustiveness.
+  variants that `Application::update_connection` handles before the tab
+  sees them.
+- **Behaviour belongs in `apps/core`:** anything beyond what's on screen
+  (saving, connecting, deciding what happens next) is an `app::Event`
+  handled by `App::update`, tested there, and only rendered here (see
+  [front ends](../../../docs/architecture/front-ends.md)).
 - **Connector-contributed UI** (toolbar menus, links, chips, status bar
   items) is declared as data in `lib/core` (`Capabilities`, `Status`) and
   rendered in `ui/contributed.rs`. Don't special-case a protocol in the UI;

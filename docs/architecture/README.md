@@ -3,8 +3,9 @@
 > Status: early but working. VNC works end to end (render, mouse, keyboard)
 > but isn't complete; Spice connects and takes input but is still in
 > progress; iLO 4 shows the console and takes keyboard, mouse and power
-> control, but has no virtual media yet. Expect the shape to keep shifting
-> as it lands.
+> control, but has no virtual media yet. The desktop app is the main front
+> end; an iPadOS app over the same app core is in progress. Expect the shape
+> to keep shifting as it lands.
 
 ## Goal
 
@@ -39,7 +40,10 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`, and
 
 | Crate | Role |
 |---|---|
-| `server-remote` | iced GUI front end. |
+| `server-remote` (`apps/desktop`) | The desktop front end, in iced. |
+| `server-remote-app` (`apps/core`) | The application shared by every front end: pages, connections, saved sessions, settings, translations. Does **not** depend on a UI toolkit; see [Front ends and the app core](front-ends.md). |
+| `server-remote-ffi` (`apps/ffi`) | UniFFI bindings to `server-remote-app`, for the iPadOS app (and later Android). |
+| `apps/ipados` | The iPadOS front end, in SwiftUI (an Xcode project, not a crate). |
 | `server-remote-core` | Protocol-agnostic traits and types, the TLS transport, plus the Dummy implementation. Does **not** depend on iced. |
 | `server-remote-vnc` | VNC / RFB, on top of the `vnc-rs` crate — works end to end, not complete (see the [roadmap](roadmap.md)). |
 | `server-remote-spice` | Spice, on top of `spice-rs` — in progress. |
@@ -47,11 +51,14 @@ to a [`Target`] exists; the seam lives in `server-remote-core::transport`, and
 | `server-remote-ilo` | HPE iLO 4 Integrated Remote Console, from scratch — in progress: video, keyboard, mouse, power and status; no virtual media yet. |
 | `server-remote-icons` (`lib/icons`) | The app's icon set — [Carbon](https://github.com/carbon-design-system/carbon) icons (Apache-2.0) plus custom ones, exported from the Figma design into `assets/` and embedded with `include_bytes!`. Each icon is an `Icon` constant; the `iced` feature adds `Icon::element()`, which builds an `iced::widget::svg::Svg`. |
 
-Workspace: edition 2024, resolver 3, iced 0.14 (`advanced` feature) on the front
-end.
+Workspace: edition 2024, resolver 3, iced 0.14 (`advanced` feature) on the
+desktop front end, UniFFI for the iPadOS one.
 
 ## In this folder
 
+- [Front ends and the app core](front-ends.md) — the application shared by
+  the desktop and iPadOS apps, the events and effects between them, and how
+  each runs connections.
 - [Sessions](sessions.md) — how a protocol opens a session, the channels
   between it and the UI, and the threading model.
 - [Capabilities and status](capabilities.md) — how a session describes what it

@@ -126,7 +126,7 @@ jobs:
           esac
 
           cp LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          cp apps/server-remote/assets/fonts/OFL.txt "dist/$name/OFL-NunitoSans.txt"
+          cp apps/desktop/assets/fonts/OFL.txt "dist/$name/OFL-NunitoSans.txt"
 
           # Artifact zips drop the executable bit, so Unix builds go in a
           # tarball inside the artifact.

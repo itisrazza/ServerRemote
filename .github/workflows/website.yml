@@ -8,7 +8,7 @@ on:
     paths:
       - website/**
       - logo.svg
-      - apps/server-remote/assets/fonts/**
+      - apps/desktop/assets/fonts/**
       - lib/icons/assets/**
       - .github/workflows/website.yml
   pull_request:
@@ -37,10 +37,10 @@ jobs:
           rm -f _site/README.md
           cp logo.svg _site/
           cp lib/icons/assets/*.svg _site/icons/
-          cp apps/server-remote/assets/fonts/NunitoSans-Medium.ttf \
-             apps/server-remote/assets/fonts/NunitoSans-Bold.ttf \
-             apps/server-remote/assets/fonts/NunitoSans-SemiExpandedBlack.ttf \
-             apps/server-remote/assets/fonts/OFL.txt \
+          cp apps/desktop/assets/fonts/NunitoSans-Medium.ttf \
+             apps/desktop/assets/fonts/NunitoSans-Bold.ttf \
+             apps/desktop/assets/fonts/NunitoSans-SemiExpandedBlack.ttf \
+             apps/desktop/assets/fonts/OFL.txt \
              _site/fonts/
 
       - uses: actions/upload-pages-artifact@v5

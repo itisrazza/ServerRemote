@@ -53,7 +53,7 @@ SNAPSHOT_DIR=<scratch dir> cargo test -p server-remote render_review_snapshots -
 ```
 
 This writes `<name>-wgpu.png` at 2× for every state listed in
-`render_review_snapshots` (`apps/server-remote/src/main.rs`). Each state is a
+`render_review_snapshots` (`apps/desktop/src/main.rs`). Each state is a
 name, whether to feed in a connected iLO-like session first (toolbar menus,
 chips and status bar items, via `feed_ilo_like_session`), and the app
 `Message`s that set the screen up. Add a state for the screen you're

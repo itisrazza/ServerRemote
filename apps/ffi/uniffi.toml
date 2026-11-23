@@ -1,0 +1,6 @@
+[bindings.swift]
+# The Swift file is compiled into the app; the C side ships in
+# ServerRemoteCore.xcframework.
+module_name = "ServerRemoteCore"
+ffi_module_name = "ServerRemoteCoreFFI"
+ffi_module_filename = "ServerRemoteCoreFFI"

@@ -1,7 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "apps/server-remote",
+    "apps/core",
+    "apps/desktop",
+    "apps/ffi",
     "connectors/ilo",
     "connectors/spice",
     "connectors/vnc",

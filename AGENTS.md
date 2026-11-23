@@ -31,13 +31,26 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+CI also builds the store build (without the update check):
+
+```sh
+cargo clippy -p server-remote-app -p server-remote --no-default-features --all-targets -- -D warnings
+```
+
+and, on a macOS runner, the iPadOS app. On macOS, after changing the app
+core's public API, `apps/ffi` or `apps/ipados`, run that too:
+
+```sh
+scripts/check-ipados.sh
+```
+
 **Docs are part of done.** When feature work lands or a feature's status
 changes, update the docs in the same change: the README's status line,
 protocol table and crate list; the status line and crate table in
 [docs/architecture/README.md](docs/architecture/README.md); the
 [roadmap](docs/architecture/roadmap.md) (move items between Done, In
 progress and Next); the architecture page for the area you changed; the
-crate `description` in `apps/server-remote/Cargo.toml`; the caveats in the
+crate `description` in `apps/desktop/Cargo.toml`; the caveats in the
 [protocol notes](docs/protocols/README.md); and the protocol table and
 feature list on the [website](website/index.html).
 
@@ -57,16 +70,22 @@ headlessly through an ignored snapshot test; the UI guides below explain it.
   another implementation's source, it works on the spec only.
 
 - **Tests never touch the user's real files.** Build the app with
-  `Application::new(None, Settings::default())`; persistence takes an
-  `Option<&Path>` config directory and stores nothing without one. Tasks
-  returned by `update` aren't run in unit tests, so nothing reaches the
-  network either.
+  `App::new(None, Settings::default())` (or the desktop's
+  `Application::new`, which takes the same); persistence takes an
+  `Option<&Path>` config directory and stores nothing without one. Effects
+  and tasks returned by `update` aren't run in unit tests, so nothing reaches
+  the network either. A test that needs saved files gives the app a
+  temporary directory.
 - **Platform-specific code:** prefer `if cfg!(windows)` over `#[cfg(windows)]`
   items where practical, so the Windows path still type-checks (and isn't
   flagged as dead code) on macOS and Linux.
-- **The core stays UI-free:** `lib/core` and the connectors never depend on
-  iced. Connector UI is data (`Capabilities`, `Status`), rendered by
-  `apps/server-remote/src/ui/contributed.rs`. Extend the Dummy connector when
+- **The cores stay UI-free:** `lib/core`, the connectors and the app core
+  (`apps/core`) never depend on iced or any other UI toolkit. Application
+  logic belongs in `apps/core`, so every front end gets it; a front end keeps
+  only view state (see
+  [front ends](docs/architecture/front-ends.md)). Connector UI is data
+  (`Capabilities`, `Status`), rendered by `apps/desktop/src/ui/contributed.rs`
+  and `apps/ipados/ServerRemote/ConnectionView.swift`. Extend the Dummy connector when
   adding a new kind of contribution, so it can be exercised without a server.
 - **Tooling:** Python helpers are `uv run --script` files with pinned PyPI
   dependencies. Don't download and run third-party binaries (linters and so
@@ -83,6 +102,7 @@ other agents should read the matching file before starting:
 | any change to what the app shows | [ui-change-checklist](.claude/skills/ui-change-checklist/SKILL.md) |
 | matching a mockup, or checking layout, size or sharpness | [ui-mockup-match](.claude/skills/ui-mockup-match/SKILL.md) (includes `measure.py`) |
 | custom widgets, wrappers, overlays, images, or iced misbehaving | [iced-widget-gotchas](.claude/skills/iced-widget-gotchas/SKILL.md) |
+| any change to the iPadOS app or `apps/ffi` | [ipados-change-checklist](.claude/skills/ipados-change-checklist/SKILL.md) |
 
 The rules that bite most often:
 

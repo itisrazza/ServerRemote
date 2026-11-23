@@ -10,7 +10,8 @@ desktop and console protocols as possible, focused on the ones that lack a good
 client on the platforms I actually use (macOS in particular).
 
 > **Status: early, experimental.** VNC works end to end but isn't complete;
-> Spice and iLO 4 are in progress. Interfaces will keep changing.
+> Spice and iLO 4 are in progress. An iPadOS app over the same core is in
+> progress too. Interfaces will keep changing.
 
 ## Why
 
@@ -55,12 +56,30 @@ cargo run -p server-remote
 Pick a protocol, enter `host` or `host:port` and a password if needed, then
 connect. VNC's default port is 5900.
 
+The iPadOS app (iPadOS 26 or later; it also runs on iPhone, best-effort)
+needs Xcode and the iOS Rust targets:
+
+```sh
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+open apps/ipados/ServerRemote.xcodeproj
+```
+
+Its build runs `scripts/build-ipados-core.sh` to build the Rust core first.
+
+Builds distributed through a store leave out the update check:
+`cargo build -p server-remote --no-default-features`.
+
 ## Layout
 
 It's a Cargo workspace:
 
 - `apps/`
-  - `server-remote` — the [iced](https://iced.rs) GUI front end.
+  - `desktop` (`server-remote`) — the desktop front end, in [iced](https://iced.rs).
+  - `core` (`server-remote-app`) — the application every front end shares:
+    pages, connections, saved sessions, settings and translations (UI-free).
+  - `ffi` (`server-remote-ffi`) — [UniFFI](https://mozilla.github.io/uniffi-rs/)
+    bindings to it, for the iPadOS app and later Android.
+  - `ipados` — the iPadOS front end, in SwiftUI.
 - `connectors/` — one crate per protocol, implementing the core `Connector`.
   - `vnc` (`server-remote-vnc`) — VNC/RFB, on top of [`vnc-rs`](https://crates.io/crates/vnc-rs).
   - `spice` (`server-remote-spice`) — Spice, on top of `lib/spice`.
@@ -90,12 +109,12 @@ release. See [docs/releasing.md](docs/releasing.md), and
 ## Translations
 
 The app's text lives in [Fluent](https://projectfluent.org/) files under
-[`apps/server-remote/i18n/`](apps/server-remote/i18n/), one folder per
-language: English (the fallback) and Romanian. To add a language, copy
-`en/server-remote.ftl` into a new folder named after its language tag, add it
-to `Language` in `persistence/settings.rs` and to `TRANSLATIONS` in
-`i18n.rs`; the tests check that every translation has exactly the English
-messages. Text supplied by connectors (toolbar menus, status details) isn't
+[`apps/core/i18n/`](apps/core/i18n/), one folder per
+language: English (the fallback) and Romanian. Every front end uses them. To
+add a language, copy `en/server-remote.ftl` into a new folder named after its
+language tag, add it to `Language` in `apps/core/src/persistence/settings.rs`
+and to `TRANSLATIONS` in `apps/core/src/i18n.rs`; the tests check that every
+translation has exactly the English messages. Text supplied by connectors (toolbar menus, status details) isn't
 translated yet.
 
 ## Credits
@@ -106,7 +125,7 @@ licensed under the [Apache License 2.0](LICENSE-APACHE).
 
 The UI font is [Nunito Sans](https://github.com/googlefonts/NunitoSans) by the
 Nunito Sans Project Authors, licensed under the
-[SIL Open Font License 1.1](apps/server-remote/assets/fonts/OFL.txt). The
+[SIL Open Font License 1.1](apps/desktop/assets/fonts/OFL.txt). The
 embedded static instances are generated from the variable font by
 [`scripts/instance-fonts.py`](scripts/instance-fonts.py).
 

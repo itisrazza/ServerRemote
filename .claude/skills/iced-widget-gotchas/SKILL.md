@@ -1,6 +1,6 @@
 ---
 name: iced-widget-gotchas
-description: Known iced 0.14 behaviours and traps for ServerRemote — writing custom widgets or wrappers, overlays, layout, images, SVG icons, text sizing, themes and system integration. Use when writing or debugging anything under apps/server-remote/src/ui that goes beyond composing stock widgets, or when iced behaves unexpectedly.
+description: Known iced 0.14 behaviours and traps for ServerRemote — writing custom widgets or wrappers, overlays, layout, images, SVG icons, text sizing, themes and system integration. Use when writing or debugging anything under apps/desktop/src/ui that goes beyond composing stock widgets, or when iced behaves unexpectedly.
 ---
 
 # iced 0.14 gotchas
