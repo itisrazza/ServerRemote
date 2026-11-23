@@ -113,3 +113,42 @@ mod tests {
         assert!(matches!(render(&icon, 0), Err(IconError::Size(0))));
     }
 }
+
+/// A colour as sRGB bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct Colour {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl From<server_remote_app::brand::Rgb> for Colour {
+    fn from(colour: server_remote_app::brand::Rgb) -> Self {
+        Colour {
+            red: colour.red,
+            green: colour.green,
+            blue: colour.blue,
+        }
+    }
+}
+
+/// The app's accent, derived from its logo, for light and dark mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct Accent {
+    pub light: Colour,
+    pub dark: Colour,
+    /// Text on the accent: white in light mode, dark in dark mode.
+    pub on_light: Colour,
+    pub on_dark: Colour,
+}
+
+#[uniffi::export]
+pub fn accent() -> Accent {
+    use server_remote_app::brand;
+    Accent {
+        light: brand::ACCENT_LIGHT.into(),
+        dark: brand::ACCENT_DARK.into(),
+        on_light: brand::ON_ACCENT_LIGHT.into(),
+        on_dark: brand::ON_ACCENT_DARK.into(),
+    }
+}

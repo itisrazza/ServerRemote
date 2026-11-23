@@ -1,21 +1,17 @@
 import SwiftUI
 
-/// An open connection: its screen fills the page, the connector's menus sit
-/// in the toolbar, and its status floats over the bottom edge.
+/// An open connection: its screen fills the page, and the connector's menus
+/// and the connection's status sit in the toolbar.
 struct ConnectionView: View {
     @Environment(AppModel.self) private var model
     let connection: ConnectionState
     @State private var keyboard = KeyboardFocus()
-    @State private var showingInfo = false
+    @State private var showingStatus = false
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(.systemBackground))
-            .overlay(alignment: .bottom) {
-                StatusCapsule(connection: connection)
-                    .padding(.bottom, 12)
-            }
             .navigationTitle(connection.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
@@ -84,10 +80,20 @@ struct ConnectionView: View {
         }
         ToolbarSpacer(.fixed)
         ToolbarItemGroup {
-            Button(model.localize("info-title"), systemImage: "info.circle") { showingInfo.toggle() }
-                .popover(isPresented: $showingInfo) {
-                    InfoView(connection: connection)
+            Button {
+                showingStatus.toggle()
+            } label: {
+                Label {
+                    Text(model.localize("info-title"))
+                } icon: {
+                    Image(systemName: "circle.fill")
+                        .foregroundStyle(connection.phase.color)
+                        .imageScale(.small)
                 }
+            }
+            .popover(isPresented: $showingStatus) {
+                StatusView(connection: connection)
+            }
             Button(model.localize("close-tab"), systemImage: "xmark") {
                 model.core.closeConnection(connection: connection.id)
             }
@@ -175,28 +181,60 @@ private struct ChipButton: View {
     }
 }
 
-/// Technical details about the connection.
-private struct InfoView: View {
+/// The connection's status, then technical details about it.
+private struct StatusView: View {
     @Environment(AppModel.self) private var model
     let connection: ConnectionState
 
     var body: some View {
         Form {
-            ForEach(rows, id: \.0) { label, value in
-                LabeledContent(label, value: value)
+            Section {
+                LabeledContent(model.localize("info-status")) {
+                    HStack(spacing: 6) {
+                        Circle().fill(connection.phase.color).frame(width: 8, height: 8)
+                        Text(phaseText(connection.phase, model: model))
+                    }
+                }
+                if let traffic = connection.traffic {
+                    LabeledContent {
+                        Text(traffic.received)
+                    } label: {
+                        Label(model.localize("info-received"), systemImage: "arrow.down")
+                    }
+                    LabeledContent {
+                        Text(traffic.sent)
+                    } label: {
+                        Label(model.localize("info-sent"), systemImage: "arrow.up")
+                    }
+                }
+                ForEach(connection.status, id: \.text) { entry in
+                    HStack(spacing: 8) {
+                        if let indicator = entry.indicator {
+                            Circle().fill(indicator.color).frame(width: 8, height: 8)
+                        }
+                        if let icon = entry.icon {
+                            ConnectorIcon(connection: connection.id, icon: icon, size: 16)
+                        }
+                        Text(entry.text)
+                    }
+                }
+            }
+            Section {
+                ForEach(details, id: \.0) { label, value in
+                    LabeledContent(label, value: value)
+                }
             }
         }
-        .frame(minWidth: 340, minHeight: 360)
+        .frame(minWidth: 360, minHeight: 480)
     }
 
-    private var rows: [(String, String)] {
+    private var details: [(String, String)] {
         let resolution = connection.width.flatMap { width in
             connection.height.map { "\(width)×\($0)" }
         } ?? "—"
         let builtIn = [
             (model.localize("info-protocol"), protocolName(protocol: connection.protocol)),
             (model.localize("info-address"), connection.address),
-            (model.localize("info-status"), phaseText(connection.phase, model: model)),
             (model.localize("info-resolution"), resolution),
             (model.localize("info-pointer"), model.localize(connection.absolutePointer ? "pointer-absolute" : "pointer-relative")),
             (model.localize("info-frames"), "\(connection.frames)"),
@@ -212,44 +250,6 @@ private func phaseText(_ phase: ConnectionPhase, model: AppModel) -> String {
     case .connecting: model.localize("status-connecting")
     case .connected: model.localize("status-connected")
     case let .disconnected(reason): reason ?? model.localize("status-disconnected")
-    }
-}
-
-/// The status, in a glass capsule floating over the screen.
-private struct StatusCapsule: View {
-    @Environment(AppModel.self) private var model
-    let connection: ConnectionState
-
-    var body: some View {
-        HStack(spacing: 14) {
-            HStack(spacing: 6) {
-                Circle().fill(connection.phase.color).frame(width: 8, height: 8)
-                Text(phaseText(connection.phase, model: model)).lineLimit(1)
-            }
-            if let traffic = connection.traffic {
-                Label(traffic.received, systemImage: "arrow.down")
-                Label(traffic.sent, systemImage: "arrow.up")
-            }
-            if let encryption = connection.encryption {
-                Label(encryption, systemImage: "lock.fill")
-            }
-            ForEach(connection.status, id: \.text) { entry in
-                HStack(spacing: 6) {
-                    if let indicator = entry.indicator {
-                        Circle().fill(indicator.color).frame(width: 8, height: 8)
-                    }
-                    if let icon = entry.icon {
-                        ConnectorIcon(connection: connection.id, icon: icon, size: 14)
-                    }
-                    Text(entry.text)
-                }
-            }
-        }
-        .font(.footnote)
-        .lineLimit(1)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .glassEffect(.regular, in: .capsule)
     }
 }
 

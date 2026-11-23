@@ -81,8 +81,22 @@ final class IconCache {
 }
 
 extension Color {
-    /// The desktop app's accent, so both feel like the same app.
-    static let brand = Color(red: 0x4C / 255, green: 0x8D / 255, blue: 0xFF / 255)
+    /// The accent, derived from the logo by the core, as on the desktop.
+    static let brand = dynamic(light: accent().light, dark: accent().dark)
+    /// Text on the accent.
+    static let onBrand = dynamic(light: accent().onLight, dark: accent().onDark)
+
+    private static func dynamic(light: Colour, dark: Colour) -> Color {
+        Color(UIColor { traits in
+            let colour = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(
+                red: CGFloat(colour.red) / 255,
+                green: CGFloat(colour.green) / 255,
+                blue: CGFloat(colour.blue) / 255,
+                alpha: 1
+            )
+        })
+    }
 }
 
 extension Indicator {

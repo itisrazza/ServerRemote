@@ -19,8 +19,10 @@ struct ConnectView: View {
             }
             ToolbarSpacer(.fixed)
             ToolbarItem {
-                Button(model.localize("connect-connect")) {
+                Button {
                     model.core.connect(request: request)
+                } label: {
+                    Text(model.localize("connect-connect")).foregroundStyle(Color.onBrand)
                 }
                 .buttonStyle(.glassProminent)
             }

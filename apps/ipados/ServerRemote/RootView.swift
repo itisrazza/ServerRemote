@@ -9,9 +9,12 @@ struct RootView: View {
         NavigationSplitView {
             Sidebar()
         } detail: {
+            // A fresh stack per page, so pages pushed in one (a settings
+            // section) don't linger after switching to another.
             NavigationStack {
                 PageView(page: model.state.page)
             }
+            .id(model.state.page)
         }
         .tint(.brand)
         .preferredColorScheme(colorScheme)

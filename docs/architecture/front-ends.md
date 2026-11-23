@@ -79,14 +79,19 @@ maps; on-screen typing is sent as text. A touch moves the pointer and holds
 the left button.
 
 It's a native iPadOS 26 app, in its Liquid Glass design: a sidebar of
-pages and open connections, system forms, menus and alerts, SF Symbols for
-its own controls, and the connection's status in a glass capsule over the
-screen. It shares content rather than looks with the desktop app: the
-protocols' and connectors' icons (rendered to PNGs by the core with
-resvg), the logo, the accent colour, and every string. Its settings are the
-ones that mean something on a tablet (appearance, language, display
-scaling, certificate checking and the certificate lists), and its About
-section shows what `server_remote_app::about` holds.
+pages and open connections, system forms, menus and alerts, and SF Symbols,
+including for the connectors' built-in icons (each built-in icon carries its
+name); the connection's status is a toolbar button with a popover. It shares
+content rather than looks with the desktop app: the protocols' and custom
+connector icons (rendered to PNGs by the core with resvg), the logo, the
+accent colour (`server_remote_app::brand`, derived from the logo), and
+every string.
+
+Settings is a list of sections, each its own page in
+`apps/ipados/ServerRemote/Settings/`: General (appearance, language),
+Display (scaling), Security (certificate checking and the certificate
+lists) and About (what `server_remote_app::about` holds). A new section is
+a case of `SettingsSection` and a view beside it.
 
 To build it, open `apps/ipados/ServerRemote.xcodeproj` in Xcode. A build
 phase runs `scripts/build-ipados-core.sh` for the platform being built: it
