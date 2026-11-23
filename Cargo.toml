@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "apps/core",
     "apps/desktop",
+    "apps/ffi",
     "connectors/ilo",
     "connectors/spice",
     "connectors/vnc",

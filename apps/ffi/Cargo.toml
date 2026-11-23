@@ -1,0 +1,24 @@
+[package]
+name = "server-remote-ffi"
+description = "Bindings to ServerRemote's application core for the iPadOS (and later Android) app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[[bin]]
+# Generates the Swift bindings: see scripts/build-ipados-core.sh.
+name = "uniffi-bindgen-swift"
+path = "src/bin/uniffi-bindgen-swift.rs"
+
+[dependencies]
+server-remote-app = { path = "../core", default-features = false }
+server-remote-core = { path = "../../lib/core" }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "sync", "macros"] }
+uniffi = { version = "0.32.2", features = ["cli"] }
