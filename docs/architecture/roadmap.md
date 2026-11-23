@@ -46,7 +46,8 @@ In progress:
     error).
 - iPadOS app, in SwiftUI over `server-remote-ffi` — the connection manager,
   the connect form, and connections with touch, pointer and hardware
-  keyboard input, the connector's menus, status and dialogs. Builds for
+  keyboard input, the connector's menus, status and dialogs, styled like the
+  desktop app. Builds for
   devices and the simulator; not yet tried on a real iPad. Still to come:
   - Settings, including certificate checking and the trusted list.
   - Keeping sessions alive in the background; today iOS suspends them.

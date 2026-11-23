@@ -5,6 +5,8 @@ use server_remote_app::app;
 use server_remote_app::connection::{self, Connection, Phase, format_rate};
 use server_remote_app::persistence::sessions::SavedSession;
 use server_remote_app::{App, i18n};
+
+use crate::look::icon_id;
 use server_remote_core::{IndicatorState, MenuItem, StatusItem, ToolbarItem};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -106,7 +108,15 @@ pub struct AppState {
     pub page: Page,
     pub connections: Vec<ConnectionState>,
     pub sessions: Vec<Session>,
+    /// The groups sessions are in, by name, with how many each has.
+    pub groups: Vec<SessionGroup>,
     pub dialog: Option<AppDialog>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SessionGroup {
+    pub name: String,
+    pub count: u64,
 }
 
 impl From<&App> for AppState {
@@ -119,6 +129,15 @@ impl From<&App> for AppState {
                 .map(ConnectionState::from)
                 .collect(),
             sessions: app.sessions().saved.iter().map(Session::from).collect(),
+            groups: app
+                .sessions()
+                .groups()
+                .into_iter()
+                .map(|(name, count)| SessionGroup {
+                    name: name.to_owned(),
+                    count: count as u64,
+                })
+                .collect(),
             dialog: app.dialog().map(AppDialog::from),
         }
     }
@@ -223,6 +242,14 @@ pub struct ConnectionState {
     pub encryption: Option<String>,
     /// Received and sent, e.g. "150 kb/s".
     pub traffic: Option<Traffic>,
+    /// The connector's extra rows for the info popout.
+    pub details: Vec<Detail>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Detail {
+    pub label: String,
+    pub value: String,
 }
 
 impl From<&Connection> for ConnectionState {
@@ -232,6 +259,7 @@ impl From<&Connection> for ConnectionState {
         let target = connection.target();
         let input = (!capabilities.input_actions.is_empty()).then(|| ActionMenu {
             label: i18n::LOADER.get("section-input"),
+            icon: None,
             actions: capabilities
                 .input_actions
                 .iter()
@@ -239,8 +267,11 @@ impl From<&Connection> for ConnectionState {
                 .collect(),
         });
         let menus = capabilities.toolbar.iter().filter_map(|item| match item {
-            ToolbarItem::Menu { label, items, .. } => Some(ActionMenu {
+            ToolbarItem::Menu {
+                label, items, icon, ..
+            } => Some(ActionMenu {
                 label: label.to_string(),
+                icon: Some(icon_id(icon)),
                 actions: flatten(items, ""),
             }),
             ToolbarItem::Link { .. } => None,
@@ -269,8 +300,9 @@ impl From<&Connection> for ConnectionState {
                 .toolbar
                 .iter()
                 .filter_map(|item| match item {
-                    ToolbarItem::Link { label, url, .. } => Some(WebLink {
+                    ToolbarItem::Link { label, url, icon } => Some(WebLink {
                         label: label.to_string(),
+                        icon: icon_id(icon),
                         url: url.to_string(),
                     }),
                     ToolbarItem::Menu { .. } => None,
@@ -281,6 +313,7 @@ impl From<&Connection> for ConnectionState {
                 .iter()
                 .map(|chip| Chip {
                     label: chip.label.to_string(),
+                    icon: chip.icon.as_ref().map(icon_id),
                     close_action: chip.close_action.as_ref().map(|id| id.to_string()),
                 })
                 .collect(),
@@ -290,6 +323,14 @@ impl From<&Connection> for ConnectionState {
                 received: format_rate(rate.received),
                 sent: format_rate(rate.sent),
             }),
+            details: status
+                .details
+                .iter()
+                .map(|detail| Detail {
+                    label: detail.label.to_string(),
+                    value: detail.value.to_string(),
+                })
+                .collect(),
         }
     }
 }
@@ -326,6 +367,8 @@ impl ConnectionDialog {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ActionMenu {
     pub label: String,
+    /// See [`crate::Core::connection_icon`]; the input menu has none.
+    pub icon: Option<u64>,
     pub actions: Vec<MenuAction>,
 }
 
@@ -334,6 +377,7 @@ pub struct ActionMenu {
 pub struct MenuAction {
     pub id: String,
     pub label: String,
+    pub icon: Option<u64>,
     pub enabled: bool,
     pub checked: bool,
 }
@@ -343,6 +387,7 @@ impl From<&server_remote_core::Action> for MenuAction {
         MenuAction {
             id: action.id.to_string(),
             label: action.label.to_string(),
+            icon: action.icon.as_ref().map(icon_id),
             enabled: action.enabled,
             checked: action.checked,
         }
@@ -366,12 +411,14 @@ fn flatten(items: &[MenuItem], prefix: &str) -> Vec<MenuAction> {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct WebLink {
     pub label: String,
+    pub icon: u64,
     pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Chip {
     pub label: String,
+    pub icon: Option<u64>,
     /// Sent with [`crate::Core::send_action`] when the chip is closed.
     pub close_action: Option<String>,
 }
@@ -387,6 +434,7 @@ pub enum Indicator {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct StatusEntry {
     pub text: String,
+    pub icon: Option<u64>,
     /// A coloured dot before the text, if any.
     pub indicator: Option<Indicator>,
 }
@@ -396,6 +444,7 @@ impl From<&StatusItem> for StatusEntry {
         match item {
             StatusItem::Indicator { label, state } => StatusEntry {
                 text: label.to_string(),
+                icon: None,
                 indicator: Some(match state {
                     IndicatorState::Ok => Indicator::Ok,
                     IndicatorState::Warning => Indicator::Warning,
@@ -403,8 +452,9 @@ impl From<&StatusItem> for StatusEntry {
                     IndicatorState::Inactive => Indicator::Inactive,
                 }),
             },
-            StatusItem::Text { text, .. } => StatusEntry {
+            StatusItem::Text { text, icon } => StatusEntry {
                 text: text.to_string(),
+                icon: icon.as_ref().map(icon_id),
                 indicator: None,
             },
         }

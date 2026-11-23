@@ -5,6 +5,10 @@ struct ServerRemoteApp: App {
     @State private var model: AppModel?
     @State private var failure: String?
 
+    init() {
+        Fonts.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {

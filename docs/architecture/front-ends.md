@@ -78,6 +78,13 @@ on show. Hardware keys arrive as USB HID usages, which `keys::hid_keysym`
 maps; on-screen typing is sent as text. A touch moves the pointer and holds
 the left button.
 
+It's styled like the desktop app: the same palette (`Style.swift`, following
+`apps/desktop/src/ui/style.rs`), Nunito Sans and the Carbon and protocol
+icons, which the core provides (`fonts`, and icons rendered to PNGs with
+resvg, connectors' own included), and the same layout of title bar tabs,
+toolbar, status bar and dialogs. Sizes are the desktop's scaled by 1.25 for
+touch (`Metrics.scale`).
+
 To build it, open `apps/ipados/ServerRemote.xcodeproj` in Xcode. A build
 phase runs `scripts/build-ipados-core.sh` for the platform being built: it
 builds the Rust core as a static library under `target/ipados/<platform>/`,

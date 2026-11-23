@@ -22,8 +22,10 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
+mod look;
 mod records;
 
+pub use look::*;
 pub use records::*;
 
 uniffi::setup_scaffolding!();
@@ -133,6 +135,22 @@ impl Core {
         })
     }
 
+    /// One of a connection's icons (by the id in its records), `pixels`
+    /// across; `None` if it no longer has it.
+    pub fn connection_icon(
+        &self,
+        connection: u64,
+        icon: u64,
+        pixels: u32,
+    ) -> Result<Option<IconImage>, IconError> {
+        let found = {
+            let app = lock(&self.shared.app);
+            app.connection(connection)
+                .and_then(|connection| find_icon(connection, icon))
+        };
+        found.map(|found| look::render(&found, pixels)).transpose()
+    }
+
     /// A saved session's thumbnail, as a PNG.
     pub fn thumbnail(&self, session: u64) -> Option<Vec<u8>> {
         lock(&self.shared.thumbnails).get(&session).cloned()
@@ -175,6 +193,11 @@ impl Core {
             editing,
             request: request.into(),
         });
+    }
+
+    /// Moves a session into a group; an empty one for none.
+    pub fn set_group(&self, session: u64, group: String) {
+        self.send(Event::SetGroup { id: session, group });
     }
 
     pub fn delete_session(&self, session: u64) {
@@ -459,6 +482,44 @@ fn hash_of(params: &connection::Params) -> u64 {
     let mut hasher = DefaultHasher::new();
     params.hash(&mut hasher);
     hasher.finish()
+}
+
+/// The icon with `id` (see [`look::icon_id`]) among a connection's
+/// capabilities and status.
+fn find_icon(connection: &Connection, id: u64) -> Option<server_remote_core::Icon> {
+    fn in_menu(items: &[MenuItem]) -> Vec<&server_remote_core::Icon> {
+        items
+            .iter()
+            .flat_map(|item| match item {
+                MenuItem::Action(action) => action.icon.iter().collect(),
+                MenuItem::Submenu { items, .. } => in_menu(items),
+                MenuItem::Separator => Vec::new(),
+            })
+            .collect()
+    }
+    let capabilities = connection.capabilities();
+    let status = connection.status();
+    let actions = capabilities
+        .input_actions
+        .iter()
+        .filter_map(|action| action.icon.as_ref());
+    let toolbar = capabilities.toolbar.iter().flat_map(|item| match item {
+        ToolbarItem::Menu { icon, items, .. } => {
+            std::iter::once(icon).chain(in_menu(items)).collect()
+        }
+        ToolbarItem::Link { icon, .. } => vec![icon],
+    });
+    let chips = status.chips.iter().filter_map(|chip| chip.icon.as_ref());
+    let items = status.items.iter().filter_map(|item| match item {
+        server_remote_core::StatusItem::Text { icon, .. } => icon.as_ref(),
+        server_remote_core::StatusItem::Indicator { .. } => None,
+    });
+    actions
+        .chain(toolbar)
+        .chain(chips)
+        .chain(items)
+        .find(|icon| look::icon_id(icon) == id)
+        .cloned()
 }
 
 /// The action with `id` among a connection's input actions and menus.

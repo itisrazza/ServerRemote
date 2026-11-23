@@ -4769,8 +4769,10 @@ dependencies = [
 name = "server-remote-ffi"
 version = "0.1.0"
 dependencies = [
+ "resvg 0.50.0",
  "server-remote-app",
  "server-remote-core",
+ "server-remote-icons",
  "thiserror 2.0.21",
  "tokio",
  "uniffi",

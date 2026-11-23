@@ -1,89 +1,106 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The sidebar of pages and open connections, beside the page on show.
+/// The window: a title bar of tabs, as on the desktop, above the page on
+/// show, with any dialog over both.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @State private var dialogs = DialogPresenter()
 
     var body: some View {
-        NavigationSplitView {
-            Sidebar()
-        } detail: {
-            NavigationStack {
-                PageView(page: model.state.page)
-            }
+        VStack(spacing: 0) {
+            TitleBar()
+            PageView(page: model.state.page)
+                .padding([.horizontal, .bottom], Metrics.spacing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .appDialog()
+        .background(Color.base.ignoresSafeArea())
+        .font(.ui)
+        .foregroundStyle(Color.text)
+        .tint(.accent)
+        .overlay { dialogLayer }
+        .environment(dialogs)
         .shellRequests()
+    }
+
+    @ViewBuilder
+    private var dialogLayer: some View {
+        if let content = dialogs.content {
+            Backdrop { content }
+        } else if let dialog = model.state.dialog {
+            Backdrop { AppDialogView(dialog: dialog) }
+        }
     }
 }
 
-private struct Sidebar: View {
+private struct TitleBar: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let selection = Binding<Page?>(
-            get: { model.state.page },
-            set: { page in
-                if let page { model.core.showPage(page: page) }
-            }
-        )
-        List(selection: selection) {
-            Label(model.localize("tab-manager"), systemImage: "square.grid.2x2")
-                .tag(Page.manager)
-            Label(model.localize("tab-connect"), systemImage: "plus")
-                .tag(Page.connect)
-            if !model.state.connections.isEmpty {
-                Section {
+        HStack(spacing: Metrics.spacing) {
+            IconTab(page: .manager, icon: .virtualDesktop)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Metrics.spacing) {
                     ForEach(model.state.connections, id: \.id) { connection in
-                        ConnectionRow(connection: connection)
-                            .tag(Page.connection(id: connection.id))
+                        ConnectionTab(connection: connection)
                     }
+                    IconTab(page: .connect, icon: .addLarge)
                 }
             }
         }
-        .navigationTitle("ServerRemote")
+        .padding(Metrics.spacing)
     }
 }
 
-private struct ConnectionRow: View {
+private struct IconTab: View {
+    @Environment(AppModel.self) private var model
+    let page: Page
+    let icon: AppIcon
+
+    var body: some View {
+        Button {
+            model.core.showPage(page: page)
+        } label: {
+            IconView(icon).frame(width: Metrics.controlHeight, height: Metrics.controlHeight)
+        }
+        .buttonStyle(BorderedStyle(active: model.state.page == page))
+    }
+}
+
+private struct ConnectionTab: View {
     @Environment(AppModel.self) private var model
     let connection: ConnectionState
 
-    var body: some View {
-        Label {
-            Text(connection.name)
-        } icon: {
-            PhaseDot(phase: connection.phase)
-        }
-        .swipeActions {
-            Button(model.localize("close-tab"), role: .destructive) {
-                model.core.closeConnection(connection: connection.id)
-            }
-        }
-        .contextMenu {
-            Button(model.localize("close-tab"), systemImage: "xmark", role: .destructive) {
-                model.core.closeConnection(connection: connection.id)
-            }
-        }
-    }
-}
-
-struct PhaseDot: View {
-    let phase: ConnectionPhase
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 10, height: 10)
+    private var active: Bool {
+        model.state.page == .connection(id: connection.id)
     }
 
-    private var color: Color {
-        switch phase {
-        case .connecting: .yellow
-        case .connected: .green
-        case .disconnected: .red
+    var body: some View {
+        Button {
+            model.core.showPage(page: .connection(id: connection.id))
+        } label: {
+            HStack(spacing: Metrics.spacing) {
+                IconView(.connectionProtocol(connection.protocol))
+                Text(connection.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    model.core.closeConnection(connection: connection.id)
+                } label: {
+                    IconView(.close, size: Metrics.iconSize * 0.9)
+                        .frame(width: 18 * Metrics.scale, height: 18 * Metrics.scale)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4 * Metrics.scale)
+                                .strokeBorder(active ? Color.strongest : Color.strong)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 5 * Metrics.scale)
+            .frame(width: 150 * Metrics.scale)
         }
+        .buttonStyle(BorderedStyle(active: active))
     }
 }
 
@@ -101,57 +118,44 @@ private struct PageView: View {
             if let connection = model.connection(id) {
                 ConnectionView(connection: connection)
             } else {
-                ContentUnavailableView(model.localize("connection-closed"), systemImage: "xmark")
+                Text(model.localize("connection-closed"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 }
 
-// MARK: - App dialogs
+/// A dialog the app put up.
+private struct AppDialogView: View {
+    @Environment(AppModel.self) private var model
+    let dialog: AppDialog
+
+    var body: some View {
+        switch dialog {
+        case let .error(title, message):
+            DialogView(title: title, message: message, buttons: [
+                DialogButton(label: model.localize("button-ok"), kind: .primary) {
+                    model.core.closeDialog()
+                },
+            ])
+        case let .connectionFailed(message, details):
+            DialogView(title: model.localize("connection-failed-title"), message: message, buttons: [
+                DialogButton(label: model.localize("copy-details"), icon: .copyToClipboard) {
+                    UIPasteboard.general.string = details
+                },
+                DialogButton(label: model.localize("button-close")) {
+                    model.core.closeDialog()
+                },
+            ])
+        }
+    }
+}
+
+// MARK: - Shell requests
 
 private extension View {
-    func appDialog() -> some View {
-        modifier(AppDialogModifier())
-    }
-
     func shellRequests() -> some View {
         modifier(ShellRequestsModifier())
-    }
-}
-
-private struct AppDialogModifier: ViewModifier {
-    @Environment(AppModel.self) private var model
-
-    func body(content: Content) -> some View {
-        let dialog = model.state.dialog
-        let shown = Binding(
-            get: { dialog != nil },
-            set: { if !$0 { model.core.closeDialog() } }
-        )
-        content.alert(title(dialog), isPresented: shown, presenting: dialog) { dialog in
-            if case let .connectionFailed(_, details) = dialog {
-                Button(model.localize("copy-details")) {
-                    UIPasteboard.general.string = details
-                    model.core.closeDialog()
-                }
-            }
-            Button(model.localize("button-close"), role: .cancel) {
-                model.core.closeDialog()
-            }
-        } message: { dialog in
-            switch dialog {
-            case let .error(_, message), let .connectionFailed(message, _):
-                Text(message)
-            }
-        }
-    }
-
-    private func title(_ dialog: AppDialog?) -> String {
-        switch dialog {
-        case let .error(title, _): title
-        case .connectionFailed: model.localize("connection-failed-title")
-        case nil: ""
-        }
     }
 }
 
