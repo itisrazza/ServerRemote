@@ -26,7 +26,8 @@ pub struct Button<Message> {
     pub icon: Option<Icon>,
 }
 
-const WIDTH: f32 = 320.0;
+pub const WIDTH: f32 = 320.0;
+pub const PADDING: f32 = 16.0;
 /// For dialogs with more choices than fit the usual width.
 pub const WIDE: f32 = 460.0;
 
@@ -48,13 +49,24 @@ pub fn view_with<'a, Message: Clone + 'a>(
     buttons: Vec<Button<Message>>,
     width: f32,
 ) -> Element<'a, Message> {
+    view_content(title, text(message), leading, buttons, width)
+}
+
+/// A dialog with any `content` (a form, say) in place of the message.
+pub fn view_content<'a, Message: Clone + 'a>(
+    title: String,
+    content: impl Into<Element<'a, Message>>,
+    leading: Vec<Button<Message>>,
+    buttons: Vec<Button<Message>>,
+    width: f32,
+) -> Element<'a, Message> {
     let leading = Row::with_children(leading.into_iter().map(button_view)).spacing(8);
     let buttons = Row::with_children(buttons.into_iter().map(button_view)).spacing(8);
     let dialog = container(
         Column::new()
             .spacing(12)
             .push(text(title).size(14).font(style::BOLD))
-            .push(text(message))
+            .push(content)
             .push(
                 Row::new()
                     .spacing(8)
@@ -64,7 +76,7 @@ pub fn view_with<'a, Message: Clone + 'a>(
             ),
     )
     .width(width)
-    .padding(16)
+    .padding(PADDING)
     .style(style::dialog);
 
     opaque(

@@ -71,11 +71,16 @@ pub fn view() -> Element<'static, Message> {
 }
 
 fn click_button<'a>(label: String, button_kind: PointerButton) -> Element<'a, Message> {
-    button(text(label))
-        .style(button::subtle)
-        .width(Length::Fill)
-        .on_press(Message::Click(button_kind))
-        .into()
+    button(
+        text(label)
+            .height(Length::Fill)
+            .align_y(iced::Alignment::Center),
+    )
+    .height(super::style::CONTROL_HEIGHT)
+    .style(button::subtle)
+    .width(Length::Fill)
+    .on_press(Message::Click(button_kind))
+    .into()
 }
 
 /// Fixed at a 3:2 aspect ratio, like a physical trackpad.

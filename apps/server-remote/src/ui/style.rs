@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use iced::font::{Family, Stretch, Weight};
 use iced::theme::{Palette, palette};
-use iced::widget::{button, container, rule};
+use iced::widget::{button, container, rule, text_input};
 use iced::{Background, Border, Color, Element, Font, Settings, Shadow, Theme, Vector};
 
 /// Height of every title bar and toolbar control, so they line up.
@@ -288,6 +288,82 @@ pub fn panel(theme: &Theme) -> container::Style {
         background: Some(Background::Color(palette.background.weak.color)),
         text_color: Some(palette.background.base.text),
         border: iced::border::rounded(8),
+        ..container::Style::default()
+    }
+}
+
+/// A connection manager card: the window's background set into the panel,
+/// outlined like a toolbar button.
+pub fn card(theme: &Theme, status: button::Status) -> button::Style {
+    inset(theme, status, 8.0)
+}
+
+/// A button set into a panel like a [`card`], e.g. the connection manager's
+/// toolbar.
+pub fn inset_button(theme: &Theme, status: button::Status) -> button::Style {
+    inset(theme, status, RADIUS)
+}
+
+fn inset(theme: &Theme, status: button::Status, radius: f32) -> button::Style {
+    let palette = theme.extended_palette();
+    let (background, border) = match status {
+        button::Status::Pressed => (
+            palette.background.weaker.color,
+            palette.background.strongest.color,
+        ),
+        button::Status::Hovered => (
+            palette.background.base.color,
+            palette.background.strongest.color,
+        ),
+        button::Status::Active | button::Status::Disabled => (
+            palette.background.base.color,
+            palette.background.strong.color,
+        ),
+    };
+    button::Style {
+        background: Some(Background::Color(background)),
+        text_color: palette.background.base.text,
+        border: Border {
+            color: border,
+            width: 1.0,
+            radius: radius.into(),
+        },
+        ..button::Style::default()
+    }
+}
+
+/// A text field outlined on whatever it sits on, its border lighting up in
+/// the accent colour while it has focus.
+pub fn text_field(theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let palette = theme.extended_palette();
+    let border = match status {
+        text_input::Status::Focused { .. } => palette.primary.base.color,
+        text_input::Status::Hovered => palette.background.strongest.color,
+        text_input::Status::Active | text_input::Status::Disabled => {
+            palette.background.strong.color
+        }
+    };
+    text_input::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border {
+            color: border,
+            width: 1.0,
+            radius: RADIUS.into(),
+        },
+        icon: palette.background.strongest.color,
+        placeholder: palette.background.strongest.color,
+        value: palette.background.base.text,
+        selection: palette.primary.weak.color,
+    }
+}
+
+/// Stands in for a connection's thumbnail until it has one.
+pub fn thumbnail_placeholder(theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(
+            theme.extended_palette().background.neutral.color,
+        )),
+        border: iced::border::rounded(4),
         ..container::Style::default()
     }
 }

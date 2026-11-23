@@ -174,6 +174,49 @@ pub fn select<'a, Message: Clone + 'a>(
     .into()
 }
 
+/// A dropdown field `width` wide showing `icon` and `value`, whose menu
+/// below it is just as wide.
+pub fn dropdown<'a, Message: Clone + 'a>(
+    icon: icon::Handle,
+    value: String,
+    width: f32,
+    items: Vec<Item<Message>>,
+    open: bool,
+    on_toggle: Message,
+    on_dismiss: Message,
+) -> Element<'a, Message> {
+    let content = Row::new()
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .push(tinted(icon, ICON_SIZE))
+        .push(
+            text(value)
+                .width(Length::Fill)
+                .wrapping(text::Wrapping::None),
+        )
+        .push(tinted(icons::CHEVRON_DOWN.into(), ICON_SIZE));
+    let anchor = button(container(content).center_y(Length::Fill))
+        .width(width)
+        .height(style::CONTROL_HEIGHT)
+        .padding([0, 5])
+        .style(move |theme, status| {
+            if open {
+                style::inset_button(theme, button::Status::Pressed)
+            } else {
+                style::inset_button(theme, status)
+            }
+        })
+        .on_press(on_toggle);
+
+    popover(
+        anchor,
+        open.then(|| view_with_width(items, width)),
+        Placement::Below,
+        Some(on_dismiss),
+    )
+    .into()
+}
+
 /// One entry per choice in `all`, ticking `current`.
 pub fn choices<T: Copy + PartialEq, Message>(
     all: &[T],
@@ -209,8 +252,16 @@ pub fn button_popout<'a, Message: Clone + 'a>(
 
 /// The popup itself.
 pub fn view<'a, Message: Clone + 'a>(items: Vec<Item<Message>>) -> Element<'a, Message> {
-    let column = Column::with_children(items.into_iter().map(item_view))
-        .width(MENU_WIDTH - 2.0 * MENU_BORDER);
+    view_with_width(items, MENU_WIDTH)
+}
+
+/// The popup, `width` wide rather than the usual width.
+fn view_with_width<'a, Message: Clone + 'a>(
+    items: Vec<Item<Message>>,
+    width: f32,
+) -> Element<'a, Message> {
+    let column =
+        Column::with_children(items.into_iter().map(item_view)).width(width - 2.0 * MENU_BORDER);
 
     container(column)
         .padding(MENU_BORDER)
