@@ -146,7 +146,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Xcode's environment targets iOS, which would break cargo's host builds\n# (the bindings generator), so the script runs in a clean one.\nprofile=\"\"\nif [ \"$CONFIGURATION\" = \"Release\" ]; then profile=\"--release\"; fi\nexec env -i HOME=\"$HOME\" PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" \\\n    /bin/bash \"$PROJECT_DIR/../../scripts/build-ipados-core.sh\" $profile \"$PLATFORM_NAME\"\n";
+			shellScript = "# Xcode's environment targets iOS, which would break cargo's host builds\n# (the bindings generator), so the script runs in a clean one. CARGO_BIN\n# (set by scripts/check-ipados.sh) says where cargo is when it isn't in\n# ~/.cargo/bin.\nprofile=\"\"\nif [ \"$CONFIGURATION\" = \"Release\" ]; then profile=\"--release\"; fi\nexec env -i HOME=\"$HOME\" \\\n    ${CARGO_HOME:+CARGO_HOME=\"$CARGO_HOME\"} ${RUSTUP_HOME:+RUSTUP_HOME=\"$RUSTUP_HOME\"} \\\n    PATH=\"${CARGO_BIN:-$HOME/.cargo/bin}:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" \\\n    /bin/bash \"$PROJECT_DIR/../../scripts/build-ipados-core.sh\" $profile \"$PLATFORM_NAME\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

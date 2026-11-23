@@ -9,6 +9,10 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root/apps/ipados"
 
+# The project's build phase runs in a clean environment; tell it where cargo
+# is (on CI it isn't in ~/.cargo/bin).
+cargo_bin="$(dirname "$(command -v cargo)")"
+
 for destination in 'generic/platform=iOS Simulator' 'generic/platform=iOS'; do
     echo "Building for $destination"
     xcodebuild build \
@@ -18,5 +22,6 @@ for destination in 'generic/platform=iOS Simulator' 'generic/platform=iOS'; do
         -derivedDataPath build \
         -quiet \
         CODE_SIGNING_ALLOWED=NO \
+        CARGO_BIN="$cargo_bin" \
         SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 done
