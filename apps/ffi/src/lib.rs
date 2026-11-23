@@ -143,12 +143,26 @@ impl Core {
         i18n::LOADER.get(&id)
     }
 
+    /// A translated message with `name = value` arguments.
+    pub fn localize_args(&self, id: String, args: HashMap<String, String>) -> String {
+        let args: HashMap<&str, String> = args
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.clone()))
+            .collect();
+        i18n::LOADER.get_args(&id, args)
+    }
+
     pub fn show_page(&self, page: Page) {
         self.send(Event::ShowPage(page.into()));
     }
 
     pub fn connect(&self, request: ConnectRequest) {
         self.send(Event::Connect(request.into()));
+    }
+
+    /// Saves the connect form as a new session, and shows the manager.
+    pub fn save_new(&self, request: ConnectRequest) {
+        self.send(Event::SaveNew(request.into()));
     }
 
     pub fn open_saved(&self, session: u64) {
@@ -221,7 +235,7 @@ impl Core {
         }
     }
 
-    /// Invokes one of a connection's actions (from [`ConnectionState::actions`]).
+    /// Invokes one of a connection's actions (from [`ConnectionState::menus`]).
     pub fn invoke(&self, connection: u64, action: String) {
         let found = {
             let app = lock(&self.shared.app);
@@ -524,7 +538,7 @@ mod tests {
 
     fn dummy() -> ConnectRequest {
         ConnectRequest {
-            protocol: Protocol::Dummy,
+            protocol: ConnectionProtocol::Dummy,
             name: String::new(),
             group: String::new(),
             hostname: String::new(),

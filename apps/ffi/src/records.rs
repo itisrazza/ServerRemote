@@ -27,38 +27,38 @@ impl From<app::Page> for Page {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum Protocol {
+pub enum ConnectionProtocol {
     Dummy,
     Vnc,
     Spice,
     Ilo,
 }
 
-impl From<server_remote_app::Protocol> for Protocol {
+impl From<server_remote_app::Protocol> for ConnectionProtocol {
     fn from(protocol: server_remote_app::Protocol) -> Self {
         match protocol {
-            server_remote_app::Protocol::Dummy => Protocol::Dummy,
-            server_remote_app::Protocol::Vnc => Protocol::Vnc,
-            server_remote_app::Protocol::Spice => Protocol::Spice,
-            server_remote_app::Protocol::Ilo => Protocol::Ilo,
+            server_remote_app::Protocol::Dummy => ConnectionProtocol::Dummy,
+            server_remote_app::Protocol::Vnc => ConnectionProtocol::Vnc,
+            server_remote_app::Protocol::Spice => ConnectionProtocol::Spice,
+            server_remote_app::Protocol::Ilo => ConnectionProtocol::Ilo,
         }
     }
 }
 
-impl From<Protocol> for server_remote_app::Protocol {
-    fn from(protocol: Protocol) -> Self {
+impl From<ConnectionProtocol> for server_remote_app::Protocol {
+    fn from(protocol: ConnectionProtocol) -> Self {
         match protocol {
-            Protocol::Dummy => server_remote_app::Protocol::Dummy,
-            Protocol::Vnc => server_remote_app::Protocol::Vnc,
-            Protocol::Spice => server_remote_app::Protocol::Spice,
-            Protocol::Ilo => server_remote_app::Protocol::Ilo,
+            ConnectionProtocol::Dummy => server_remote_app::Protocol::Dummy,
+            ConnectionProtocol::Vnc => server_remote_app::Protocol::Vnc,
+            ConnectionProtocol::Spice => server_remote_app::Protocol::Spice,
+            ConnectionProtocol::Ilo => server_remote_app::Protocol::Ilo,
         }
     }
 }
 
 /// The protocol's name as shown to people, e.g. "HPE iLO".
 #[uniffi::export]
-pub fn protocol_name(protocol: Protocol) -> String {
+pub fn protocol_name(protocol: ConnectionProtocol) -> String {
     server_remote_app::Protocol::from(protocol)
         .full_name()
         .to_owned()
@@ -66,16 +66,16 @@ pub fn protocol_name(protocol: Protocol) -> String {
 
 /// Every protocol, in the order the connect form offers them.
 #[uniffi::export]
-pub fn protocols() -> Vec<Protocol> {
+pub fn protocols() -> Vec<ConnectionProtocol> {
     server_remote_app::Protocol::ALL
         .into_iter()
-        .map(Protocol::from)
+        .map(ConnectionProtocol::from)
         .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ConnectRequest {
-    pub protocol: Protocol,
+    pub protocol: ConnectionProtocol,
     pub name: String,
     pub group: String,
     pub hostname: String,
@@ -129,7 +129,7 @@ pub struct Session {
     pub id: u64,
     pub name: String,
     pub group: String,
-    pub protocol: Protocol,
+    pub protocol: ConnectionProtocol,
     pub hostname: String,
     pub username: String,
     pub password: String,
@@ -203,19 +203,21 @@ pub enum ConnectionDialog {
 pub struct ConnectionState {
     pub id: u64,
     pub name: String,
-    pub protocol: Protocol,
+    pub protocol: ConnectionProtocol,
     /// `host:port`.
     pub address: String,
     pub phase: ConnectionPhase,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    /// Frames received so far: when it changes, fetch the screen again.
+    pub frames: u64,
     /// Absolute pointers follow the touch; relative ones aren't supported
     /// yet.
     pub absolute_pointer: bool,
     pub dialog: Option<ConnectionDialog>,
     /// The connector's menus, with the input actions first.
-    pub menus: Vec<Menu>,
-    pub links: Vec<Link>,
+    pub menus: Vec<ActionMenu>,
+    pub links: Vec<WebLink>,
     pub chips: Vec<Chip>,
     pub status: Vec<StatusEntry>,
     pub encryption: Option<String>,
@@ -228,7 +230,7 @@ impl From<&Connection> for ConnectionState {
         let capabilities = connection.capabilities();
         let status = connection.status();
         let target = connection.target();
-        let input = (!capabilities.input_actions.is_empty()).then(|| Menu {
+        let input = (!capabilities.input_actions.is_empty()).then(|| ActionMenu {
             label: i18n::LOADER.get("section-input"),
             actions: capabilities
                 .input_actions
@@ -237,7 +239,7 @@ impl From<&Connection> for ConnectionState {
                 .collect(),
         });
         let menus = capabilities.toolbar.iter().filter_map(|item| match item {
-            ToolbarItem::Menu { label, items, .. } => Some(Menu {
+            ToolbarItem::Menu { label, items, .. } => Some(ActionMenu {
                 label: label.to_string(),
                 actions: flatten(items, ""),
             }),
@@ -257,6 +259,7 @@ impl From<&Connection> for ConnectionState {
             },
             width: connection.size().map(|(width, _)| width),
             height: connection.size().map(|(_, height)| height),
+            frames: connection.frames(),
             absolute_pointer: capabilities.pointer == server_remote_core::PointerMode::Absolute,
             dialog: connection
                 .dialog()
@@ -266,7 +269,7 @@ impl From<&Connection> for ConnectionState {
                 .toolbar
                 .iter()
                 .filter_map(|item| match item {
-                    ToolbarItem::Link { label, url, .. } => Some(Link {
+                    ToolbarItem::Link { label, url, .. } => Some(WebLink {
                         label: label.to_string(),
                         url: url.to_string(),
                     }),
@@ -321,7 +324,7 @@ impl ConnectionDialog {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct Menu {
+pub struct ActionMenu {
     pub label: String,
     pub actions: Vec<MenuAction>,
 }
@@ -361,7 +364,7 @@ fn flatten(items: &[MenuItem], prefix: &str) -> Vec<MenuAction> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct Link {
+pub struct WebLink {
     pub label: String,
     pub url: String,
 }
