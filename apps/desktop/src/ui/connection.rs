@@ -954,15 +954,7 @@ fn keysym(key: &keyboard::Key) -> Option<u32> {
     }
 }
 
-pub(crate) fn character_keysym(character: char) -> u32 {
-    let code = character as u32;
-    // Latin-1 code points are their own keysyms; the rest use the Unicode form.
-    if code <= 0xFF {
-        code
-    } else {
-        0x0100_0000 + code
-    }
-}
+pub(crate) use server_remote_app::keys::character_keysym;
 
 pub(crate) fn named_keysym(named: Named) -> Option<u32> {
     let keysym = match named {
@@ -1067,15 +1059,6 @@ mod tests {
         let lines: Vec<&str> = shown.lines().collect();
         assert_eq!(lines.len(), 4);
         assert!(lines.iter().all(|line| *line == "AB:AB:AB:AB:AB:AB:AB:AB"));
-    }
-
-    #[test]
-    fn characters_map_to_latin1_keysyms() {
-        assert_eq!(character_keysym('a'), 0x61);
-        assert_eq!(character_keysym('A'), 0x41);
-        assert_eq!(character_keysym('!'), 0x21);
-        // Beyond Latin-1 uses the Unicode keysym form.
-        assert_eq!(character_keysym('€'), 0x0100_0000 + '€' as u32);
     }
 
     #[test]

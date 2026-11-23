@@ -5,6 +5,7 @@ pub mod app;
 pub mod connect;
 pub mod connection;
 pub mod i18n;
+pub mod keys;
 pub mod persistence;
 pub mod protocol;
 pub mod update;
