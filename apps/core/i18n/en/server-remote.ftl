@@ -104,6 +104,7 @@ pointer-absolute = Absolute
 pointer-relative = Relative
 encryption-none = None
 menu-virtual-keyboard = Virtual keyboard
+menu-more = More
 menu-virtual-trackpad = Virtual trackpad
 menu-input-settings = Input settings…
 menu-zoom-out = Zoom out

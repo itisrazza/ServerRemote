@@ -78,7 +78,8 @@ on show. Hardware keys arrive as USB HID usages, which `keys::hid_keysym`
 maps; on-screen typing is sent as text. A touch moves the pointer and holds
 the left button.
 
-It's a native iPadOS 26 app, in its Liquid Glass design: a sidebar of
+It's a native iPadOS 26 app, in its Liquid Glass design, and runs on
+iPhone too: nothing in it is iPad-only. It has a sidebar of
 pages and open connections, system forms, menus and alerts, and SF Symbols,
 including for the connectors' built-in icons (each built-in icon carries its
 name); the connection's status is a toolbar button with a popover. It shares
@@ -182,7 +183,10 @@ What keeps the front ends sharing one app rather than drifting into two.
 
 ### Platform limits
 
-- **iPadOS 26 or later**, for its design, so Xcode 26 or later to build it;
+- **iPadOS or iOS 26 or later**, for its design, so Xcode 26 or later to
+  build it. It's designed for iPad and runs on iPhone: keep it free of
+  iPad-only APIs, and let layouts adapt to a compact width (the connection
+  toolbar folds into one menu there, as it does in a narrow split on iPad);
   CI uses the `macos-26` runner's default Xcode.
 - **Sessions don't survive the background yet.** iOS suspends the app
   within seconds; the session runners are kept separable from `App` so a

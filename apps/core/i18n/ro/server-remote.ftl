@@ -103,6 +103,7 @@ info-sent = Trimis
 pointer-absolute = Absolut
 pointer-relative = Relativ
 encryption-none = Niciuna
+menu-more = Mai mult
 menu-virtual-keyboard = Tastatură virtuală
 menu-virtual-trackpad = Trackpad virtual
 menu-input-settings = Setări de intrare…

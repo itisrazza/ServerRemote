@@ -56,7 +56,8 @@ cargo run -p server-remote
 Pick a protocol, enter `host` or `host:port` and a password if needed, then
 connect. VNC's default port is 5900.
 
-The iPadOS app (iPadOS 26 or later) needs Xcode and the iOS Rust targets:
+The iPadOS app (iPadOS or iOS 26 or later; it runs on iPhone too) needs
+Xcode and the iOS Rust targets:
 
 ```sh
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim

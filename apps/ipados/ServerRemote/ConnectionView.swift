@@ -4,6 +4,7 @@ import SwiftUI
 /// and the connection's status sit in the toolbar.
 struct ConnectionView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let connection: ConnectionState
     @State private var keyboard = KeyboardFocus()
     @State private var showingStatus = false
@@ -43,7 +44,14 @@ struct ConnectionView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if case .connected = connection.phase {
+        if case .connected = connection.phase, sizeClass == .compact {
+            // A phone's bar has no room for each menu: one holds them all.
+            ToolbarItem {
+                Menu(model.localize("menu-more"), systemImage: "ellipsis") {
+                    compactItems
+                }
+            }
+        } else if case .connected = connection.phase {
             ToolbarItemGroup {
                 ForEach(connection.chips, id: \.label) { chip in
                     ChipButton(connection: connection.id, chip: chip)
@@ -96,6 +104,42 @@ struct ConnectionView: View {
             }
             Button(model.localize("close-tab"), systemImage: "xmark") {
                 model.core.closeConnection(connection: connection.id)
+            }
+        }
+    }
+
+    /// Everything the toolbar shows side by side, as one menu.
+    @ViewBuilder
+    private var compactItems: some View {
+        Section {
+            ForEach(connection.chips, id: \.label) { chip in
+                ChipButton(connection: connection.id, chip: chip)
+            }
+        }
+        Section {
+            inputMenu
+            ForEach(contributed, id: \.label) { menu in
+                Menu {
+                    actions(menu.actions)
+                } label: {
+                    menuLabel(menu)
+                }
+            }
+        }
+        Section {
+            ForEach(connection.links, id: \.url) { link in
+                if let url = URL(string: link.url) {
+                    Link(destination: url) {
+                        Label {
+                            Text(link.label)
+                        } icon: {
+                            ConnectorIcon(connection: connection.id, icon: link.icon)
+                        }
+                    }
+                }
+            }
+            Button(model.localize("menu-virtual-keyboard"), systemImage: "keyboard") {
+                keyboard.toggle()
             }
         }
     }
