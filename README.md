@@ -90,7 +90,7 @@ release. See [docs/releasing.md](docs/releasing.md), and
 ## Translations
 
 The app's text lives in [Fluent](https://projectfluent.org/) files under
-[`apps/server-remote/i18n/`](apps/server-remote/i18n/), one folder per
+[`apps/desktop/i18n/`](apps/desktop/i18n/), one folder per
 language: English (the fallback) and Romanian. To add a language, copy
 `en/server-remote.ftl` into a new folder named after its language tag, add it
 to `Language` in `persistence/settings.rs` and to `TRANSLATIONS` in
@@ -106,7 +106,7 @@ licensed under the [Apache License 2.0](LICENSE-APACHE).
 
 The UI font is [Nunito Sans](https://github.com/googlefonts/NunitoSans) by the
 Nunito Sans Project Authors, licensed under the
-[SIL Open Font License 1.1](apps/server-remote/assets/fonts/OFL.txt). The
+[SIL Open Font License 1.1](apps/desktop/assets/fonts/OFL.txt). The
 embedded static instances are generated from the variable font by
 [`scripts/instance-fonts.py`](scripts/instance-fonts.py).
 

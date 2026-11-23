@@ -37,7 +37,7 @@ protocol table and crate list; the status line and crate table in
 [docs/architecture/README.md](docs/architecture/README.md); the
 [roadmap](docs/architecture/roadmap.md) (move items between Done, In
 progress and Next); the architecture page for the area you changed; the
-crate `description` in `apps/server-remote/Cargo.toml`; the caveats in the
+crate `description` in `apps/desktop/Cargo.toml`; the caveats in the
 [protocol notes](docs/protocols/README.md); and the protocol table and
 feature list on the [website](website/index.html).
 
@@ -66,7 +66,7 @@ headlessly through an ignored snapshot test; the UI guides below explain it.
   flagged as dead code) on macOS and Linux.
 - **The core stays UI-free:** `lib/core` and the connectors never depend on
   iced. Connector UI is data (`Capabilities`, `Status`), rendered by
-  `apps/server-remote/src/ui/contributed.rs`. Extend the Dummy connector when
+  `apps/desktop/src/ui/contributed.rs`. Extend the Dummy connector when
   adding a new kind of contribution, so it can be exercised without a server.
 - **Tooling:** Python helpers are `uv run --script` files with pinned PyPI
   dependencies. Don't download and run third-party binaries (linters and so
