@@ -100,7 +100,9 @@ with its C headers in `target/ipados/include/`, and generates the Swift
 bindings into `apps/ipados/Generated/`. The project finds the library
 through search paths rather than an XCFramework, so a clean checkout builds
 in one go. It needs the `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust
-targets. `scripts/check-ipados.sh` builds it for the simulator and for
+targets. Its app icon is the desktop's Icon Composer file,
+`apps/desktop/assets/icon.icon`, which Xcode compiles directly.
+`scripts/check-ipados.sh` builds it for the simulator and for
 devices, unsigned and with Swift warnings as errors, as CI's iPadOS job
 does on a `macos-26` runner.
 

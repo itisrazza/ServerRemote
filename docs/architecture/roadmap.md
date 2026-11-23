@@ -52,7 +52,7 @@ In progress:
   - Keeping sessions alive in the background; today iOS suspends them.
   - Right and middle clicks by gesture or the trackpad's own buttons (now
     from a menu), and the virtual keyboard and trackpad panels.
-  - App icon, translated Info.plist strings, signing and distribution.
+  - Translated Info.plist strings, signing and distribution.
 
 Next:
 
