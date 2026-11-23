@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		5E0A00000000000000000101 /* ServerRemoteCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E0A00000000000000000201 /* ServerRemoteCore.xcframework */; };
+		5E0A00000000000000000102 /* ServerRemoteCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0A00000000000000000202 /* ServerRemoteCore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		5E0A00000000000000000200 /* ServerRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ServerRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5E0A00000000000000000201 /* ServerRemoteCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = ServerRemoteCore.xcframework; path = ../../target/ipados/ServerRemoteCore.xcframework; sourceTree = SOURCE_ROOT; };
+		5E0A00000000000000000202 /* ServerRemoteCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerRemoteCore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -28,7 +28,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5E0A00000000000000000101 /* ServerRemoteCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -39,7 +38,7 @@
 			isa = PBXGroup;
 			children = (
 				5E0A00000000000000000300 /* ServerRemote */,
-				5E0A00000000000000000502 /* Frameworks */,
+				5E0A00000000000000000502 /* Generated */,
 				5E0A00000000000000000501 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -52,12 +51,12 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		5E0A00000000000000000502 /* Frameworks */ = {
+		5E0A00000000000000000502 /* Generated */ = {
 			isa = PBXGroup;
 			children = (
-				5E0A00000000000000000201 /* ServerRemoteCore.xcframework */,
+				5E0A00000000000000000202 /* ServerRemoteCore.swift */,
 			);
-			name = Frameworks;
+			path = Generated;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -139,10 +138,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(PROJECT_DIR)/Generated/ServerRemoteCore.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Xcode's environment targets iOS, which would break cargo's host builds\n# (the bindings generator), so the script runs in a clean one.\nprofile=\"\"\nif [ \"$CONFIGURATION\" = \"Release\" ]; then profile=\"--release\"; fi\nexec env -i HOME=\"$HOME\" PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" \\\n    /bin/bash \"$PROJECT_DIR/../../scripts/build-ipados-core.sh\" $profile\n";
+			shellScript = "# Xcode's environment targets iOS, which would break cargo's host builds\n# (the bindings generator), so the script runs in a clean one.\nprofile=\"\"\nif [ \"$CONFIGURATION\" = \"Release\" ]; then profile=\"--release\"; fi\nexec env -i HOME=\"$HOME\" PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" \\\n    /bin/bash \"$PROJECT_DIR/../../scripts/build-ipados-core.sh\" $profile \"$PLATFORM_NAME\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -151,6 +151,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5E0A00000000000000000102 /* ServerRemoteCore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,6 +215,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../../target/ipados/$(PLATFORM_NAME)";
+				OTHER_LDFLAGS = "-lserver_remote_ffi";
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../../target/ipados/include";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.razza.ServerRemote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -242,6 +246,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../../target/ipados/$(PLATFORM_NAME)";
+				OTHER_LDFLAGS = "-lserver_remote_ffi";
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../../target/ipados/include";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.razza.ServerRemote;
 				PRODUCT_NAME = "$(TARGET_NAME)";

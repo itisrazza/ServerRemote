@@ -79,10 +79,13 @@ maps; on-screen typing is sent as text. A touch moves the pointer and holds
 the left button.
 
 To build it, open `apps/ipados/ServerRemote.xcodeproj` in Xcode. A build
-phase runs `scripts/build-ipados-core.sh`, which builds the Rust core for
-devices and the simulator into `target/ipados/ServerRemoteCore.xcframework`
-and generates the Swift bindings into `apps/ipados/ServerRemote/Generated/`.
-It needs the `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust targets.
+phase runs `scripts/build-ipados-core.sh` for the platform being built: it
+builds the Rust core as a static library under `target/ipados/<platform>/`,
+with its C headers in `target/ipados/include/`, and generates the Swift
+bindings into `apps/ipados/Generated/`. The project finds the library
+through search paths rather than an XCFramework, so a clean checkout builds
+in one go. It needs the `aarch64-apple-ios` and `aarch64-apple-ios-sim` Rust
+targets.
 Android will use the same `apps/ffi` crate through UniFFI's Kotlin bindings.
 
 ## Store builds
