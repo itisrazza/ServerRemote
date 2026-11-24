@@ -182,9 +182,12 @@ jobs:
           mkdir -p candidate assets
 
           gh run download "${{ needs.resolve.outputs.run-id }}" \
-            -n "server-remote-$LABEL-windows-x64" -D "candidate/server-remote-$VERSION-windows-x64"
+            -n "server-remote-$LABEL-windows-x64" -D candidate
+          mv "candidate/server-remote-$LABEL-windows-x64" "candidate/server-remote-$VERSION-windows-x64"
           (cd candidate && zip -r "../assets/server-remote-$VERSION-windows-x64.zip" \
             "server-remote-$VERSION-windows-x64")
+          mv "candidate/server-remote-$LABEL-windows-x64-setup.exe" \
+            "assets/server-remote-$VERSION-windows-x64-setup.exe"
 
           gh run download "${{ needs.resolve.outputs.run-id }}" \
             -n "server-remote-$LABEL-linux-x64" -D candidate

@@ -56,7 +56,7 @@ In progress:
   - Translated Info.plist strings, signing and distribution.
 
 - Packaging, one platform at a time: a macOS app in a notarised disk image
-  (done); then a Windows installer, an AppImage, a Flatpak on Flathub, the
+  and a Windows installer (done); then an AppImage, a Flatpak on Flathub, the
   Microsoft Store and the App Store. Store and Flathub builds leave out the
   update check.
 
