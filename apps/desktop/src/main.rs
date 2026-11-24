@@ -1275,7 +1275,7 @@ impl Application {
 
     fn title(&self) -> String {
         // TODO: show connection
-        "Server Remote".into()
+        "ServerRemote".into()
     }
 
     fn subscription(&self) -> Subscription<Message> {

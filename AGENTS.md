@@ -87,6 +87,9 @@ headlessly through an ignored snapshot test; the UI guides below explain it.
   (`Capabilities`, `Status`), rendered by `apps/desktop/src/ui/contributed.rs`
   and `apps/ipados/ServerRemote/ConnectionView.swift`. Extend the Dummy connector when
   adding a new kind of contribution, so it can be exercised without a server.
+- **Branding:** the product name is ServerRemote (one word), and the
+  identifier `io.razza.ServerRemote`. Names, colours, the logo's derived
+  assets and listing text are in [branding](docs/branding.md).
 - **Tooling:** Python helpers are `uv run --script` files with pinned PyPI
   dependencies. Don't download and run third-party binaries (linters and so
   on). Look up the latest version of any crate or GitHub Action before adding
