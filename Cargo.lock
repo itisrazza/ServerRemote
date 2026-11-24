@@ -4705,7 +4705,7 @@ dependencies = [
 
 [[package]]
 name = "server-remote"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
  "i18n-embed-fl",
@@ -4731,7 +4731,7 @@ dependencies = [
 
 [[package]]
 name = "server-remote-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
  "i18n-embed",
@@ -4753,7 +4753,7 @@ dependencies = [
 
 [[package]]
 name = "server-remote-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aws-lc-rs",
  "rcgen",
@@ -4768,7 +4768,7 @@ dependencies = [
 
 [[package]]
 name = "server-remote-ffi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "resvg 0.50.0",
  "server-remote-app",
@@ -4781,14 +4781,14 @@ dependencies = [
 
 [[package]]
 name = "server-remote-icons"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "iced",
 ]
 
 [[package]]
 name = "server-remote-ilo"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes 0.9.4",
  "rcgen",
@@ -4802,7 +4802,7 @@ dependencies = [
 
 [[package]]
 name = "server-remote-spice"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "server-remote-core",
  "spice-rs",
@@ -4811,7 +4811,7 @@ dependencies = [
 
 [[package]]
 name = "server-remote-vnc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "server-remote-core",
  "tokio",
