@@ -45,6 +45,13 @@ this is can be changed in Settings › Security. The protocol is documented in
 Server setup and known limitations for each protocol are in the
 [protocol notes](docs/protocols/README.md).
 
+## Install
+
+Download the [latest release](https://github.com/itisrazza/ServerRemote/releases/latest):
+a disk image for macOS (universal), an installer or portable zip for
+Windows, and an AppImage or tarball for Linux, each for x64 and ARM64. The
+[website](https://serverremote.razza.io/#get-it) says which file to pick.
+
 ## Build and run
 
 Requires a recent Rust toolchain (edition 2024, Rust ≥ 1.85).

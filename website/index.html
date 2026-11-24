@@ -107,15 +107,32 @@
         <div class="group-body">
           <h2 id="get-it-title">Get it</h2>
           <p>
-            There is no stable release yet. Development builds for Windows,
-            macOS and Linux are produced for every change to
-            <code>main</code> and can be downloaded from the latest Build run
-            (a GitHub account is required).
+            Download the latest release from GitHub. Each release lists the
+            files below, and <code>SHA256SUMS</code> to check them against.
           </p>
+          <ul class="tiles">
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>
+              <span class="tile-text"><strong>macOS</strong><span><code>…-macos-universal.dmg</code>, for Apple silicon and Intel Macs on macOS 11 or later. Open it and drag ServerRemote to Applications.</span></span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>
+              <span class="tile-text"><strong>Windows</strong><span><code>…-windows-x64-setup.exe</code>, or <code>…-windows-arm64-setup.exe</code> on ARM. Installs for your user without admin rights. A <code>.zip</code> of each runs without installing. The installer isn't signed yet, so SmartScreen asks before running it.</span></span>
+            </li>
+            <li class="tile">
+              <span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>
+              <span class="tile-text"><strong>Linux</strong><span><code>…-linux-x64.AppImage</code>, or <code>…-linux-arm64.AppImage</code> on ARM. Make it executable and run it. Needs glibc 2.35 or later (Debian 12, Ubuntu 22.04, Fedora 36 or newer).</span></span>
+            </li>
+          </ul>
           <p class="buttons">
-            <a class="control primary" href="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml?query=branch%3Amain"><span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>Latest builds</a>
+            <a class="control primary" href="https://github.com/itisrazza/ServerRemote/releases/latest"><span class="icon" style="--icon: url(icons/carbon_download.svg)"></span>Latest release</a>
             <a class="control" href="https://github.com/itisrazza/ServerRemote"><span class="icon" style="--icon: url(icons/carbon_logo--github.svg)"></span>Source</a>
             <a class="control" href="https://github.com/itisrazza/ServerRemote/blob/main/docs/architecture/roadmap.md"><span class="icon" style="--icon: url(icons/carbon_launch.svg)"></span>Roadmap</a>
+          </p>
+          <p>
+            Development builds of every change to <code>main</code> are on the
+            <a href="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml?query=branch%3Amain">Build</a>
+            workflow's runs (a GitHub account is required).
           </p>
           <p>To build from source, install Rust 1.85 or newer and run:</p>
           <pre><code>git clone https://github.com/itisrazza/ServerRemote
