@@ -159,9 +159,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -q -y --no-install-recommends \
-            squashfs-tools desktop-file-utils appstream
-          desktop-file-validate packaging/linux/io.razza.ServerRemote.desktop
-          appstreamcli validate --no-net --explain packaging/linux/io.razza.ServerRemote.metainfo.xml
+            squashfs-tools
 
           curl -fsSL -o "$RUNNER_TEMP/runtime" "$RUNTIME_URL"
           echo "$RUNTIME_SHA256  $RUNNER_TEMP/runtime" | sha256sum --check

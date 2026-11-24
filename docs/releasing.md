@@ -65,7 +65,7 @@ The Linux binary links nothing but glibc (the display and GPU libraries
 are loaded at run time), so the AppImage bundles no libraries. It's built
 on the oldest supported Ubuntu runner, whose glibc sets the oldest
 distribution it runs on. The desktop entry and AppStream metadata in
-`packaging/linux` are shared with the Flatpak; Build validates both.
+`packaging/linux` are shared with the Flatpak; CI validates both.
 
 The macOS candidate isn't notarised, so Gatekeeper blocks it once
 downloaded; clear the quarantine flag to test it
