@@ -44,6 +44,22 @@ jobs:
       - name: Build
         run: scripts/check-ipados.sh
 
+  linux-metadata:
+    name: Linux metadata
+    # Current AppStream: the one in older Ubuntus predates tags Flathub
+    # requires.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install validators
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y --no-install-recommends desktop-file-utils appstream
+      - name: Validate the desktop entry
+        run: desktop-file-validate packaging/linux/io.razza.ServerRemote.desktop
+      - name: Validate the AppStream metadata
+        run: appstreamcli validate --no-net --explain packaging/linux/io.razza.ServerRemote.metainfo.xml
+
   coverage:
     name: coverage
     runs-on: ubuntu-latest

@@ -12,6 +12,6 @@ fn main() -> std::io::Result<()> {
         .set_icon("../../packaging/windows/icon.ico")
         .set("ProductName", "ServerRemote")
         .set("FileDescription", "ServerRemote")
-        .set("LegalCopyright", "Raresh Nistor. MIT OR Apache-2.0.")
+        .set("LegalCopyright", "Rareș Nistor. MIT OR Apache-2.0.")
         .compile()
 }

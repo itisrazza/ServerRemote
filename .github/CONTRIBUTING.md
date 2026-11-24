@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with Server Remote. It's early and experimental, so
+Thanks for helping with ServerRemote. It's early and experimental, so
 interfaces move often; open an issue before starting anything large so we
 can agree on the shape first.
 
@@ -48,6 +48,6 @@ on a connector.
 
 ## Licence
 
-Server Remote is dual-licensed under MIT and Apache 2.0. Unless you say
+ServerRemote is dual-licensed under MIT and Apache 2.0. Unless you say
 otherwise, any contribution you submit is licensed the same way, with no
 additional terms or conditions.

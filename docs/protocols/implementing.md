@@ -1,7 +1,7 @@
 # Implementing a protocol
 
-Many of the protocols Server Remote targets only have closed first-party
-clients, usually written in C, C# (.NET) or Java. Even though Server Remote is
+Many of the protocols ServerRemote targets only have closed first-party
+clients, usually written in C, C# (.NET) or Java. Even though ServerRemote is
 in Rust, protocol work follows a clean-room process. It has two steps,
 done by different hands:
 

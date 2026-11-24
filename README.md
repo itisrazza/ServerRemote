@@ -1,5 +1,5 @@
 <div align="center"><img src="logo.svg" alt="" width="64" height="64"></div>
-<h1 align="center">Server Remote</h1>
+<h1 align="center">ServerRemote</h1>
 <div align="center">
   <a href="https://github.com/itisrazza/ServerRemote/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/itisrazza/ServerRemote/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml"><img alt="Build" src="https://github.com/itisrazza/ServerRemote/actions/workflows/build.yml/badge.svg"></a>

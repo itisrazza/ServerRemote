@@ -92,9 +92,9 @@ const LIGHT_PALETTE: Palette = Palette {
 
 // Themes are rebuilt from their palettes on every call otherwise.
 static DARK: LazyLock<Theme> =
-    LazyLock::new(|| Theme::custom_with_fn("Server Remote Dark", DARK_PALETTE, dark_extended));
+    LazyLock::new(|| Theme::custom_with_fn("ServerRemote Dark", DARK_PALETTE, dark_extended));
 static LIGHT: LazyLock<Theme> =
-    LazyLock::new(|| Theme::custom_with_fn("Server Remote Light", LIGHT_PALETTE, light_extended));
+    LazyLock::new(|| Theme::custom_with_fn("ServerRemote Light", LIGHT_PALETTE, light_extended));
 
 pub fn dark_theme() -> Theme {
     DARK.clone()

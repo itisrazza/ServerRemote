@@ -1,4 +1,4 @@
-; The Windows installer for GitHub releases (the Microsoft Store gets an
+﻿; The Windows installer for GitHub releases (the Microsoft Store gets an
 ; MSIX instead). Installs for the current user without asking for admin
 ; rights; the user can choose an all-users install instead.
 ;
@@ -22,7 +22,7 @@
 AppId={{E327B21B-F65A-4645-955E-10F50FCF3FE5}
 AppName=ServerRemote
 AppVersion={#AppVersion}
-AppPublisher=Raresh Nistor
+AppPublisher=Rareș Nistor
 AppPublisherURL=https://serverremote.razza.io/
 AppSupportURL=https://github.com/itisrazza/ServerRemote/issues
 AppUpdatesURL=https://github.com/itisrazza/ServerRemote/releases

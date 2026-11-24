@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=ServerRemote
+GenericName=Remote Console
+GenericName[ro]=Consolă la distanță
+Comment=Connect to the consoles of servers and virtual machines
+Comment[ro]=Conectează-te la consolele serverelor și mașinilor virtuale
+Exec=server-remote
+Icon=io.razza.ServerRemote
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=VNC;Spice;iLO;KVM;remote;console;server;
+StartupWMClass=io.razza.ServerRemote

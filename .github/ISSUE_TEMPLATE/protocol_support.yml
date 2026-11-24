@@ -1,5 +1,5 @@
 name: Protocol or server support
-description: Ask for a new protocol, or report a server or firmware version that won't work with Server Remote.
+description: Ask for a new protocol, or report a server or firmware version that won't work with ServerRemote.
 labels: [protocol]
 body:
   - type: markdown
@@ -14,7 +14,7 @@ body:
     attributes:
       label: Request
       options:
-        - A protocol Server Remote doesn't support yet
+        - A protocol ServerRemote doesn't support yet
         - A server or firmware version that doesn't work
         - A missing feature of a supported protocol
     validations:

@@ -1,6 +1,6 @@
 # Security policy
 
-Server Remote handles credentials and connects to management interfaces such
+ServerRemote handles credentials and connects to management interfaces such
 as iLO, so security reports are welcome.
 
 ## Reporting a vulnerability

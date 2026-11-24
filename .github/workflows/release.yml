@@ -195,6 +195,8 @@ jobs:
           mv "candidate/server-remote-$LABEL-linux-x64" "candidate/server-remote-$VERSION-linux-x64"
           tar -czf "assets/server-remote-$VERSION-linux-x64.tar.gz" \
             -C candidate "server-remote-$VERSION-linux-x64"
+          mv "candidate/server-remote-$LABEL-linux-x64.AppImage" \
+            "assets/server-remote-$VERSION-linux-x64.AppImage"
 
           gh run download "$GITHUB_RUN_ID" \
             -n "server-remote-$VERSION-macos-universal" -D assets

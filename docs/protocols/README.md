@@ -1,6 +1,6 @@
 # Protocols
 
-What Server Remote supports for each protocol, what the server needs, and
+What ServerRemote supports for each protocol, what the server needs, and
 what to expect. Every protocol is still in progress; the
 [roadmap](../architecture/roadmap.md) says what's coming next, and
 [implementing a protocol](implementing.md) explains how new protocol work is
@@ -38,7 +38,7 @@ The sections below explain each ⚠️ and ❌.
 
 ## HPE iLO 4
 
-Server Remote implements the iLO Integrated Remote Console itself, without
+ServerRemote implements the iLO Integrated Remote Console itself, without
 HPE's .NET or Java clients.
 
 **Works:** the console's video, keyboard and mouse; a Power menu; Ctrl+Alt+Del;
@@ -56,10 +56,10 @@ and the server's power, health and POST status in the status bar.
 - **One user at a time.** If someone else already has the remote console open,
   connecting fails with an error. Taking over or sharing their session isn't
   supported yet.
-- **No virtual media** yet, so disk images can't be mounted from Server Remote.
+- **No virtual media** yet, so disk images can't be mounted from ServerRemote.
 - **No clipboard.**
 - **Licensing is up to the iLO.** The iLO limits the remote console without
-  an iLO Advanced licence. How Server Remote behaves on an unlicensed iLO
+  an iLO Advanced licence. How ServerRemote behaves on an unlicensed iLO
   hasn't been tested.
 - **Certificates.** iLOs usually have self-signed certificates. The first
   connection shows the certificate's fingerprint and asks whether to trust it
@@ -74,7 +74,7 @@ hand.
 
 **Works:** display, keyboard and mouse.
 
-**Server setup.** Server Remote connects to the Spice port directly, over
+**Server setup.** ServerRemote connects to the Spice port directly, over
 plain TCP, and needs image compression and video streaming turned off. With
 QEMU on the command line:
 
@@ -96,7 +96,7 @@ reachable by anyone else.
 
 **Caveats:**
 
-- **Uncompressed images only.** Server Remote doesn't decode compressed
+- **Uncompressed images only.** ServerRemote doesn't decode compressed
   updates (LZ, GLZ, QUIC or JPEG) or video streams, and skips them, so parts
   of the screen stop updating. It asks the server for uncompressed images, but
   not every server honours that, so turn compression off on the server as
