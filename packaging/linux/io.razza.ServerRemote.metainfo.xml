@@ -61,6 +61,8 @@
     <control>keyboard</control>
   </supports>
 
-  <!-- Newest first. Add each release here before tagging it. -->
-  <releases/>
+  <!-- Newest first. Add each release here when cutting its branch. -->
+  <releases>
+    <release version="0.1.0" date="2026-11-24"/>
+  </releases>
 </component>
