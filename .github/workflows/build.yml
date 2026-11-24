@@ -4,7 +4,8 @@ name: Build
 # the main line and release branches; other branches get CI checks only.
 #
 # - main: development builds, named after the commit.
-# - release/vX.Y: release candidates, named after the version and commit.
+# - release/vX.Y, release/vX: release candidates, named after the version
+#   and commit.
 #   A validated candidate is what release.yml signs and publishes, so it
 #   doesn't rebuild. See docs/releasing.md.
 #
@@ -14,6 +15,7 @@ on:
     branches:
       - main
       - 'release/v[0-9]+.[0-9]+'
+      - 'release/v[0-9]+'
   workflow_dispatch:
 
 permissions:
@@ -41,7 +43,8 @@ jobs:
       - uses: actions/checkout@v7
 
       # On a release branch the workspace version must belong to that branch
-      # (release/v0.2 builds 0.2.x), so candidates can't carry a stale version.
+      # (release/v0.2 builds 0.2.x, release/v1 builds 1.x.y), so candidates
+      # can't carry a stale version.
       - name: Work out the build label
         id: label
         run: |

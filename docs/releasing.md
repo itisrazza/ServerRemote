@@ -6,20 +6,28 @@
 |---|---|---|
 | `main` | The development line. Every change lands here through a PR. | Checks; development builds as artifacts |
 | `feature/<name>`, `fix/<name>`, … | One piece of work, branched off `main`, merged back by PR. | Checks on the PR |
-| `release/vX.Y` | Stabilising one release series, cut from `main`. | Checks; release candidates as artifacts |
+| `release/vX.Y` | One release series (`X.Y.0`, `X.Y.1`, …), cut from `main`. | Checks; release candidates as artifacts |
+| `release/vX` | A major version kept in maintenance while `main` moves on to a big rewrite: minor and patch releases of `X` are tagged on it. Cut from `main`, or from the last `release/vX.Y`. | Checks; release candidates as artifacts |
 
 Tags `vX.Y.Z` mark released commits on a release branch.
 
-Fixes go **upstream first**: land the fix on `main` through a PR, then
-cherry-pick it onto the release branch (`git cherry-pick -x`). A fix that
-only makes sense on the release branch (it touches code `main` has since
-replaced) can go straight to a PR against that branch.
+**Fixes** can land either way round; both go through a PR:
+
+- **Release branch first**, for a quick patch to a release: open the PR
+  against `release/vX.Y` (or `release/vX`), then bring the fix to `main`
+  (`git cherry-pick -x`, in a PR of its own) so the next release keeps it.
+- **`main` first**, when the fix is part of ongoing work: land it on `main`,
+  then cherry-pick it onto the release branch.
+
+Skip carrying a fix to `main` only when `main` has replaced the code it
+touches; say so in the PR.
 
 ## Versions
 
 The version lives once, in the workspace `Cargo.toml`. A release branch only
-builds its own series: `release/v0.2` must carry `0.2.x`, and the build fails
-otherwise.
+builds its own series: `release/v0.2` must carry `0.2.x`, and `release/v1`
+`1.x.y`; the build fails otherwise. A tag must match the version on its
+commit.
 
 ## Cutting a release
 
@@ -41,7 +49,7 @@ otherwise.
 
 ## Release candidates
 
-Every push to `release/vX.Y` runs [Build](../.github/workflows/build.yml),
+Every push to a release branch runs [Build](../.github/workflows/build.yml),
 which uploads one artifact per platform named
 `server-remote-<version>-rc.<commit>-<platform>`. Download them from the
 run's page, install and test. The run summary shows the commands to tag
@@ -72,8 +80,8 @@ downloaded; clear the quarantine flag to test it
 (`xattr -dr com.apple.quarantine ServerRemote.app`). Bundling needs Xcode
 26's `actool` for the icon, so the macOS jobs run on `macos-26`.
 
-If testing finds problems, fix them (upstream first) and push to the release
-branch again; each push makes a new candidate. Artifacts expire with the
+If testing finds problems, fix them (see **Fixes** above) and merge to the
+release branch again; each push makes a new candidate. Artifacts expire with the
 repository's retention period (90 days by default), so release a candidate
 before then or push again.
 
@@ -88,7 +96,8 @@ git push origin v0.2.0
 
 [Release](../.github/workflows/release.yml) then:
 
-1. checks the tag matches `Cargo.toml` and sits on `release/v0.2`, and finds
+1. checks the tag matches `Cargo.toml` and sits on `release/v0.2` (or
+   `release/v0`, for a major line), and finds
    the successful Build run for that commit; without one, it stops;
 2. signs `ServerRemote.app` with the Developer ID certificate, notarises
    and staples it, then puts it in a disk image (with a link to
@@ -102,7 +111,7 @@ git push origin v0.2.0
 The binaries are the candidate's, not a rebuild: what was tested ships.
 Review the draft and publish it.
 
-Patch releases (`0.2.1`) come from the same branch: cherry-pick fixes, bump
+Patch releases (`0.2.1`) come from the same branch: merge or cherry-pick fixes, bump
 the version (and the metainfo release entry) on the branch, validate the new
 candidate, tag.
 

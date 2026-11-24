@@ -1,7 +1,8 @@
 name: Release
 
 # Publishes a validated release candidate. Pushing a tag vX.Y.Z on a commit
-# of release/vX.Y takes the candidate build.yml made for that commit, signs
+# of release/vX.Y (or of a major line, release/vX) takes the candidate
+# build.yml made for that commit, signs
 # and notarises the macOS app and disk image, and drafts a GitHub release
 # with every platform attached. Nothing is rebuilt: what was tested is what ships.
 #
@@ -44,7 +45,6 @@ jobs:
         id: find
         run: |
           version="${GITHUB_REF_NAME#v}"
-          branch="release/v${version%.*}"
           sha="$GITHUB_SHA"
 
           cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -53,8 +53,17 @@ jobs:
             exit 1
           fi
 
-          if ! git merge-base --is-ancestor "$sha" "origin/$branch"; then
-            echo "::error::$GITHUB_REF_NAME isn't on $branch; tag a release candidate from that branch"
+          # A minor series branch (release/v1.2), or a major line (release/v1).
+          branch=""
+          for candidate in "release/v${version%.*}" "release/v${version%%.*}"; do
+            if git rev-parse -q --verify "origin/$candidate" > /dev/null &&
+              git merge-base --is-ancestor "$sha" "origin/$candidate"; then
+              branch=$candidate
+              break
+            fi
+          done
+          if [[ -z "$branch" ]]; then
+            echo "::error::$GITHUB_REF_NAME isn't on release/v${version%.*} or release/v${version%%.*}; tag a release candidate from one of them"
             exit 1
           fi
 
