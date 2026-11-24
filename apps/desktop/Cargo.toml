@@ -31,6 +31,9 @@ server-remote-spice = { path = "../../connectors/spice" }
 server-remote-vnc = { path = "../../connectors/vnc" }
 tokio = { version = "1.52.3", features = ["rt", "sync"] }
 
+[build-dependencies]
+winresource = "0.1.34"
+
 [dev-dependencies]
 semver = "1.0.28"
 iced_test = "0.14.0"

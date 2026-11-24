@@ -48,8 +48,16 @@ that commit.
 | Platform | Candidate | Made by |
 |---|---|---|
 | macOS | `ServerRemote.app`, universal, ad-hoc signed | [`scripts/bundle-macos.sh`](../scripts/bundle-macos.sh), from [`packaging/macos`](../packaging/macos) |
-| Windows | `server-remote.exe` | `cargo build` |
+| Windows | A per-user installer (`-setup.exe`) and a portable folder | [Inno Setup](https://jrsoftware.org/isinfo.php), from [`packaging/windows`](../packaging/windows) |
 | Linux | `server-remote` | `cargo build` |
+
+To build packaging changes before they reach `main`, run Build by hand on
+the branch (Actions → Build → Run workflow).
+
+The executable's icon comes from `packaging/windows/icon.ico`, which
+[`scripts/render-icons.py`](../scripts/render-icons.py) renders from the
+logo; rerun it after changing the logo. The installer's `AppId` must never
+change, or upgrades install side by side.
 
 The macOS candidate isn't notarised, so Gatekeeper blocks it once
 downloaded; clear the quarantine flag to test it
@@ -77,7 +85,8 @@ git push origin v0.2.0
 2. signs `ServerRemote.app` with the Developer ID certificate, notarises
    and staples it, then puts it in a disk image (with a link to
    `/Applications`) that is signed, notarised and stapled in turn;
-3. renames the candidates to `server-remote-<version>-<platform>`, writes
+3. renames the candidates to `server-remote-<version>-<platform>` (Windows
+   as a zip and a `-setup.exe`), writes
    `SHA256SUMS`, and drafts a GitHub release with them all attached and
    generated notes.
 
@@ -88,7 +97,8 @@ Patch releases (`0.2.1`) come from the same branch: cherry-pick fixes, bump
 the version on the branch, validate the new candidate, tag.
 
 Windows and Linux builds ship unsigned for now; `SHA256SUMS` lets people
-check what they downloaded.
+check what they downloaded. SmartScreen warns about the unsigned Windows
+installer until it builds up reputation.
 
 ## Signing setup
 

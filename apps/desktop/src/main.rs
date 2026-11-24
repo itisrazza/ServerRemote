@@ -1,3 +1,7 @@
+// Release builds on Windows open no console window; debug builds keep it
+// for logs.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
