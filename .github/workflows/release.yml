@@ -190,22 +190,26 @@ jobs:
         run: |
           mkdir -p candidate assets
 
-          gh run download "${{ needs.resolve.outputs.run-id }}" \
-            -n "server-remote-$LABEL-windows-x64" -D candidate
-          mv "candidate/server-remote-$LABEL-windows-x64" "candidate/server-remote-$VERSION-windows-x64"
-          (cd candidate && zip -r "../assets/server-remote-$VERSION-windows-x64.zip" \
-            "server-remote-$VERSION-windows-x64")
-          mv "candidate/server-remote-$LABEL-windows-x64-setup.exe" \
-            "assets/server-remote-$VERSION-windows-x64-setup.exe"
+          run_id="${{ needs.resolve.outputs.run-id }}"
 
-          gh run download "${{ needs.resolve.outputs.run-id }}" \
-            -n "server-remote-$LABEL-linux-x64" -D candidate
-          tar -xzf "candidate/server-remote-$LABEL-linux-x64.tar.gz" -C candidate
-          mv "candidate/server-remote-$LABEL-linux-x64" "candidate/server-remote-$VERSION-linux-x64"
-          tar -czf "assets/server-remote-$VERSION-linux-x64.tar.gz" \
-            -C candidate "server-remote-$VERSION-linux-x64"
-          mv "candidate/server-remote-$LABEL-linux-x64.AppImage" \
-            "assets/server-remote-$VERSION-linux-x64.AppImage"
+          for platform in windows-x64 windows-arm64; do
+            gh run download "$run_id" -n "server-remote-$LABEL-$platform" -D candidate
+            mv "candidate/server-remote-$LABEL-$platform" "candidate/server-remote-$VERSION-$platform"
+            (cd candidate && zip -r "../assets/server-remote-$VERSION-$platform.zip" \
+              "server-remote-$VERSION-$platform")
+            mv "candidate/server-remote-$LABEL-$platform-setup.exe" \
+              "assets/server-remote-$VERSION-$platform-setup.exe"
+          done
+
+          for platform in linux-x64 linux-arm64; do
+            gh run download "$run_id" -n "server-remote-$LABEL-$platform" -D candidate
+            tar -xzf "candidate/server-remote-$LABEL-$platform.tar.gz" -C candidate
+            mv "candidate/server-remote-$LABEL-$platform" "candidate/server-remote-$VERSION-$platform"
+            tar -czf "assets/server-remote-$VERSION-$platform.tar.gz" \
+              -C candidate "server-remote-$VERSION-$platform"
+            mv "candidate/server-remote-$LABEL-$platform.AppImage" \
+              "assets/server-remote-$VERSION-$platform.AppImage"
+          done
 
           gh run download "$GITHUB_RUN_ID" \
             -n "server-remote-$VERSION-macos-universal" -D assets
