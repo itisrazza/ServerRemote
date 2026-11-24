@@ -3,7 +3,7 @@
 ; rights; the user can choose an all-users install instead.
 ;
 ; Build with Inno Setup 6:
-;   iscc /DAppVersion=0.1.0 /DSourceDir=<folder with server-remote.exe>
+;   iscc /DAppVersion=0.1.0 /DArch=<x64|arm64> /DSourceDir=<folder with server-remote.exe>
 ;        /DOutputName=<installer name without .exe> /O<output dir>
 ;        packaging\windows\ServerRemote.iss
 
@@ -13,8 +13,19 @@
 #ifndef SourceDir
   #error Pass /DSourceDir=<folder holding server-remote.exe and the licences>
 #endif
+#ifndef Arch
+  #error Pass /DArch=x64 or /DArch=arm64
+#endif
+#if Arch == "arm64"
+  #define Architectures "arm64"
+#elif Arch == "x64"
+  ; x64compatible also lets it install on ARM64 Windows under emulation.
+  #define Architectures "x64compatible"
+#else
+  #error Arch must be x64 or arm64
+#endif
 #ifndef OutputName
-  #define OutputName "server-remote-" + AppVersion + "-windows-x64-setup"
+  #define OutputName "server-remote-" + AppVersion + "-windows-" + Arch + "-setup"
 #endif
 
 [Setup]
@@ -32,8 +43,8 @@ DefaultGroupName=ServerRemote
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#Architectures}
+ArchitecturesInstallIn64BitMode={#Architectures}
 MinVersion=10.0
 SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\server-remote.exe
