@@ -35,11 +35,15 @@ is a trimmed copy of them.
 
 | | |
 |---|---|
-| Name | Raresh Nistor (the ASCII spelling, as in store listings and `Cargo.toml`) |
-| Copyright line | Raresh Nistor. MIT OR Apache-2.0. |
+| Name | Rareș Nistor; Raresh Nistor only where a field is ASCII-only |
+| Copyright line | Rareș Nistor. MIT OR Apache-2.0. |
 | Homepage | https://serverremote.razza.io/ |
 | Source | https://github.com/itisrazza/ServerRemote |
 | Issues | https://github.com/itisrazza/ServerRemote/issues |
+
+Stores take the publisher name from the developer account (Partner Center,
+App Store Connect), so it's set there rather than in this repository, and
+an MSIX's `PublisherDisplayName` must match Partner Center exactly.
 
 ## Logo
 
