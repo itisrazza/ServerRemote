@@ -45,6 +45,17 @@ which uploads one artifact per platform named
 run's page, install and test. The run summary shows the commands to tag
 that commit.
 
+| Platform | Candidate | Made by |
+|---|---|---|
+| macOS | `ServerRemote.app`, universal, ad-hoc signed | [`scripts/bundle-macos.sh`](../scripts/bundle-macos.sh), from [`packaging/macos`](../packaging/macos) |
+| Windows | `server-remote.exe` | `cargo build` |
+| Linux | `server-remote` | `cargo build` |
+
+The macOS candidate isn't notarised, so Gatekeeper blocks it once
+downloaded; clear the quarantine flag to test it
+(`xattr -dr com.apple.quarantine ServerRemote.app`). Bundling needs Xcode
+26's `actool` for the icon, so the macOS jobs run on `macos-26`.
+
 If testing finds problems, fix them (upstream first) and push to the release
 branch again; each push makes a new candidate. Artifacts expire with the
 repository's retention period (90 days by default), so release a candidate
@@ -63,8 +74,9 @@ git push origin v0.2.0
 
 1. checks the tag matches `Cargo.toml` and sits on `release/v0.2`, and finds
    the successful Build run for that commit; without one, it stops;
-2. signs the macOS binary with the Developer ID certificate and notarises
-   it;
+2. signs `ServerRemote.app` with the Developer ID certificate, notarises
+   and staples it, then puts it in a disk image (with a link to
+   `/Applications`) that is signed, notarised and stapled in turn;
 3. renames the candidates to `server-remote-<version>-<platform>`, writes
    `SHA256SUMS`, and drafts a GitHub release with them all attached and
    generated notes.
