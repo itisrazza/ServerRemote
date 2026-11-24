@@ -10,10 +10,10 @@ what those don't.
 ## Before starting
 
 Work on a branch off `main` (`feature/<name>`, `fix/<name>`) and merge it
-through a PR; nothing is committed to `main` directly. Fixes for a release
-branch land on `main` first and are cherry-picked; see
-[docs/releasing.md](docs/releasing.md) for branches, release candidates and
-tagging.
+through a PR; nothing is committed to `main` directly. A fix for a release
+branch can go to either first, by PR, and is then cherry-picked to the
+other; see [docs/releasing.md](docs/releasing.md) for branches, release
+candidates and tagging.
 
 Other agent sessions merge into `main` too, sometimes while you work. Run
 `git fetch` and read `git log --oneline origin/main -15` before trusting
