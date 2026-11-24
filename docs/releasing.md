@@ -57,9 +57,13 @@ that commit.
 
 | Platform | Candidate | Made by |
 |---|---|---|
-| macOS | `ServerRemote.app`, universal, ad-hoc signed | [`scripts/bundle-macos.sh`](../scripts/bundle-macos.sh), from [`packaging/macos`](../packaging/macos) |
-| Windows | A per-user installer (`-setup.exe`) and a portable folder | [Inno Setup](https://jrsoftware.org/isinfo.php), from [`packaging/windows`](../packaging/windows) |
-| Linux | An AppImage and a tarball of the binary | [`scripts/bundle-appimage.sh`](../scripts/bundle-appimage.sh), from [`packaging/linux`](../packaging/linux) |
+| macOS (universal) | `ServerRemote.app`, Apple silicon and Intel in one, ad-hoc signed | [`scripts/bundle-macos.sh`](../scripts/bundle-macos.sh), from [`packaging/macos`](../packaging/macos) |
+| Windows (x64, ARM64) | A per-user installer (`-setup.exe`) and a portable folder | [Inno Setup](https://jrsoftware.org/isinfo.php), from [`packaging/windows`](../packaging/windows) |
+| Linux (x64, ARM64) | An AppImage and a tarball of the binary | [`scripts/bundle-appimage.sh`](../scripts/bundle-appimage.sh), from [`packaging/linux`](../packaging/linux) |
+
+Each architecture builds natively on its own runner; the ARM64 Windows and
+Linux runners count against the account's Actions minutes while the
+repository is private.
 
 To build packaging changes before they reach `main`, run Build by hand on
 the branch (Actions → Build → Run workflow).
