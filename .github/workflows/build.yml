@@ -79,8 +79,9 @@ jobs:
             os: windows-latest
             platform: windows-x64
             targets: [x86_64-pc-windows-msvc]
+          # Xcode 26's actool, to compile the Icon Composer icon.
           - name: macOS (universal)
-            os: macos-latest
+            os: macos-26
             platform: macos-universal
             targets: [aarch64-apple-darwin, x86_64-apple-darwin]
           - name: Linux (x64)
@@ -118,15 +119,19 @@ jobs:
               lipo -create \
                 target/aarch64-apple-darwin/release/server-remote \
                 target/x86_64-apple-darwin/release/server-remote \
-                -output "dist/$name/server-remote"
+                -output dist/server-remote
+              scripts/bundle-macos.sh dist/server-remote "dist/$name"
               ;;
             *)
               cp "target/${{ matrix.targets[0] }}/release/server-remote" "dist/$name/"
               ;;
           esac
 
-          cp LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          cp apps/desktop/assets/fonts/OFL.txt "dist/$name/OFL-NunitoSans.txt"
+          # The macOS bundle carries its licences in Contents/Resources.
+          if [[ "${{ matrix.platform }}" != macos-* ]]; then
+            cp LICENSE-MIT LICENSE-APACHE "dist/$name/"
+            cp apps/desktop/assets/fonts/OFL.txt "dist/$name/OFL-NunitoSans.txt"
+          fi
 
           # Artifact zips drop the executable bit, so Unix builds go in a
           # tarball inside the artifact.
