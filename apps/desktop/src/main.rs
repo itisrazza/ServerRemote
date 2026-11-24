@@ -847,9 +847,14 @@ fn platform_specific() -> window::settings::PlatformSpecific {
     }
 }
 
+/// The Wayland app ID and X11 class, which match the installed
+/// `io.razza.ServerRemote.desktop` so the dock shows its name and icon.
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn platform_specific() -> window::settings::PlatformSpecific {
-    window::settings::PlatformSpecific::default()
+    window::settings::PlatformSpecific {
+        application_id: "io.razza.ServerRemote".to_owned(),
+        ..Default::default()
+    }
 }
 
 /// The desktop front end over [`App`]: the window, and what each page needs

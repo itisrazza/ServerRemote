@@ -87,8 +87,10 @@ jobs:
             os: macos-26
             platform: macos-universal
             targets: [aarch64-apple-darwin, x86_64-apple-darwin]
+          # The oldest supported Ubuntu, for the oldest glibc baseline: the
+          # binary and the AppImage run on distributions at least this new.
           - name: Linux (x64)
-            os: ubuntu-latest
+            os: ubuntu-22.04
             platform: linux-x64
             targets: [x86_64-unknown-linux-gnu]
     steps:
@@ -147,6 +149,25 @@ jobs:
           fi
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
+      - name: Build the AppImage
+        if: startsWith(matrix.platform, 'linux')
+        env:
+          NAME: ${{ steps.stage.outputs.name }}
+          # AppImage type 2 runtime, release 20251108.
+          RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y --no-install-recommends \
+            squashfs-tools desktop-file-utils appstream
+          desktop-file-validate packaging/linux/io.razza.ServerRemote.desktop
+          appstreamcli validate --no-net --explain packaging/linux/io.razza.ServerRemote.metainfo.xml
+
+          curl -fsSL -o "$RUNNER_TEMP/runtime" "$RUNTIME_URL"
+          echo "$RUNTIME_SHA256  $RUNNER_TEMP/runtime" | sha256sum --check
+          scripts/bundle-appimage.sh "dist/$NAME/server-remote" "$RUNNER_TEMP/runtime" \
+            "dist/$NAME.AppImage"
+
       - name: Build the installer
         if: startsWith(matrix.platform, 'windows')
         shell: pwsh
@@ -166,5 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.stage.outputs.name }}
-          path: ${{ steps.stage.outputs.path }}
+          path: |
+            ${{ steps.stage.outputs.path }}
+            dist/*.AppImage
           if-no-files-found: error

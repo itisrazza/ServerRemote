@@ -28,7 +28,9 @@ otherwise.
 
    ```sh
    git switch -c release/v0.2 origin/main
-   # set version = "0.2.0" in Cargo.toml, then:
+   # set version = "0.2.0" in Cargo.toml, add
+   # <release version="0.2.0" date="YYYY-MM-DD"/> to the top of <releases>
+   # in packaging/linux/io.razza.ServerRemote.metainfo.xml, then:
    cargo check --workspace   # updates Cargo.lock
    git commit -am "chore: release 0.2.0"
    git push -u origin release/v0.2
@@ -49,7 +51,7 @@ that commit.
 |---|---|---|
 | macOS | `ServerRemote.app`, universal, ad-hoc signed | [`scripts/bundle-macos.sh`](../scripts/bundle-macos.sh), from [`packaging/macos`](../packaging/macos) |
 | Windows | A per-user installer (`-setup.exe`) and a portable folder | [Inno Setup](https://jrsoftware.org/isinfo.php), from [`packaging/windows`](../packaging/windows) |
-| Linux | `server-remote` | `cargo build` |
+| Linux | An AppImage and a tarball of the binary | [`scripts/bundle-appimage.sh`](../scripts/bundle-appimage.sh), from [`packaging/linux`](../packaging/linux) |
 
 To build packaging changes before they reach `main`, run Build by hand on
 the branch (Actions → Build → Run workflow).
@@ -58,6 +60,12 @@ The executable's icon comes from `packaging/windows/icon.ico`, which
 [`scripts/render-icons.py`](../scripts/render-icons.py) renders from the
 logo; rerun it after changing the logo. The installer's `AppId` must never
 change, or upgrades install side by side.
+
+The Linux binary links nothing but glibc (the display and GPU libraries
+are loaded at run time), so the AppImage bundles no libraries. It's built
+on the oldest supported Ubuntu runner, whose glibc sets the oldest
+distribution it runs on. The desktop entry and AppStream metadata in
+`packaging/linux` are shared with the Flatpak; Build validates both.
 
 The macOS candidate isn't notarised, so Gatekeeper blocks it once
 downloaded; clear the quarantine flag to test it
@@ -86,7 +94,8 @@ git push origin v0.2.0
    and staples it, then puts it in a disk image (with a link to
    `/Applications`) that is signed, notarised and stapled in turn;
 3. renames the candidates to `server-remote-<version>-<platform>` (Windows
-   as a zip and a `-setup.exe`), writes
+   as a zip and a `-setup.exe`, Linux as a tarball and an `.AppImage`),
+   writes
    `SHA256SUMS`, and drafts a GitHub release with them all attached and
    generated notes.
 
@@ -94,7 +103,8 @@ The binaries are the candidate's, not a rebuild: what was tested ships.
 Review the draft and publish it.
 
 Patch releases (`0.2.1`) come from the same branch: cherry-pick fixes, bump
-the version on the branch, validate the new candidate, tag.
+the version (and the metainfo release entry) on the branch, validate the new
+candidate, tag.
 
 Windows and Linux builds ship unsigned for now; `SHA256SUMS` lets people
 check what they downloaded. SmartScreen warns about the unsigned Windows

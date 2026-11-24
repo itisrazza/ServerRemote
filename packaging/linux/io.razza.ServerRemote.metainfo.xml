@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata, for software centres and Flathub. The description
+     comes from the website; keep the two in step. -->
+<component type="desktop-application">
+  <id>io.razza.ServerRemote</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+
+  <name>ServerRemote</name>
+  <summary>Remote console client for servers and virtual machines</summary>
+  <developer id="io.razza">
+    <name>Raresh Nistor</name>
+  </developer>
+
+  <description>
+    <p>
+      A native remote console client for servers and virtual machines, with
+      support for HPE iLO and Spice.
+    </p>
+    <ul>
+      <li>HPE iLO 4 Remote Console: an independent implementation of the Integrated Remote Console: video, keyboard and mouse, power control and server status.</li>
+      <li>Spice: for virtual machines running in QEMU, whether managed with libvirt or by hand.</li>
+      <li>VNC: display, keyboard and mouse.</li>
+    </ul>
+    <p>
+      Each protocol adds its own menus, actions and status indicators, such
+      as power control and health for iLO. Multiple connections open side by
+      side in tabs. Saved connections show a thumbnail of their last screen,
+      sorted into groups.
+    </p>
+    <p>Early and experimental.</p>
+  </description>
+
+  <launchable type="desktop-id">io.razza.ServerRemote.desktop</launchable>
+  <provides>
+    <binary>server-remote</binary>
+  </provides>
+
+  <url type="homepage">https://serverremote.razza.io/</url>
+  <url type="bugtracker">https://github.com/itisrazza/ServerRemote/issues</url>
+  <url type="vcs-browser">https://github.com/itisrazza/ServerRemote</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>A remote Linux desktop, with connection tabs and a toolbar above it and a status bar below</caption>
+      <image>https://raw.githubusercontent.com/itisrazza/ServerRemote/main/website/screenshot-light.png</image>
+    </screenshot>
+  </screenshots>
+
+  <!-- Banner colours behind the logo (#443dff): a pale and a deep tint of
+       it, so the logo stands out on both. -->
+  <branding>
+    <color type="primary" scheme_preference="light">#d4d2ff</color>
+    <color type="primary" scheme_preference="dark">#1c1a4d</color>
+  </branding>
+
+  <content_rating type="oars-1.1"/>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <!-- Newest first. Add each release here before tagging it. -->
+  <releases/>
+</component>
